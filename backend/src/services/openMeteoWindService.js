@@ -1,0 +1,221 @@
+const { httpError } = require('../utils/httpError');
+
+const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const CALAMBA_BOUNDS = {
+  latMin: 14.137703,
+  latMax: 14.2662133,
+  lonMin: 121.0218057,
+  lonMax: 121.2214277,
+};
+const GRID_ROWS = 4;
+const GRID_COLS = 5;
+
+let cachedWindField = null;
+let cachedWindFieldAt = 0;
+
+function gridCoordinates() {
+  const points = [];
+  for (let row = 0; row < GRID_ROWS; row += 1) {
+    const latitude = CALAMBA_BOUNDS.latMax - ((CALAMBA_BOUNDS.latMax - CALAMBA_BOUNDS.latMin) * row) / (GRID_ROWS - 1);
+    for (let col = 0; col < GRID_COLS; col += 1) {
+      const longitude = CALAMBA_BOUNDS.lonMin + ((CALAMBA_BOUNDS.lonMax - CALAMBA_BOUNDS.lonMin) * col) / (GRID_COLS - 1);
+      points.push({ row, col, latitude, longitude });
+    }
+  }
+  return points;
+}
+
+function windVector(speedKph, directionDegrees) {
+  // Meteorological direction is where the wind comes from. Particles need the
+  // direction it travels toward, expressed as eastward/northward components.
+  const speedMetersPerSecond = speedKph / 3.6;
+  const directionRadians = directionDegrees * Math.PI / 180;
+  return {
+    u: -Math.sin(directionRadians) * speedMetersPerSecond,
+    v: -Math.cos(directionRadians) * speedMetersPerSecond,
+  };
+}
+
+function safeNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function sumRange(values, start, count) {
+  return values.slice(start, start + count).reduce((sum, value) => sum + Math.max(0, safeNumber(value)), 0);
+}
+
+function maxRange(values, start, count) {
+  return values.slice(start, start + count).reduce((max, value) => Math.max(max, safeNumber(value)), 0);
+}
+
+function buildPointFrame(point, location, frameKey) {
+  const current = location?.current || {};
+  const hourly = location?.hourly || {};
+  const times = Array.isArray(hourly.time) ? hourly.time : [];
+  const precipitation = Array.isArray(hourly.precipitation) ? hourly.precipitation : [];
+  const precipitationProbability = Array.isArray(hourly.precipitation_probability) ? hourly.precipitation_probability : [];
+  const windSpeed = Array.isArray(hourly.wind_speed_10m) ? hourly.wind_speed_10m : [];
+  const windDirection = Array.isArray(hourly.wind_direction_10m) ? hourly.wind_direction_10m : [];
+  const windGusts = Array.isArray(hourly.wind_gusts_10m) ? hourly.wind_gusts_10m : [];
+  const currentTime = String(current.time || '');
+  const locatedFutureIndex = times.findIndex((time) => String(time) > currentTime);
+  const firstFutureIndex = locatedFutureIndex >= 0 ? locatedFutureIndex : Math.max(0, times.length - 1);
+
+  let forecastIndex = firstFutureIndex;
+  let rainAmountMm = safeNumber(current.precipitation);
+  let rainProbabilityPct = safeNumber(precipitationProbability[firstFutureIndex]);
+  let speedKph = safeNumber(current.wind_speed_10m);
+  let directionDegrees = safeNumber(current.wind_direction_10m);
+  let gustKph = safeNumber(current.wind_gusts_10m, speedKph);
+  let forecastAt = currentTime || new Date().toISOString();
+
+  if (frameKey === 'next_hour') {
+    rainAmountMm = safeNumber(precipitation[firstFutureIndex]);
+    speedKph = safeNumber(windSpeed[firstFutureIndex]);
+    directionDegrees = safeNumber(windDirection[firstFutureIndex]);
+    gustKph = safeNumber(windGusts[firstFutureIndex], speedKph);
+    forecastAt = times[firstFutureIndex] || forecastAt;
+  } else if (frameKey === 'day') {
+    forecastIndex = Math.min(times.length - 1, firstFutureIndex + 23);
+    rainAmountMm = sumRange(precipitation, firstFutureIndex, 24);
+    rainProbabilityPct = maxRange(precipitationProbability, firstFutureIndex, 24);
+    speedKph = safeNumber(windSpeed[forecastIndex]);
+    directionDegrees = safeNumber(windDirection[forecastIndex]);
+    gustKph = safeNumber(windGusts[forecastIndex], speedKph);
+    forecastAt = times[forecastIndex] || forecastAt;
+  } else if (frameKey === 'week') {
+    forecastIndex = Math.min(times.length - 1, firstFutureIndex + 167);
+    rainAmountMm = sumRange(precipitation, firstFutureIndex, 168);
+    rainProbabilityPct = maxRange(precipitationProbability, firstFutureIndex, 168);
+    speedKph = safeNumber(windSpeed[forecastIndex]);
+    directionDegrees = safeNumber(windDirection[forecastIndex]);
+    gustKph = safeNumber(windGusts[forecastIndex], speedKph);
+    forecastAt = times[forecastIndex] || forecastAt;
+  }
+
+  if (!Number.isFinite(speedKph) || !Number.isFinite(directionDegrees)) {
+    throw new Error('Open-Meteo returned invalid weather values.');
+  }
+  const vector = windVector(Math.max(0, speedKph), directionDegrees);
+  return {
+    ...point,
+    u: Number(vector.u.toFixed(3)),
+    v: Number(vector.v.toFixed(3)),
+    speedKph: Number(Math.max(0, speedKph).toFixed(1)),
+    gustKph: Number(Math.max(0, gustKph).toFixed(1)),
+    directionDegrees: Number(directionDegrees.toFixed(1)),
+    rainAmountMm: Number(Math.max(0, rainAmountMm).toFixed(2)),
+    rainProbabilityPct: Number(Math.max(0, Math.min(100, rainProbabilityPct)).toFixed(0)),
+    forecastAt,
+  };
+}
+
+async function fetchOpenMeteoBatch(points, attempt = 0) {
+  const params = new URLSearchParams({
+    latitude: points.map((point) => point.latitude.toFixed(4)).join(','),
+    longitude: points.map((point) => point.longitude.toFixed(4)).join(','),
+    current: 'precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
+    hourly: 'precipitation,precipitation_probability,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
+    wind_speed_unit: 'kmh',
+    timezone: 'Asia/Manila',
+    // Eight days guarantees a complete rolling 7-day window even when the
+    // provider aligns the first hourly value to a model-cycle boundary.
+    forecast_hours: '192',
+  });
+  try {
+    const response = await fetch(`${OPEN_METEO_FORECAST_URL}?${params.toString()}`);
+    if (!response.ok) {
+      throw new Error(`Open-Meteo returned ${response.status}.`);
+    }
+    const payload = await response.json();
+    const locations = Array.isArray(payload) ? payload : [payload];
+    if (locations.length !== points.length) {
+      throw new Error('Open-Meteo returned an incomplete weather grid.');
+    }
+    return locations;
+  } catch (error) {
+    if (attempt < 1) {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      return fetchOpenMeteoBatch(points, attempt + 1);
+    }
+    throw error;
+  }
+}
+
+async function fetchOpenMeteoGrid(points) {
+  // Smaller responses are substantially more reliable for the 8-day hourly
+  // series than one large 20-location response. Flattening preserves grid order.
+  const batches = [];
+  for (let index = 0; index < points.length; index += 5) {
+    batches.push(points.slice(index, index + 5));
+  }
+  const batchResponses = await Promise.all(batches.map((batch) => fetchOpenMeteoBatch(batch)));
+  const locations = batchResponses.flat();
+
+  const definitions = {
+    current: { label: 'Current', rainWindow: 'Current precipitation' },
+    next_hour: { label: 'Next hour', rainWindow: 'Next 1 hour' },
+    day: { label: 'Next day', rainWindow: 'Next 24 hours' },
+    week: { label: 'Next week', rainWindow: 'Next 7 days' },
+  };
+  const frames = {};
+  Object.keys(definitions).forEach((frameKey) => {
+    const framePoints = points.map((point, index) => buildPointFrame(point, locations[index], frameKey));
+    const averageSpeedKph = framePoints.reduce((sum, point) => sum + point.speedKph, 0) / framePoints.length;
+    const maximumGustKph = framePoints.reduce((max, point) => Math.max(max, point.gustKph), 0);
+    const averageRainAmountMm = framePoints.reduce((sum, point) => sum + point.rainAmountMm, 0) / framePoints.length;
+    frames[frameKey] = {
+      ...definitions[frameKey],
+      source: 'Open-Meteo',
+      forecastAt: framePoints[0]?.forecastAt || new Date().toISOString(),
+      averageSpeedKph: Number(averageSpeedKph.toFixed(1)),
+      maximumGustKph: Number(maximumGustKph.toFixed(1)),
+      averageRainAmountMm: Number(averageRainAmountMm.toFixed(2)),
+      rows: GRID_ROWS,
+      cols: GRID_COLS,
+      bounds: CALAMBA_BOUNDS,
+      points: framePoints,
+    };
+  });
+  return frames;
+}
+
+async function getCalambaWindField() {
+  const now = Date.now();
+  if (cachedWindField && now - cachedWindFieldAt < CACHE_TTL_MS) {
+    return cachedWindField;
+  }
+
+  try {
+    const frames = await fetchOpenMeteoGrid(gridCoordinates());
+    const currentFrame = frames.current;
+    cachedWindField = {
+      source: 'Open-Meteo',
+      sourceUrl: 'https://open-meteo.com/',
+      model: 'best_match',
+      level: '10 m above ground',
+      units: { vector: 'm/s', speed: 'km/h', direction: 'degrees' },
+      updatedAt: new Date().toISOString(),
+      forecastAt: currentFrame.forecastAt,
+      averageSpeedKph: currentFrame.averageSpeedKph,
+      maximumGustKph: currentFrame.maximumGustKph,
+      averageRainAmountMm: currentFrame.averageRainAmountMm,
+      rows: GRID_ROWS,
+      cols: GRID_COLS,
+      bounds: CALAMBA_BOUNDS,
+      points: currentFrame.points,
+      frames,
+    };
+    cachedWindFieldAt = now;
+    return cachedWindField;
+  } catch (error) {
+    if (cachedWindField) {
+      return { ...cachedWindField, stale: true };
+    }
+    throw httpError(502, `Unable to load wind data from Open-Meteo: ${error.message}`, 'OPEN_METEO_UNAVAILABLE');
+  }
+}
+
+module.exports = { getCalambaWindField };

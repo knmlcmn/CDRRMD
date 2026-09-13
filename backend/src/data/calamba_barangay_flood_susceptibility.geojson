@@ -1,0 +1,222 @@
+{
+  "type": "FeatureCollection",
+  "name": "calamba_barangay_flood_susceptibility",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Lingga",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1702,
+              14.2022
+            ],
+            [
+              121.1766,
+              14.2022
+            ],
+            [
+              121.1766,
+              14.2078
+            ],
+            [
+              121.1702,
+              14.2078
+            ],
+            [
+              121.1702,
+              14.2022
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Looc",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1787,
+              14.2022
+            ],
+            [
+              121.1851,
+              14.2022
+            ],
+            [
+              121.1851,
+              14.2078
+            ],
+            [
+              121.1787,
+              14.2078
+            ],
+            [
+              121.1787,
+              14.2022
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Parian",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1872,
+              14.2022
+            ],
+            [
+              121.1936,
+              14.2022
+            ],
+            [
+              121.1936,
+              14.2078
+            ],
+            [
+              121.1872,
+              14.2078
+            ],
+            [
+              121.1872,
+              14.2022
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Sampiruhan",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1769,
+              14.2117
+            ],
+            [
+              121.1833,
+              14.2117
+            ],
+            [
+              121.1833,
+              14.2173
+            ],
+            [
+              121.1769,
+              14.2173
+            ],
+            [
+              121.1769,
+              14.2117
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Palingon",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1854,
+              14.2117
+            ],
+            [
+              121.1918,
+              14.2117
+            ],
+            [
+              121.1918,
+              14.2173
+            ],
+            [
+              121.1854,
+              14.2173
+            ],
+            [
+              121.1854,
+              14.2117
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Uwisan",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1379,
+              14.1962
+            ],
+            [
+              121.1443,
+              14.1962
+            ],
+            [
+              121.1443,
+              14.2018
+            ],
+            [
+              121.1379,
+              14.2018
+            ],
+            [
+              121.1379,
+              14.1962
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

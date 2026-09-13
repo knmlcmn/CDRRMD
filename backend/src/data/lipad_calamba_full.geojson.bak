@@ -1,0 +1,45 @@
+{
+  "type": "FeatureCollection",
+  "name": "lipad_calamba_full",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "zoneId": 1,
+        "zoneName": "LiPAD Low - West Calamba",
+        "hazardLevel": "LOW",
+        "nearLagunaLake": false
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[121.0608, 14.1886], [121.0884, 14.2058], [121.1012, 14.1908], [121.0921, 14.1701], [121.0674, 14.1682], [121.0608, 14.1886]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "zoneId": 2,
+        "zoneName": "LiPAD Medium - Central Calamba",
+        "hazardLevel": "MEDIUM",
+        "nearLagunaLake": false
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[121.1028, 14.2142], [121.1411, 14.2372], [121.1694, 14.2191], [121.1525, 14.1917], [121.1168, 14.1894], [121.1028, 14.2142]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "zoneId": 3,
+        "zoneName": "LiPAD High - East Lakeshore",
+        "hazardLevel": "HIGH",
+        "nearLagunaLake": true
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[121.1425, 14.2031], [121.1838, 14.2258], [121.2034, 14.2103], [121.1922, 14.1792], [121.1567, 14.1748], [121.1425, 14.2031]]]
+      }
+    }
+  ]
+}
