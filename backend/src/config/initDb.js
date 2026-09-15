@@ -271,6 +271,18 @@ async function initDb() {
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS test_account_expires_at TIMESTAMP;
 
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS current_latitude DOUBLE PRECISION;
+
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS current_longitude DOUBLE PRECISION;
+
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS current_barangay_name VARCHAR(120);
+
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMP;
+
     CREATE INDEX IF NOT EXISTS users_barangay_name_idx
     ON users (barangay_name)
     WHERE barangay_name IS NOT NULL;

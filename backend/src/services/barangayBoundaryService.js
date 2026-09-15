@@ -141,8 +141,56 @@ function isLocationInsideBarangay(latitude, longitude, barangayName) {
   return Boolean(resolved && normalizeBarangayName(resolved) === normalizeBarangayName(barangayName));
 }
 
+function pointToSegmentDistanceKm(longitude, latitude, first, second) {
+  const latitudeScale = 111.32;
+  const longitudeScale = 111.32 * Math.cos((latitude * Math.PI) / 180);
+  const ax = (Number(first[0]) - longitude) * longitudeScale;
+  const ay = (Number(first[1]) - latitude) * latitudeScale;
+  const bx = (Number(second[0]) - longitude) * longitudeScale;
+  const by = (Number(second[1]) - latitude) * latitudeScale;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const denominator = dx * dx + dy * dy;
+  const projection = denominator > 0 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / denominator)) : 0;
+  return Math.hypot(ax + projection * dx, ay + projection * dy);
+}
+
+function distanceToBoundaryKm(latitude, longitude, boundary) {
+  if (boundary.polygons.some((polygon) => pointInPolygon(longitude, latitude, polygon))) return 0;
+  let nearest = Number.POSITIVE_INFINITY;
+  boundary.polygons.forEach((polygon) => {
+    polygon.forEach((ring) => {
+      for (let index = 1; index < ring.length; index += 1) {
+        nearest = Math.min(
+          nearest,
+          pointToSegmentDistanceKm(longitude, latitude, ring[index - 1], ring[index]),
+        );
+      }
+    });
+  });
+  return nearest;
+}
+
+function resolveNearbyBarangayAtLocation(latitude, longitude, supportedNames, maxDistanceKm = 2.5) {
+  const lat = Number(latitude);
+  const lon = Number(longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+  const supported = new Set((supportedNames || []).map(normalizeBarangayName));
+  const candidates = loadBoundaries()
+    .filter((boundary) => supported.size === 0 || supported.has(normalizeBarangayName(boundary.name)))
+    .map((boundary) => ({
+      name: boundary.name,
+      distanceKm: distanceToBoundaryKm(lat, lon, boundary),
+    }))
+    .sort((first, second) => first.distanceKm - second.distanceKm);
+  const nearest = candidates[0];
+  return nearest && nearest.distanceKm <= maxDistanceKm ? nearest : null;
+}
+
 module.exports = {
   isLocationInsideBarangay,
   normalizeBarangayName,
+  resolveNearbyBarangayAtLocation,
   resolveBarangayAtLocation,
 };

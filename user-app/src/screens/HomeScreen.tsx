@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   ImageBackground,
@@ -24,6 +24,10 @@ type NotificationItem = {
   report_id?: number | null;
   title: string;
   body: string;
+  category?: string;
+  severity?: string;
+  barangay_name?: string | null;
+  source_event_key?: string | null;
   created_at: string;
   read_at?: string | null;
 };
@@ -46,6 +50,31 @@ export default function HomeScreen() {
   const [expandedCaseKey, setExpandedCaseKey] = useState<string | null>(null);
   const [reportLogs, setReportLogs] = useState<Record<number, ReportLogItem[]>>({});
   const [loadingLogs, setLoadingLogs] = useState<Record<number, boolean>>({});
+  const [showNewNotificationLabel, setShowNewNotificationLabel] = useState(false);
+  const knownNotificationIds = useRef<Set<number>>(new Set());
+  const notificationsLoaded = useRef(false);
+  const newLabelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const applyNotifications = useCallback((rows: NotificationItem[]) => {
+    const nextRows = Array.isArray(rows) ? rows : [];
+    const hasNewUnread = nextRows.some(
+      (item) => !item.read_at && (!notificationsLoaded.current || !knownNotificationIds.current.has(item.id)),
+    );
+    knownNotificationIds.current = new Set(nextRows.map((item) => item.id));
+    notificationsLoaded.current = true;
+    setNotifications(nextRows);
+
+    if (hasNewUnread) {
+      setShowNewNotificationLabel(true);
+      if (newLabelTimer.current) clearTimeout(newLabelTimer.current);
+      newLabelTimer.current = setTimeout(() => setShowNewNotificationLabel(false), 5_000);
+    }
+  }, []);
+
+  const loadNotifications = useCallback(async () => {
+    const response = await api.get('/reports/notifications/mine');
+    applyNotifications(response.data ?? []);
+  }, [applyNotifications]);
 
   const load = useCallback(async () => {
     const [a, n, ntf, w] = await Promise.allSettled([
@@ -56,13 +85,23 @@ export default function HomeScreen() {
     ]);
     setAlerts(a.status === 'fulfilled' ? a.value.data ?? [] : []);
     setNews(n.status === 'fulfilled' ? n.value.data ?? [] : []);
-    setNotifications(ntf.status === 'fulfilled' ? ntf.value.data ?? [] : []);
+    if (ntf.status === 'fulfilled') applyNotifications(ntf.value.data ?? []);
     setWeather(w.status === 'fulfilled' ? (w.value as WeatherResponse) : null);
-  }, []);
+  }, [applyNotifications]);
 
   useEffect(() => {
     load().catch(() => {});
-  }, [load]);
+    const timer = setInterval(() => loadNotifications().catch(() => {}), 8_000);
+    return () => {
+      clearInterval(timer);
+      if (newLabelTimer.current) clearTimeout(newLabelTimer.current);
+    };
+  }, [load, loadNotifications]);
+
+  const unreadCount = useMemo(
+    () => notifications.filter((item) => !item.read_at).length,
+    [notifications],
+  );
 
   const visual = useMemo(
     () => getWeatherVisualByCode(weather?.current?.weather_code),
@@ -90,7 +129,13 @@ export default function HomeScreen() {
       const codeMatch = `${item.title || ''} ${item.body || ''}`.match(reportCodeRegex);
       const reportCode = codeMatch ? codeMatch[1].toUpperCase() : null;
       const fallbackKey = String(item.title || 'General').trim().toLowerCase();
-      const caseKey = reportId ? `report-${reportId}` : reportCode ? `code-${reportCode}` : `title-${fallbackKey}`;
+      const caseKey = item.category === 'flood_sensor'
+        ? `notification-${item.id}`
+        : reportId
+          ? `report-${reportId}`
+          : reportCode
+            ? `code-${reportCode}`
+            : `title-${fallbackKey}`;
 
       if (!groups.has(caseKey)) {
         groups.set(caseKey, {
@@ -154,6 +199,19 @@ export default function HomeScreen() {
     setRefreshing(false);
   };
 
+  async function toggleNotifications() {
+    const opening = !showNotifications;
+    setExpandedCaseKey(null);
+    setShowNotifications(opening);
+    if (!opening || unreadCount === 0) return;
+
+    const readAt = new Date().toISOString();
+    setNotifications((current) => current.map((item) => (
+      item.read_at ? item : { ...item, read_at: readAt }
+    )));
+    await api.patch('/reports/notifications/read-all').catch(() => {});
+  }
+
   return (
     <View style={st.root}>
       {/* Header */}
@@ -167,13 +225,20 @@ export default function HomeScreen() {
         <View style={st.headerRight}>
           <TouchableOpacity
             style={st.headerIconBtn}
-            onPress={() => {
-              setExpandedCaseKey(null);
-              setShowNotifications((prev) => !prev);
-            }}
+            accessibilityLabel={`Latest notifications, ${unreadCount} unread`}
+            onPress={toggleNotifications}
           >
             <MaterialCommunityIcons name="bell-outline" size={20} color="#fff" />
-            {notifications.length > 0 ? <View style={st.headerBadge} /> : null}
+            {showNewNotificationLabel ? (
+              <View style={st.newNotificationLabel}>
+                <Text style={st.newNotificationLabelText}>New notification</Text>
+              </View>
+            ) : null}
+            {unreadCount > 0 ? (
+              <View style={st.headerBadge}>
+                <Text style={st.headerBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+              </View>
+            ) : null}
           </TouchableOpacity>
         </View>
       </View>
@@ -188,11 +253,15 @@ export default function HomeScreen() {
             }}
           />
           <View style={st.notificationPanelFloating}>
-            <Text style={st.notificationPanelTitle}>Latest Notifications</Text>
+            <View style={st.notificationPanelHeader}>
+              <Text style={st.notificationPanelTitle}>Latest Notifications</Text>
+              <Text style={st.notificationArchiveLabel}>Notification history</Text>
+            </View>
             {groupedNotifications.length === 0 ? (
               <Text style={st.notificationPanelEmpty}>No notifications yet.</Text>
             ) : (
-              groupedNotifications.slice(0, 8).map((group) => (
+              <ScrollView style={st.notificationHistoryList} showsVerticalScrollIndicator>
+              {groupedNotifications.map((group) => (
                 <TouchableOpacity
                   key={group.caseKey}
                   style={st.notificationPanelItem}
@@ -213,19 +282,14 @@ export default function HomeScreen() {
                       ) : null}
 
                       {group.reportId && !loadingLogs[group.reportId] && (reportLogs[group.reportId] || []).length > 0
-                        ? reportLogs[group.reportId]
-                            .slice()
-                            .reverse()
-                            .slice(-6)
-                            .reverse()
-                            .map((log) => (
+                        ? reportLogs[group.reportId].map((log) => (
                               <View key={log.id} style={st.notificationUpdateRow}>
                                 <Text style={st.notificationUpdateTitle}>Status: {formatStatusLabel(log.new_status)}</Text>
                                 <Text style={st.notificationUpdateBody}>{log.action_note || 'Admin updated this case.'}</Text>
                                 <Text style={st.notificationUpdateTime}>{new Date(log.created_at).toLocaleString()}</Text>
                               </View>
                             ))
-                        : group.updates.slice(0, 5).map((update) => (
+                        : group.updates.map((update) => (
                             <View key={update.id} style={st.notificationUpdateRow}>
                               <Text style={st.notificationUpdateBody}>{update.body}</Text>
                               <Text style={st.notificationUpdateTime}>{new Date(update.created_at).toLocaleString()}</Text>
@@ -236,7 +300,8 @@ export default function HomeScreen() {
                     <Text style={st.notificationExpandedHint}>Tap to view this case updates</Text>
                   )}
                 </TouchableOpacity>
-              ))
+              ))}
+              </ScrollView>
             )}
           </View>
         </View>
@@ -341,15 +406,33 @@ const st = StyleSheet.create({
   },
   headerBadge: {
     position: 'absolute',
-    top: 6,
-    right: 7,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: -5,
+    right: -7,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
     backgroundColor: '#ef4444',
     borderWidth: 1,
-    borderColor: '#0d3558',
+    borderColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+  headerBadgeText: { color: '#ffffff', fontSize: 10, fontWeight: '900' },
+  newNotificationLabel: {
+    position: 'absolute',
+    right: 42,
+    minWidth: 108,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  newNotificationLabelText: { color: '#b42318', fontSize: 11, fontWeight: '800', textAlign: 'center' },
   notificationOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 30,
@@ -364,7 +447,7 @@ const st = StyleSheet.create({
     top: 86,
     right: 14,
     left: 14,
-    maxHeight: 360,
+    maxHeight: 480,
     backgroundColor: '#f8fafc',
     borderColor: '#cbd5e1',
     borderWidth: 1,
@@ -376,7 +459,10 @@ const st = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
   },
-  notificationPanelTitle: { color: '#0d3558', fontSize: 15, fontWeight: '800', marginBottom: 8 },
+  notificationPanelHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  notificationPanelTitle: { color: '#0d3558', fontSize: 15, fontWeight: '800' },
+  notificationArchiveLabel: { color: '#64748b', fontSize: 10, fontWeight: '700' },
+  notificationHistoryList: { flexGrow: 0 },
   notificationPanelEmpty: { color: '#64748b', fontSize: 12 },
   notificationPanelItem: {
     borderWidth: 1,

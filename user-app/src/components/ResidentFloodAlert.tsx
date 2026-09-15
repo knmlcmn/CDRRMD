@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { api } from '../services/api';
 
 type FloodNotification = {
@@ -13,6 +14,7 @@ type FloodNotification = {
   created_at: string;
   read_at?: string | null;
   is_test_account?: boolean;
+  matches_current_location?: boolean;
 };
 
 type Props = {
@@ -21,20 +23,57 @@ type Props = {
 
 export default function ResidentFloodAlert({ onTestAccountRemoved }: Props) {
   const [alert, setAlert] = useState<FloodNotification | null>(null);
+  const coordinatesRef = useRef<{ latitude: number; longitude: number } | null>(null);
 
   const checkAlerts = useCallback(async () => {
-    const response = await api.get('/reports/notifications/mine');
+    const response = await api.get('/reports/notifications/mine', {
+      params: coordinatesRef.current || undefined,
+    });
     const notifications = Array.isArray(response.data) ? response.data as FloodNotification[] : [];
     const latestUnread = notifications.find(
-      (item) => item.category === 'flood_sensor' && !item.read_at,
+      (item) => item.category === 'flood_sensor' && !item.read_at && item.matches_current_location !== false,
     );
     setAlert((current) => current || latestUnread || null);
   }, []);
 
   useEffect(() => {
-    checkAlerts().catch(() => {});
+    let locationSubscription: Location.LocationSubscription | null = null;
+    let active = true;
+
+    async function startLocationAlerts() {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!active || permission.status !== 'granted') return;
+
+      const current = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      coordinatesRef.current = {
+        latitude: current.coords.latitude,
+        longitude: current.coords.longitude,
+      };
+      await checkAlerts();
+
+      locationSubscription = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.Balanced,
+          timeInterval: 30_000,
+          distanceInterval: 50,
+        },
+        (position) => {
+          coordinatesRef.current = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
+          checkAlerts().catch(() => {});
+        },
+      );
+    }
+
+    startLocationAlerts().catch(() => {});
     const timer = setInterval(() => checkAlerts().catch(() => {}), 8_000);
-    return () => clearInterval(timer);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      locationSubscription?.remove();
+    };
   }, [checkAlerts]);
 
   async function dismiss() {

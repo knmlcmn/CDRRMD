@@ -1,6 +1,12 @@
 const pool = require('../config/db');
 const userModel = require('../models/userModel');
-const { resolveBarangayAtLocation } = require('../services/barangayJurisdictionService');
+const {
+  resolveBarangayAtLocation,
+  resolveNearbyBarangayAtLocation,
+} = require('../services/barangayJurisdictionService');
+
+const FLOOD_ALERT_BARANGAYS = ['Palingon', 'Sampiruhan', 'Lingga', 'Parian', 'Looc', 'Uwisan'];
+const FLOOD_ALERT_NEARBY_KM = Number(process.env.FLOOD_ALERT_NEARBY_KM || 2.5);
 const { findShortestReachableDestination } = require('../services/roadRoutingService');
 
 function buildReportCode(id, createdAt) {
@@ -1160,19 +1166,59 @@ async function getMyNotifications(req, res) {
     });
   }
 
+  const latitude = Number(req.query?.latitude);
+  const longitude = Number(req.query?.longitude);
+  const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude)
+    && latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180;
+  const nearby = hasLocation
+    ? resolveNearbyBarangayAtLocation(latitude, longitude, FLOOD_ALERT_BARANGAYS, FLOOD_ALERT_NEARBY_KM)
+    : null;
+
+  if (hasLocation) {
+    await pool.query(
+      `UPDATE users
+       SET current_latitude = $1,
+           current_longitude = $2,
+           current_barangay_name = $3,
+           location_updated_at = NOW()
+       WHERE id = $4`,
+      [latitude, longitude, nearby?.name || null, userId],
+    );
+  }
+
   const notifications = await pool.query(
     `SELECT n.id, n.user_id, n.report_id, n.title, n.body, n.category, n.severity,
-            n.barangay_name, n.created_at, n.read_at,
-            COALESCE(u.is_test_account, FALSE) AS is_test_account
+            n.barangay_name, n.source_event_key, n.created_at, n.read_at,
+            COALESCE(u.is_test_account, FALSE) AS is_test_account,
+            CASE
+              WHEN COALESCE(n.category, 'report') <> 'flood_sensor' THEN TRUE
+              WHEN $2::varchar IS NULL THEN FALSE
+              ELSE LOWER(COALESCE(n.barangay_name, '')) = LOWER($2::varchar)
+            END AS matches_current_location
      FROM user_notifications n
      JOIN users u ON u.id = n.user_id
      WHERE n.user_id = $1
-     ORDER BY n.created_at DESC
-     LIMIT 100`,
-    [userId],
+     ORDER BY n.created_at DESC`,
+    [userId, nearby?.name || null],
   );
 
   return res.json(notifications.rows);
+}
+
+async function markAllNotificationsRead(req, res) {
+  const userId = req.user?.userId;
+  if (!userId) {
+    return res.status(401).json({ message: 'Invalid token payload.' });
+  }
+
+  const result = await pool.query(
+    `UPDATE user_notifications
+     SET read_at = COALESCE(read_at, NOW())
+     WHERE user_id = $1 AND read_at IS NULL
+     RETURNING id`,
+    [userId],
+  );
+  return res.json({ updated: result.rowCount });
 }
 
 async function markNotificationRead(req, res) {
@@ -1225,5 +1271,6 @@ module.exports = {
   updateReportStatus,
   getReportLogs,
   getMyNotifications,
+  markAllNotificationsRead,
   markNotificationRead,
 };

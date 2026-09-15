@@ -102,13 +102,8 @@ async function publishFloodSensorAlert(req, res) {
        FROM users
        WHERE role = 'user'
          AND COALESCE(is_archived, FALSE) = FALSE
-         AND (
-           LOWER(COALESCE(barangay_name, '')) = LOWER($4::varchar)
-           OR (
-             COALESCE(barangay_name, '') = ''
-             AND LOWER(COALESCE(address, '')) LIKE '%' || LOWER($4::varchar) || '%'
-           )
-         )
+         AND location_updated_at >= NOW() - INTERVAL '30 minutes'
+         AND LOWER(COALESCE(current_barangay_name, '')) = LOWER($4::varchar)
        ON CONFLICT DO NOTHING
        RETURNING id`,
       [title, body, level, barangayName, eventKey],
