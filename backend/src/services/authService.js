@@ -11,6 +11,16 @@ const {
 } = require('../utils/authTokens');
 const { httpError } = require('../utils/httpError');
 
+const RESIDENT_BARANGAYS = ['Palingon', 'Sampiruhan', 'Lingga', 'Parian', 'Looc', 'Uwisan'];
+
+function resolveResidentBarangay(value, address) {
+  const requested = String(value || '').trim().toLowerCase();
+  const exact = RESIDENT_BARANGAYS.find((name) => name.toLowerCase() === requested);
+  if (exact) return exact;
+  const addressText = String(address || '').toLowerCase();
+  return RESIDENT_BARANGAYS.find((name) => addressText.includes(name.toLowerCase())) || null;
+}
+
 // Keeps API response shape stable even if DB column names differ.
 function toUserResponse(user) {
   return {
@@ -34,7 +44,7 @@ async function persistRefreshToken(client, userId, refreshToken) {
 }
 
 async function register(payload) {
-  const { username, email, password, firstName, lastName, address, contactNumber } = payload || {};
+  const { username, email, password, firstName, lastName, address, contactNumber, barangayName } = payload || {};
 
   if (!email || !password) {
     throw httpError(400, 'Email and password are required.');
@@ -57,6 +67,10 @@ async function register(payload) {
   const rawUsername = String(username || '').trim();
   const finalUsername = rawUsername.length > 0 ? rawUsername : trimmedEmail.split('@')[0];
   const passwordHash = await bcrypt.hash(password, 10);
+  const residentBarangay = resolveResidentBarangay(barangayName, address);
+  if (!residentBarangay) {
+    throw httpError(400, 'Please select one of the six supported barangays.');
+  }
 
   const user = await userModel.createUser({
     username: finalUsername,
@@ -67,6 +81,7 @@ async function register(payload) {
     contactNumber: String(contactNumber || '').trim() || null,
     passwordHash,
     role: 'user',
+    barangayName: residentBarangay,
   });
 
   const { token, refreshToken } = issueTokens(user);
@@ -225,7 +240,7 @@ async function updateMe(userId, payload) {
     throw httpError(401, 'Invalid token payload.');
   }
 
-  const { firstName, lastName, email, address, contactNumber } = payload || {};
+  const { firstName, lastName, email, address, contactNumber, barangayName } = payload || {};
   const nextEmail = String(email || '').trim().toLowerCase() || null;
   if (nextEmail && !nextEmail.includes('@')) {
     throw httpError(400, 'Please provide a valid email address.');
@@ -238,12 +253,18 @@ async function updateMe(userId, payload) {
     }
   }
 
+  const currentUser = await userModel.findPublicUserById(userId);
+  const residentBarangay = resolveResidentBarangay(barangayName || currentUser?.barangay_name, address);
+  if (!residentBarangay) {
+    throw httpError(400, 'Please select one of the six supported barangays.');
+  }
   const user = await userModel.updateMyProfile(userId, {
     firstName: String(firstName || '').trim() || null,
     lastName: String(lastName || '').trim() || null,
     email: nextEmail,
     address: String(address || '').trim() || null,
     contactNumber: String(contactNumber || '').trim() || null,
+    barangayName: residentBarangay,
   });
 
   if (!user) {

@@ -26,6 +26,7 @@ type WeatherResponse = {
     relative_humidity_2m?: number[];
     wind_speed_10m?: number[];
     weather_code?: number[];
+    precipitation?: number[];
     precipitation_probability?: number[];
   };
   daily?: {
@@ -34,6 +35,7 @@ type WeatherResponse = {
     temperature_2m_max?: number[];
     temperature_2m_min?: number[];
     wind_speed_10m_max?: number[];
+    precipitation_sum?: number[];
     precipitation_probability_max?: number[];
   };
 };
@@ -42,6 +44,7 @@ export default function WeatherScreen() {
   const [data, setData] = useState<WeatherResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  const [selectedHour, setSelectedHour] = useState(0);
 
   async function fetchWeather() {
     setLoading(true);
@@ -87,9 +90,10 @@ export default function WeatherScreen() {
     const tmp = data?.hourly?.temperature_2m ?? [];
     const hum = data?.hourly?.relative_humidity_2m ?? [];
     const wnd = data?.hourly?.wind_speed_10m ?? [];
+    const rain = data?.hourly?.precipitation ?? [];
     const prc = data?.hourly?.precipitation_probability ?? [];
     const cds = data?.hourly?.weather_code ?? [];
-    return t.slice(0, 48).map((time, i) => ({ time, temp: tmp[i], humidity: hum[i], wind: wnd[i], precip: prc[i], code: cds[i] }));
+    return t.slice(0, 168).map((time, i) => ({ time, temp: tmp[i], humidity: hum[i], wind: wnd[i], rain: rain[i], precip: prc[i], code: cds[i] }));
   }, [data?.hourly]);
 
   const dailyRows = useMemo(() => {
@@ -97,10 +101,13 @@ export default function WeatherScreen() {
     const mx = data?.daily?.temperature_2m_max ?? [];
     const mn = data?.daily?.temperature_2m_min ?? [];
     const wn = data?.daily?.wind_speed_10m_max ?? [];
+    const rs = data?.daily?.precipitation_sum ?? [];
     const pr = data?.daily?.precipitation_probability_max ?? [];
     const cd = data?.daily?.weather_code ?? [];
-    return d.map((day, i) => ({ day, max: mx[i], min: mn[i], wind: wn[i], precip: pr[i], code: cd[i] }));
+    return d.slice(0, 7).map((day, i) => ({ day, max: mx[i], min: mn[i], wind: wn[i], rain: rs[i], precip: pr[i], code: cd[i] }));
   }, [data?.daily]);
+
+  const selectedHourRow = hourlyRows[selectedHour] ?? hourlyRows[0];
 
   const fmtHour = (v: string) => new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const fmtDay = (v: string) => new Date(v).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
@@ -160,8 +167,44 @@ export default function WeatherScreen() {
           </View>
         </View>
 
+        {/* Forecast timeline */}
+        <Text style={st.sectionTitle}>7-Day Forecast Timeline</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={st.timelineContent}
+          scrollEventThrottle={64}
+          onScroll={(event) => {
+            const nextHour = Math.round(event.nativeEvent.contentOffset.x / 42);
+            setSelectedHour(Math.max(0, Math.min(hourlyRows.length - 1, nextHour)));
+          }}
+        >
+          <View style={st.timelineTrack}>
+            <View style={st.timelineLabels}>
+              {dailyRows.map((day) => (
+                <View key={day.day} style={st.timelineDay}>
+                  <Text style={st.timelineDayLabel}>{fmtDay(day.day).split(',')[0]}</Text>
+                  <Text style={st.timelineDateLabel}>{fmtDay(day.day).split(',').slice(1).join(',').trim()}</Text>
+                </View>
+              ))}
+            </View>
+            <View style={st.timelineTicks}>
+              {hourlyRows.map((hour, index) => (
+                <View key={hour.time} style={[st.timelineTick, index === selectedHour && st.timelineSelectedTick]} />
+              ))}
+            </View>
+            <Text style={st.timelineTime}>{selectedHourRow ? fmtHour(selectedHourRow.time) : '--'}</Text>
+          </View>
+        </ScrollView>
+        {selectedHourRow && (
+          <View style={st.timelineReading}>
+            <Text style={st.timelineReadingDate}>{fmtDay(selectedHourRow.time)} at {fmtHour(selectedHourRow.time)}</Text>
+            <Text style={st.timelineReadingValue}>Wind {selectedHourRow.wind ?? '--'} km/h  |  Rain {selectedHourRow.rain ?? '--'} mm</Text>
+          </View>
+        )}
+
         {/* Hourly */}
-        <Text style={st.sectionTitle}>Hourly Forecast (48 h)</Text>
+        <Text style={st.sectionTitle}>Hourly Wind and Rain (7 days)</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 14, paddingBottom: 4 }}>
           {hourlyRows.map((h) => {
             const hv = getWeatherVisualByCode(h.code);
@@ -171,14 +214,15 @@ export default function WeatherScreen() {
                 <Text style={st.hourTemp}>{h.temp ?? '--'}°</Text>
                 <Text style={st.hourCond} numberOfLines={1}>{hv.condition}</Text>
                 <Text style={st.hourMeta}>💧 {h.humidity ?? '--'}%</Text>
-                <Text style={st.hourMeta}>🌧 {h.precip ?? '--'}%</Text>
+                <Text style={st.hourMeta}>Wind {h.wind ?? '--'} km/h</Text>
+                <Text style={st.hourMeta}>Rain {h.rain ?? '--'} mm</Text>
               </View>
             );
           })}
         </ScrollView>
 
         {/* Daily */}
-        <Text style={[st.sectionTitle, { marginTop: 6 }]}>Next Days</Text>
+        <Text style={[st.sectionTitle, { marginTop: 6 }]}>Monday - Sunday</Text>
         <View style={{ paddingHorizontal: 14 }}>
           {dailyRows.map((d) => {
             const dv = getWeatherVisualByCode(d.code);
@@ -191,7 +235,7 @@ export default function WeatherScreen() {
                 <View style={{ alignItems: 'flex-end' }}>
                   <Text style={st.dayTemps}>{d.max ?? '--'}° / {d.min ?? '--'}°</Text>
                   <Text style={st.dayMeta}>Wind {d.wind ?? '--'} km/h</Text>
-                  <Text style={st.dayMeta}>Rain {d.precip ?? '--'}%</Text>
+                  <Text style={st.dayMeta}>Rain {d.rain ?? '--'} mm</Text>
                 </View>
               </View>
             );
@@ -231,6 +275,20 @@ const st = StyleSheet.create({
   statValue: { color: '#0d3558', fontSize: 15, fontWeight: '800', marginTop: 2 },
 
   sectionTitle: { color: '#0d3558', fontSize: 18, fontWeight: '800', paddingHorizontal: 14, marginBottom: 10, marginTop: 4 },
+
+  timelineContent: { paddingHorizontal: 14, paddingBottom: 4 },
+  timelineTrack: { width: 42 * 168, paddingTop: 4 },
+  timelineLabels: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 8, marginBottom: 8 },
+  timelineDay: { alignItems: 'center', width: 100 },
+  timelineDayLabel: { color: '#0d3558', fontSize: 14, fontWeight: '800' },
+  timelineDateLabel: { color: '#64748b', fontSize: 11, marginTop: 2 },
+  timelineTicks: { flexDirection: 'row', alignItems: 'flex-end', height: 30, borderTopWidth: 1, borderTopColor: '#cbd5e1' },
+  timelineTick: { width: 42, height: 12, borderLeftWidth: 1, borderLeftColor: '#94a3b8' },
+  timelineSelectedTick: { height: 29, borderLeftWidth: 3, borderLeftColor: '#f97316' },
+  timelineTime: { color: '#0d3558', fontSize: 12, fontWeight: '800', textAlign: 'center', marginTop: 5 },
+  timelineReading: { marginHorizontal: 14, marginBottom: 10, backgroundColor: '#fff7ed', borderColor: '#fed7aa', borderWidth: 1, borderRadius: 12, padding: 10 },
+  timelineReadingDate: { color: '#9a3412', fontSize: 12, fontWeight: '700' },
+  timelineReadingValue: { color: '#7c2d12', fontSize: 13, fontWeight: '800', marginTop: 4 },
 
   hourCard: {
     backgroundColor: '#fff', borderRadius: 14, padding: 10, marginRight: 10, width: 110,

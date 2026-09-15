@@ -18,6 +18,8 @@ import { postAuth } from '../services/api';
 import { SessionData } from '../services/session';
 import { AppProfile } from '../services/appAccount';
 
+const SUPPORTED_BARANGAYS = ['Palingon', 'Sampiruhan', 'Lingga', 'Parian', 'Looc', 'Uwisan'];
+
 type Props = {
   onRegisterSuccess: (session: SessionData, profile?: AppProfile) => Promise<void>;
   onShowLogin: () => void;
@@ -29,6 +31,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
+  const [barangayName, setBarangayName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -38,7 +41,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
   const [error, setError] = useState<string | null>(null);
 
   async function onRegister() {
-    if (!firstName.trim() || !lastName.trim() || !password || !email.trim()) {
+    if (!firstName.trim() || !lastName.trim() || !password || !email.trim() || !barangayName) {
       setError('Please fill in all required fields.');
       return;
     }
@@ -64,6 +67,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
         lastName: lastName.trim(),
         email: email.trim(),
         address: address.trim(),
+        barangayName,
         contactNumber: contactNumber.trim(),
       });
 
@@ -80,6 +84,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
         email: email.trim(),
         address: address.trim(),
         contactNumber: contactNumber.trim(),
+        barangayName,
       });
     } catch (err: any) {
       if (err?.code === 'ECONNABORTED' || err?.message?.toLowerCase?.().includes('network')) {
@@ -154,6 +159,20 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
             </View>
 
             {/* Contact Number */}
+            <Text style={styles.barangayLabel}>Barangay *</Text>
+            <View style={styles.barangayChoices}>
+              {SUPPORTED_BARANGAYS.map((name) => (
+                <TouchableOpacity
+                  key={name}
+                  style={[styles.barangayChoice, barangayName === name && styles.barangayChoiceActive]}
+                  onPress={() => setBarangayName(name)}
+                >
+                  <Text style={[styles.barangayChoiceText, barangayName === name && styles.barangayChoiceTextActive]}>{name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Contact Number */}
             <View style={styles.inputWrap}>
               <MaterialCommunityIcons name="phone-outline" size={18} color="#c9d5e8" />
               <TextInput value={contactNumber} onChangeText={setContactNumber} placeholder="Contact Number" placeholderTextColor="#c9d5e8" style={styles.input} keyboardType="phone-pad" />
@@ -204,6 +223,12 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
 }
 
 const styles = StyleSheet.create({
+  barangayLabel: { color: '#dbeafe', fontSize: 13, fontWeight: '700', marginBottom: 7 },
+  barangayChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 12 },
+  barangayChoice: { borderWidth: 1, borderColor: 'rgba(219,234,254,.45)', borderRadius: 14, paddingHorizontal: 11, paddingVertical: 7 },
+  barangayChoiceActive: { backgroundColor: '#e0f2fe', borderColor: '#e0f2fe' },
+  barangayChoiceText: { color: '#dbeafe', fontSize: 12, fontWeight: '700' },
+  barangayChoiceTextActive: { color: '#0c4a6e' },
   root: {
     flex: 1,
     backgroundColor: '#18356a',
@@ -322,4 +347,3 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 });
-

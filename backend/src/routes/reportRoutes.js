@@ -4,9 +4,11 @@ const {
 	createReport,
 	getMyReports,
 	getReports,
+	getMapReports,
 	updateReportStatus,
 	getReportLogs,
 	getMyNotifications,
+	markNotificationRead,
 } = require('../controllers/reportController');
 
 const router = express.Router();
@@ -14,7 +16,9 @@ const router = express.Router();
 // Incident reporting and workflow endpoints.
 router.post('/', auth, createReport);
 router.get('/mine', auth, getMyReports);
+router.get('/map', getMapReports);
 router.get('/notifications/mine', auth, getMyNotifications);
+router.patch('/notifications/:id/read', auth, markNotificationRead);
 router.get('/', auth, getReports);
 router.patch('/:id/status', auth, updateReportStatus);
 router.get('/:id/logs', auth, getReportLogs);

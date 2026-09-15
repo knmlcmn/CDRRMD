@@ -10,12 +10,14 @@ import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
 type PlatformMapProps = {
   html: string;
+  baseUrl?: string;
   style?: StyleProp<ViewStyle>;
   onMessage?: (data: string) => void;
 };
 
 export default function PlatformMap({
   html,
+  baseUrl,
   style,
   onMessage,
 }: PlatformMapProps) {
@@ -73,9 +75,12 @@ export default function PlatformMap({
     <View style={[styles.container, style]}>
       <WebView
         originWhitelist={['*']}
-        source={{ html }}
+        source={baseUrl ? { html, baseUrl } : { html }}
         javaScriptEnabled
         domStorageEnabled
+        scrollEnabled={false}
+        bounces={false}
+        setBuiltInZoomControls={false}
         mixedContentMode="always"
         onMessage={handleNativeMessage}
         style={styles.webView}

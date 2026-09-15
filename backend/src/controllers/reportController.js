@@ -1,6 +1,7 @@
 const pool = require('../config/db');
 const userModel = require('../models/userModel');
 const { resolveBarangayAtLocation } = require('../services/barangayJurisdictionService');
+const { findShortestReachableDestination } = require('../services/roadRoutingService');
 
 function buildReportCode(id, createdAt) {
   const year = new Date(createdAt || Date.now()).getFullYear();
@@ -113,7 +114,13 @@ async function resolveNearestRescueTeam(client, latitude, longitude) {
   return `${area.name} Response Team (${area.barangay})`;
 }
 
-async function findNearestAvailableEvacuationArea(client, latitude, longitude, preferredAreaId = null) {
+async function findNearestAvailableEvacuationArea(
+  client,
+  latitude,
+  longitude,
+  preferredAreaId = null,
+  requirePreferredArea = false,
+) {
   await client.query('SELECT pg_advisory_xact_lock($1)', [880021]);
 
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
@@ -127,6 +134,8 @@ async function findNearestAvailableEvacuationArea(client, latitude, longitude, p
          ea.id,
          ea.name,
          ea.barangay,
+         ea.latitude,
+         ea.longitude,
          ea.capacity,
          COALESCE(stats.confirmed_total, 0)::int AS total_evacuees
        FROM evacuation_areas ea
@@ -147,18 +156,35 @@ async function findNearestAvailableEvacuationArea(client, latitude, longitude, p
 
     const preferredRow = preferred.rows[0];
     if (preferredRow && Number(preferredRow.total_evacuees) < Number(preferredRow.capacity)) {
-      return preferredRow;
+      const reachablePreferred = await findShortestReachableDestination(
+        { latitude, longitude },
+        [{
+          ...preferredRow,
+          latitude: Number(preferredRow.latitude),
+          longitude: Number(preferredRow.longitude),
+        }],
+      );
+      if (reachablePreferred) {
+        return preferredRow;
+      }
     }
+
+    if (requirePreferredArea) {
+      return null;
+    }
+  } else if (requirePreferredArea) {
+    return null;
   }
 
-  const nearest = await client.query(
+  const available = await client.query(
     `SELECT
        ea.id,
        ea.name,
        ea.barangay,
+       ea.latitude,
+       ea.longitude,
        ea.capacity,
-       COALESCE(stats.confirmed_total, 0)::int AS total_evacuees,
-       ((ea.latitude - $1) * (ea.latitude - $1) + (ea.longitude - $2) * (ea.longitude - $2)) AS distance_score
+       COALESCE(stats.confirmed_total, 0)::int AS total_evacuees
      FROM evacuation_areas ea
      LEFT JOIN (
        SELECT
@@ -173,54 +199,18 @@ async function findNearestAvailableEvacuationArea(client, latitude, longitude, p
        AND ea.latitude IS NOT NULL
        AND ea.longitude IS NOT NULL
        AND COALESCE(stats.confirmed_total, 0) < ea.capacity
-     ORDER BY distance_score ASC
-     LIMIT 1`,
-    [latitude, longitude],
+     ORDER BY ea.id ASC`,
   );
 
-  return nearest.rows[0] || null;
-}
-
-// Resolve the evacuation center a rescued resident should be routed to.
-// Priority: (1) an evacuation area located in the barangay's own jurisdiction
-// with remaining capacity, (2) the nearest available evacuation area of any
-// jurisdiction, as a fallback so a rescue is never blocked for lack of a
-// same-barangay center.
-async function findEvacuationAreaForJurisdiction(client, barangayName) {
-  const jurisdiction = String(barangayName || '').trim();
-  if (!jurisdiction) {
-    return null;
-  }
-
-  const result = await client.query(
-    `SELECT
-       ea.id,
-       ea.name,
-       ea.barangay,
-       ea.capacity,
-       COALESCE(stats.confirmed_total, 0)::int AS total_evacuees
-     FROM evacuation_areas ea
-     LEFT JOIN (
-       SELECT
-         evacuation_area_id,
-         COALESCE(SUM(CASE WHEN status IN ('accepted', 'in_progress', 'resolved') THEN evacuees_reserved ELSE 0 END), 0)::int AS confirmed_total
-       FROM incident_reports
-       WHERE report_type = 'rescue'
-         AND evacuation_area_id IS NOT NULL
-       GROUP BY evacuation_area_id
-     ) stats ON stats.evacuation_area_id = ea.id
-     WHERE ea.is_active = TRUE
-       AND LOWER(ea.barangay) = LOWER($1)
-     ORDER BY COALESCE(stats.confirmed_total, 0) ASC
-     LIMIT 1`,
-    [jurisdiction],
+  const routed = await findShortestReachableDestination(
+    { latitude, longitude },
+    available.rows.map((area) => ({
+      ...area,
+      latitude: Number(area.latitude),
+      longitude: Number(area.longitude),
+    })),
   );
-
-  const row = result.rows[0];
-  if (row && Number(row.total_evacuees) < Number(row.capacity)) {
-    return row;
-  }
-  return null;
+  return routed?.destination || null;
 }
 
 // Re-checks that a previously assigned evacuation area still has capacity.
@@ -254,7 +244,7 @@ async function evacuationAreaStillHasCapacity(client, evacuationAreaId) {
   );
 
   const row = result.rows[0];
-  if (row && Number(row.total_evacuees) <= Number(row.capacity)) {
+  if (row && Number(row.total_evacuees) < Number(row.capacity)) {
     return row;
   }
   return null;
@@ -438,11 +428,19 @@ async function createReport(req, res) {
     let evacuationReassigned = false;
 
     if (normalizedType === 'rescue') {
-      const availableArea = await findEvacuationAreaForJurisdiction(client, assignedBarangay);
+      // The client recommendation is calculated from the live road network.
+      // Revalidate its capacity under the transaction lock, then preserve it.
+      const availableArea = await findNearestAvailableEvacuationArea(
+        client,
+        lat,
+        lon,
+        evacuationAreaId,
+        true,
+      );
       if (!availableArea) {
         await client.query('ROLLBACK');
         return res.status(409).json({
-          message: `The evacuation area for Barangay ${assignedBarangay} is currently at full capacity. Please wait for barangay updates.`,
+          message: 'The road-recommended evacuation center is no longer available. Please calculate a new route and try again.',
           code: 'NO_AVAILABLE_EVACUATION_AREA',
         });
       }
@@ -764,20 +762,14 @@ async function updateReportStatus(req, res) {
           return res.status(400).json({ message: 'Only rescue requests can be marked as rescued.' });
         }
 
-        const barangayName = String(req.user?.barangayName || '').trim();
-
         // Prefer the evacuation area already assigned to this rescue (set when
         // the resident first requested rescue) as long as it still has room.
         let destinationArea = current.evacuation_area_id
           ? await evacuationAreaStillHasCapacity(client, current.evacuation_area_id)
           : null;
 
-        // Otherwise pick the evacuation center for this barangay's own
-        // jurisdiction, falling back to the nearest available center of any
-        // jurisdiction so a confirmed rescue is never blocked.
-        if (!destinationArea) {
-          destinationArea = await findEvacuationAreaForJurisdiction(client, barangayName);
-        }
+        // If the assigned center filled up, calculate another reachable center
+        // from the resident's location using actual driving distance.
         if (!destinationArea) {
           destinationArea = await findNearestAvailableEvacuationArea(
             client,
@@ -1091,6 +1083,20 @@ async function updateReportStatus(req, res) {
   }
 }
 
+async function getMapReports(req, res) {
+  const result = await pool.query(
+    `SELECT report_code, report_type, status, latitude, longitude
+     FROM incident_reports
+     WHERE latitude IS NOT NULL
+       AND longitude IS NOT NULL
+       AND status NOT IN ('declined')
+     ORDER BY created_at DESC
+     LIMIT 200`,
+  );
+
+  return res.json(result.rows);
+}
+
 async function getReportLogs(req, res) {
   const reportId = Number(req.params.id);
   if (!Number.isFinite(reportId)) {
@@ -1138,11 +1144,30 @@ async function getMyNotifications(req, res) {
     return res.status(401).json({ message: 'Invalid token payload.' });
   }
 
+  const expiredTestAccount = await pool.query(
+    `DELETE FROM users
+     WHERE id = $1
+       AND COALESCE(is_test_account, FALSE) = TRUE
+       AND test_account_expires_at IS NOT NULL
+       AND test_account_expires_at <= NOW()
+     RETURNING id`,
+    [userId],
+  );
+  if (expiredTestAccount.rows.length > 0) {
+    return res.status(401).json({
+      code: 'TEST_ACCOUNT_EXPIRED',
+      message: 'The temporary notification test account has expired.',
+    });
+  }
+
   const notifications = await pool.query(
-    `SELECT id, user_id, report_id, title, body, created_at, read_at
-     FROM user_notifications
-     WHERE user_id = $1
-     ORDER BY created_at DESC
+    `SELECT n.id, n.user_id, n.report_id, n.title, n.body, n.category, n.severity,
+            n.barangay_name, n.created_at, n.read_at,
+            COALESCE(u.is_test_account, FALSE) AS is_test_account
+     FROM user_notifications n
+     JOIN users u ON u.id = n.user_id
+     WHERE n.user_id = $1
+     ORDER BY n.created_at DESC
      LIMIT 100`,
     [userId],
   );
@@ -1150,11 +1175,55 @@ async function getMyNotifications(req, res) {
   return res.json(notifications.rows);
 }
 
+async function markNotificationRead(req, res) {
+  const userId = req.user?.userId;
+  const notificationId = Number(req.params.id);
+  if (!userId || !Number.isInteger(notificationId)) {
+    return res.status(400).json({ message: 'Invalid notification.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await client.query(
+      `UPDATE user_notifications
+       SET read_at = COALESCE(read_at, NOW())
+       WHERE id = $1 AND user_id = $2
+       RETURNING id, read_at, category`,
+      [notificationId, userId],
+    );
+    if (result.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Notification not found.' });
+    }
+
+    let accountDeleted = false;
+    if (result.rows[0].category === 'flood_sensor') {
+      const deleted = await client.query(
+        `DELETE FROM users
+         WHERE id = $1 AND COALESCE(is_test_account, FALSE) = TRUE
+         RETURNING id`,
+        [userId],
+      );
+      accountDeleted = deleted.rows.length > 0;
+    }
+
+    await client.query('COMMIT');
+    return res.json({ ...result.rows[0], accountDeleted });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   createReport,
   getMyReports,
   getReports,
+  getMapReports,
   updateReportStatus,
   getReportLogs,
   getMyNotifications,
+  markNotificationRead,
 };

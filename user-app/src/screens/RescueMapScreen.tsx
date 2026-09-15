@@ -1,12 +1,11 @@
+import { submissionErrorNotice, useNoticeModal } from '../components/useNoticeModal';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
-  Switch,
   StyleSheet,
   Text,
   TextInput,
@@ -19,7 +18,7 @@ import PlatformMap from '../components/PlatformMap';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { api, setApiAuthorizationToken } from '../services/api';
-import { fetchRoadRoute } from '../services/routingService';
+import { fetchBestRoadRoute, fetchRoadRoute } from '../services/routingService';
 import { loadSession } from '../services/session';
 
 type Coordinate = { latitude: number; longitude: number };
@@ -34,18 +33,13 @@ type EvacuationArea = {
   latitude: number;
   longitude: number;
 };
-type RescueCandidate = {
-  area: EvacuationArea;
-  distanceKm: number;
-  path: string[];
-};
 type RescuePlan = {
   area: EvacuationArea;
   distanceKm: number;
   etaMinutes: number;
   etaText: string;
   routeCoordinates: Coordinate[];
-  source: 'osrm' | 'dijkstra';
+  source: 'osrm';
 };
 
 type RescueRecord = {
@@ -62,23 +56,14 @@ type RescueRecord = {
 
 type UserMapLayerVisibility = {
   boundary: boolean;
+  floodHazard: boolean;
   evacuationAreas: boolean;
+  incidentMarkers: boolean;
   userMarker: boolean;
   route: boolean;
-  raster: boolean;
-  weatherOverlay: boolean;
+  rainOverlay: boolean;
+  windOverlay: boolean;
 };
-
-function findNearestAvailableArea(userLocation: Coordinate, evacuationAreas: EvacuationArea[]) {
-  const available = evacuationAreas.filter((area) => !isAreaFull(area));
-  if (available.length === 0) {
-    return null;
-  }
-
-  return available
-    .map((area) => ({ area, straightKm: haversineKm(area, userLocation) }))
-    .sort((a, b) => a.straightKm - b.straightKm)[0]?.area || null;
-}
 
 function normalizeRescueStatus(value: unknown): RescueRecord['status'] {
   const normalized = String(value || 'pending').toLowerCase();
@@ -150,311 +135,41 @@ const CALAMBA_BOUNDARY_GEOJSON = {
   ],
 } as const;
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-const NOMINATIM_BARANGAY_CENTERS: Record<string, Coordinate> = {
-  Palingon: { latitude: 14.2145, longitude: 121.1886 },
-  Lingga: { latitude: 14.205, longitude: 121.1734 },
-  Sampiruhan: { latitude: 14.2145, longitude: 121.1801 },
-  Looc: { latitude: 14.205, longitude: 121.1819 },
-  Uwisan: { latitude: 14.199, longitude: 121.1411 },
-  Parian: { latitude: 14.205, longitude: 121.1904 },
-};
-
-function isLandPoint(point: Coordinate) {
-  if (
-    point.latitude < CALAMBA_BOUNDS.latMin ||
-    point.latitude > CALAMBA_BOUNDS.latMax ||
-    point.longitude < CALAMBA_BOUNDS.lonMin ||
-    point.longitude > CALAMBA_BOUNDS.lonMax
-  ) {
-    return false;
-  }
-
-  const shorelineLonByLat =
-    point.latitude < 14.19
-      ? 121.188
-      : point.latitude < 14.205
-        ? 121.195
-        : point.latitude < 14.22
-          ? 121.201
-          : point.latitude < 14.24
-            ? 121.208
-            : point.latitude < 14.255
-              ? 121.213
-              : 121.218;
-
-  const likelyLagunaBayWater = point.longitude > shorelineLonByLat;
-  return !likelyLagunaBayWater;
-}
-
-function snapToLandPoint(rawPoint: Coordinate) {
-  const start = {
-    latitude: clamp(rawPoint.latitude, CALAMBA_BOUNDS.latMin + 0.001, CALAMBA_BOUNDS.latMax - 0.001),
-    longitude: clamp(rawPoint.longitude, CALAMBA_BOUNDS.lonMin + 0.001, CALAMBA_BOUNDS.lonMax - 0.001),
-  };
-
-  if (isLandPoint(start)) {
-    return start;
-  }
-
-  const angleSteps = 18;
-  for (let ring = 1; ring <= 18; ring += 1) {
-    const radius = ring * 0.0011;
-    for (let step = 0; step < angleSteps; step += 1) {
-      const angle = (2 * Math.PI * step) / angleSteps;
-      const candidate = {
-        latitude: clamp(start.latitude + Math.sin(angle) * radius, CALAMBA_BOUNDS.latMin + 0.001, CALAMBA_BOUNDS.latMax - 0.001),
-        longitude: clamp(start.longitude + Math.cos(angle) * radius, CALAMBA_BOUNDS.lonMin + 0.001, CALAMBA_BOUNDS.lonMax - 0.001),
-      };
-
-      if (isLandPoint(candidate)) {
-        return candidate;
-      }
-    }
-  }
-
-  return { latitude: 14.2117, longitude: 121.1653 };
-}
-
-function createEvacuationAreas() {
-  const siteTemplates = [
-    { suffix: 'Covered Court', angleDeg: 30, radius: 0.0028 },
-    { suffix: 'Elementary School', angleDeg: 160, radius: 0.0031 },
-    { suffix: 'Multi-purpose Hall', angleDeg: 290, radius: 0.0029 },
-  ];
-
-  const anchoredBarangays = Object.entries(NOMINATIM_BARANGAY_CENTERS);
-
-  return anchoredBarangays.flatMap(([barangay, anchor], index) => {
-    const centerPoint = snapToLandPoint(anchor);
-
-    return siteTemplates.map((site, siteIndex) => {
-      const angle = (site.angleDeg * Math.PI) / 180;
-      const rawPoint = {
-        latitude: centerPoint.latitude + Math.sin(angle) * site.radius,
-        longitude: centerPoint.longitude + Math.cos(angle) * site.radius,
-      };
-      const snapped = snapToLandPoint(rawPoint);
-      const capacity = 120 + ((index * 19 + siteIndex * 41) % 240);
-      const evacuees = 0;
-      const placeType = site.suffix;
-      const locationText = `${barangay} ${placeType}, Barangay ${barangay}, Calamba City, Laguna, Philippines`;
-
-      return {
-        id: `E${index + 1}-${siteIndex + 1}`,
-        barangay,
-        name: `${barangay} ${site.suffix}`,
-        address: `Barangay ${barangay}, Calamba City`,
-        placeType,
-        locationText,
-        capacity,
-        evacuees,
-        latitude: snapped.latitude,
-        longitude: snapped.longitude,
-      };
-    });
-  });
-}
-
-const fallbackEvacuationAreas = createEvacuationAreas();
-
-const junctionNodes: Array<{ id: string; latitude: number; longitude: number }> = [
-  { id: 'J1', latitude: 14.2202, longitude: 121.1658 },
-  { id: 'J2', latitude: 14.2088, longitude: 121.1768 },
-  { id: 'J3', latitude: 14.2146, longitude: 121.1521 },
-  { id: 'J4', latitude: 14.2012, longitude: 121.1678 },
-  { id: 'J5', latitude: 14.2302, longitude: 121.1719 },
-  { id: 'J6', latitude: 14.2243, longitude: 121.1908 },
-  { id: 'J7', latitude: 14.1968, longitude: 121.1879 },
-  { id: 'J8', latitude: 14.2355, longitude: 121.1444 },
-];
-
-const junctionEdges: Array<[string, string]> = [
-  ['J1', 'J2'],
-  ['J1', 'J3'],
-  ['J1', 'J5'],
-  ['J2', 'J4'],
-  ['J2', 'J5'],
-  ['J2', 'J6'],
-  ['J2', 'J7'],
-  ['J3', 'J5'],
-  ['J3', 'J8'],
-  ['J3', 'J4'],
-  ['J4', 'J7'],
-  ['J5', 'J6'],
-  ['J5', 'J8'],
-  ['J6', 'J7'],
-];
-
-function toRad(value: number) {
-  return (value * Math.PI) / 180;
-}
-
-function haversineKm(a: Coordinate, b: Coordinate) {
-  const earthRadiusKm = 6371;
-  const dLat = toRad(b.latitude - a.latitude);
-  const dLon = toRad(b.longitude - a.longitude);
-  const lat1 = toRad(a.latitude);
-  const lat2 = toRad(b.latitude);
-  const h =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
-}
-
-function buildGraph(userLocation: Coordinate, evacuationAreas: EvacuationArea[]) {
-  const userNode = { id: 'U', latitude: userLocation.latitude, longitude: userLocation.longitude };
-  const nodes = [...evacuationAreas, ...junctionNodes, userNode];
-  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
-  const adj = new Map<string, Array<{ to: string; weight: number }>>();
-
-  nodes.forEach((node) => adj.set(node.id, []));
-
-  junctionEdges.forEach(([a, b]) => {
-    const from = nodeMap.get(a);
-    const to = nodeMap.get(b);
-    if (!from || !to) {
-      return;
-    }
-
-    const distance = haversineKm(from, to) * 1.28;
-    adj.get(a)?.push({ to: b, weight: distance });
-    adj.get(b)?.push({ to: a, weight: distance });
-  });
-
-  evacuationAreas.forEach((area) => {
-    const nearestJunctions = junctionNodes
-      .map((junction) => ({ id: junction.id, distance: haversineKm(area, junction) * 1.12 }))
-      .sort((a, b) => a.distance - b.distance)
-      .slice(0, 2);
-
-    nearestJunctions.forEach((item) => {
-      adj.get(area.id)?.push({ to: item.id, weight: item.distance });
-      adj.get(item.id)?.push({ to: area.id, weight: item.distance });
-    });
-  });
-
-  const nearestJunctions = junctionNodes
-    .map((node) => ({ id: node.id, distance: haversineKm(userNode, node) * 1.18 }))
-    .sort((a, b) => a.distance - b.distance)
-    .slice(0, 3);
-
-  nearestJunctions.forEach((item) => {
-    adj.get('U')?.push({ to: item.id, weight: item.distance });
-    adj.get(item.id)?.push({ to: 'U', weight: item.distance });
-  });
-
-  return { nodes: nodeMap, adj };
-}
-
-function dijkstra(
-  adj: Map<string, Array<{ to: string; weight: number }>>,
-  source: string,
-  target: string,
-) {
-  const dist = new Map<string, number>();
-  const prev = new Map<string, string | null>();
-  const unvisited = new Set<string>(Array.from(adj.keys()));
-
-  unvisited.forEach((key) => {
-    dist.set(key, Number.POSITIVE_INFINITY);
-    prev.set(key, null);
-  });
-  dist.set(source, 0);
-
-  while (unvisited.size > 0) {
-    let current: string | null = null;
-    let currentDist = Number.POSITIVE_INFINITY;
-
-    unvisited.forEach((node) => {
-      const nodeDist = dist.get(node) ?? Number.POSITIVE_INFINITY;
-      if (nodeDist < currentDist) {
-        currentDist = nodeDist;
-        current = node;
-      }
-    });
-
-    if (!current || current === target || currentDist === Number.POSITIVE_INFINITY) {
-      break;
-    }
-
-    unvisited.delete(current);
-    const neighbors = adj.get(current) ?? [];
-    neighbors.forEach((neighbor) => {
-      if (!unvisited.has(neighbor.to)) {
-        return;
-      }
-
-      const alt = currentDist + neighbor.weight;
-      if (alt < (dist.get(neighbor.to) ?? Number.POSITIVE_INFINITY)) {
-        dist.set(neighbor.to, alt);
-        prev.set(neighbor.to, current);
-      }
-    });
-  }
-
-  const path: string[] = [];
-  let cursor: string | null = target;
-  while (cursor) {
-    path.unshift(cursor);
-    cursor = prev.get(cursor) ?? null;
-  }
-
-  return {
-    distanceKm: dist.get(target) ?? Number.POSITIVE_INFINITY,
-    path: path[0] === source ? path : [],
-  };
-}
-
 function formatEtaText(etaMinutes: number) {
   return `${Math.max(etaMinutes - 1, 1)} - ${etaMinutes + 3} mins`;
 }
 
-async function resolveFastestRoadPlan(
+async function resolveBestRoadPlan(
   userLocation: Coordinate,
   evacuationAreas: EvacuationArea[],
 ): Promise<RescuePlan | null> {
-  const candidateAreas = evacuationAreas
-    .filter((area) => !isAreaFull(area))
-    .map((area) => ({ area, straightKm: haversineKm(area, userLocation) }))
-    .sort((a, b) => a.straightKm - b.straightKm)
-    .slice(0, 12)
-    .map((item) => item.area);
-
-  const routes = await Promise.all(
-    candidateAreas.map(async (area) => {
-      try {
-        const road = await fetchRoadRoute(
-          { latitude: area.latitude, longitude: area.longitude },
-          userLocation,
-          true,
-          3,
-        );
-
-        return {
-          area,
-          distanceKm: road.distanceKm,
-          etaMinutes: road.etaMinutes,
-          etaText: formatEtaText(road.etaMinutes),
-          routeCoordinates: road.routeCoordinates,
-          source: 'osrm' as const,
-        };
-      } catch {
-        return null;
-      }
-    }),
+  const availableAreas = evacuationAreas.filter((area) => !isAreaFull(area));
+  const bestRoute = await fetchBestRoadRoute(
+    userLocation,
+    availableAreas.map((area) => ({
+      id: area.id,
+      latitude: area.latitude,
+      longitude: area.longitude,
+    })),
+    3,
   );
-
-  const valid = routes.filter(Boolean) as Array<NonNullable<(typeof routes)[number]>>;
-  if (valid.length === 0) {
+  if (!bestRoute) {
     return null;
   }
 
-  valid.sort((a, b) => a.etaMinutes - b.etaMinutes);
-  return valid[0];
+  const area = availableAreas.find((candidate) => candidate.id === bestRoute.destinationId);
+  if (!area) {
+    return null;
+  }
+
+  return {
+    area,
+    distanceKm: bestRoute.distanceKm,
+    etaMinutes: bestRoute.etaMinutes,
+    etaText: formatEtaText(bestRoute.etaMinutes),
+    routeCoordinates: bestRoute.routeCoordinates,
+    source: 'osrm',
+  };
 }
 
 function buildLeafletHtml(
@@ -472,7 +187,10 @@ function buildLeafletHtml(
     selectedAreaId,
     showAreas,
     routeCoordinates,
-    apiBaseUrl,
+    windDataUrl: `${apiBaseUrl}/weather/wind-field`,
+    rainImpactUrl: `${apiBaseUrl}/flood-risk/calamba/rain-impact`,
+    floodHazardUrl: `${apiBaseUrl}/flood-risk/calamba/barangays`,
+    incidentUrl: `${apiBaseUrl}/reports/map`,
     layerVisibility,
     boundaryGeoJson: CALAMBA_BOUNDARY_GEOJSON,
   });
@@ -517,12 +235,14 @@ function buildLeafletHtml(
       .map-legend .updated{color:#64748b;font-size:10px;margin-top:5px}
       .legend-section-label{align-items:center;border-top:1px solid #e2e8f0;color:#1e40af;display:flex;font-size:10px;font-weight:800;gap:5px;margin-top:7px;padding-top:5px;text-transform:uppercase;letter-spacing:0.04em}
       .legend-section-dot{border-radius:999px;display:inline-block;flex-shrink:0;height:8px;width:8px}
+      .layer-control{font-family:Arial,sans-serif;position:relative}.layer-control-button{background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.45);border-radius:8px;color:#fff;cursor:pointer;font:700 11px/1 Arial,sans-serif;padding:8px 10px}.layer-control-panel{background:rgba(13,20,35,.96);border:1px solid rgba(148,163,184,.25);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.6);display:none;margin-top:6px;padding:10px 10px 8px;width:190px}.layer-control-panel.open{display:block}.layer-control-title{border-bottom:1px solid rgba(148,163,184,.2);color:#94a3b8;font-size:9px;font-weight:700;letter-spacing:.1em;margin-bottom:7px;padding-bottom:5px;text-align:center;text-transform:uppercase}.layer-control-row{align-items:center;color:#e2e8f0;display:flex;font-size:10px;font-weight:700;justify-content:space-between;padding:5px 0}.layer-control-row input{accent-color:#38bdf8}
       .flood-info{font:13px/1.35 Arial,sans-serif;min-width:220px}
       .flood-info .head{background:#0891b2;color:#fff;font-weight:800;margin:-10px -12px 10px;padding:10px 12px}
       .flood-info table{border-collapse:collapse;width:100%}
       .flood-info td{border:1px solid #cbd5e1;padding:6px 8px}
       .flood-info td:first-child{background:#f8fafc;font-weight:700;width:42%}
-      .map-rain-canvas{inset:0;pointer-events:none;position:absolute;z-index:430}.weather-live-hud{backdrop-filter:blur(7px);background:rgba(15,23,42,.82);border:1px solid rgba(125,211,252,.45);border-radius:9px;color:#fff;display:none;font:700 10px/1.35 Arial,sans-serif;left:50%;padding:6px 9px;pointer-events:none;position:absolute;top:10px;transform:translateX(-50%);z-index:700;white-space:nowrap;box-shadow:0 4px 18px rgba(2,8,23,.3)}.weather-live-hud b{color:#7dd3fc}
+      .map-rain-canvas{left:0;opacity:.5;pointer-events:none;position:absolute;top:0;z-index:429}.map-wind-canvas{left:0;opacity:.5;pointer-events:none;position:absolute;top:0;z-index:430}.forecast-timebar{backdrop-filter:blur(9px);background:rgba(7,17,24,.94);border:1px solid rgba(148,163,184,.35);border-radius:18px;bottom:10px;box-shadow:0 5px 18px rgba(0,0,0,.38);color:#fff;display:none;left:50%;max-width:calc(100% - 16px);padding:8px 10px 7px;pointer-events:auto;position:absolute;transform:translateX(-50%);width:calc(100% - 16px);z-index:700}.forecast-time-track{position:relative}.forecast-time-labels{display:flex;justify-content:space-between;margin:0 5px 3px}.forecast-time-label{color:#f8fafc;font:700 10px/1.1 Arial,sans-serif;text-align:center}.forecast-time-date{color:#cbd5e1;display:block;font:8px/1 Arial,sans-serif}.forecast-time-range{appearance:none;background:repeating-linear-gradient(90deg,rgba(203,213,225,.7) 0 1px,transparent 1px 9px);border:0;display:block;height:26px;margin:0;outline:none;width:100%}.forecast-time-range::-webkit-slider-thumb{appearance:none;background:#f97316;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px rgba(249,115,22,.3);cursor:grab;height:17px;width:5px}.forecast-time-range::-moz-range-thumb{background:#f97316;border:2px solid #fff;border-radius:50%;cursor:grab;height:17px;width:5px}.forecast-time-summary{color:#dbeafe;font:700 9px/1.3 Arial,sans-serif;overflow:hidden;text-align:center;text-overflow:ellipsis;white-space:nowrap}
+      @media (max-width:420px){.forecast-timebar{bottom:6px;padding:6px 7px}.forecast-time-label{font-size:9px}.forecast-time-date{font-size:7px}.leaflet-control-zoom a{height:28px!important;line-height:28px!important;width:28px!important}}
     </style>
   </head>
   <body>
@@ -535,8 +255,10 @@ function buildLeafletHtml(
         evacuationAreas: true,
         userMarker: true,
         route: true,
-        raster: false,
-        weatherOverlay: true
+        floodHazard: false,
+        incidentMarkers: true,
+        rainOverlay: true,
+        windOverlay: true
       }, data.layerVisibility || {});
       var calambaCenter = [${CALAMBA_NOMINATIM.latitude}, ${CALAMBA_NOMINATIM.longitude}];
       var calambaBounds = L.latLngBounds([
@@ -559,8 +281,8 @@ function buildLeafletHtml(
       function applyIronMapTint() {
         var tilePane = map.getPanes().tilePane;
         if (tilePane) {
-          tilePane.style.filter = Boolean(visibility.weatherOverlay)
-            ? 'grayscale(1) brightness(0.62) sepia(0.18) hue-rotate(175deg) saturate(0.55)'
+          tilePane.style.filter = Boolean(visibility.windOverlay)
+            ? 'grayscale(0.28) brightness(0.94) contrast(0.98)'
             : '';
         }
       }
@@ -568,10 +290,14 @@ function buildLeafletHtml(
       var legendVisible = false;
       var legendControl = null;
       var legendToggleControl = null;
+      var weatherTimelineData = null;
+      var weatherTimeframe = 'hour_0';
+      var forecastTimebar = null;
 
       function buildLegendHtml() {
-        var weatherOn = Boolean(visibility.weatherOverlay);
-        var floodOn = Boolean(visibility.raster);
+        var weatherOn = Boolean(visibility.windOverlay);
+        var rainOn = Boolean(visibility.rainOverlay);
+        var floodOn = Boolean(visibility.floodHazard);
 
         var floodSection = '';
         if (floodOn) {
@@ -585,26 +311,36 @@ function buildLeafletHtml(
             '<div class="row"><span class="swatch" style="background:#16a34a;"></span>Low Risk</div>';
         }
 
-        var rainSection = '';
+        var windSection = '';
         if (weatherOn) {
-          rainSection =
+          windSection =
             '<div class="legend-section-label" style="margin-top:' + (floodOn ? '6px' : '0') + '">' +
               '<span class="legend-section-dot" style="background:#0ea5e9;"></span>' +
-              'Rain Intensity' +
+              'Wind Layer' +
             '</div>' +
-            '<div class="row"><span class="swatch" style="background:#16a34a;"></span>Light</div>' +
-            '<div class="row"><span class="swatch" style="background:#eab308;"></span>Moderate</div>' +
-            '<div class="row"><span class="swatch" style="background:#dc2626;"></span>Heavy</div>' +
-            '<div class="row"><span class="swatch" style="background:#7f1d1d;"></span>Severe</div>';
+            '<div class="row"><span class="swatch" style="background:linear-gradient(90deg,#526fd0,#29d287,#efa447,#8b49b5);"></span>Wind speed</div>' +
+            '<div class="row"><span class="line" style="border-top-color:#ffffff;"></span>Wind direction</div>';
         }
 
-        var noLayers = !floodOn && !weatherOn;
+        var rainSection = '';
+        if (rainOn) {
+          rainSection =
+            '<div class="legend-section-label" style="margin-top:' + ((floodOn || weatherOn) ? '6px' : '0') + '">' +
+              '<span class="legend-section-dot" style="background:#22d3ee;"></span>' +
+              'Rain Accumulation' +
+            '</div>' +
+            '<div class="row"><span class="swatch" style="background:#4b56be;"></span>Light</div>' +
+            '<div class="row"><span class="swatch" style="background:#29ee8f;"></span>Moderate</div>' +
+            '<div class="row"><span class="swatch" style="background:#ff7514;"></span>Heavy</div>';
+        }
+
+        var noLayers = !floodOn && !weatherOn && !rainOn;
         return (
           '<div class="map-legend">' +
             '<div class="title">Map Legend</div>' +
             (noLayers
-              ? '<div style="color:#64748b;font-size:10px;margin-top:4px;">Enable Flood Hazard or Live Weather layers to see color indicators.</div>'
-              : (floodSection + rainSection)
+              ? '<div style="color:#64748b;font-size:10px;margin-top:4px;">Enable Flood Hazard or Wind Layer to see map indicators.</div>'
+              : (floodSection + windSection + rainSection)
             ) +
           '</div>'
         );
@@ -691,186 +427,265 @@ function buildLeafletHtml(
 
       var boundaryLayer = L.layerGroup();
       var floodHazardLayer = L.layerGroup();
-      var weatherFillLayer = L.layerGroup();
+      var incidentLayer = L.layerGroup();
       var areaLayer = L.layerGroup();
       var userLayer = L.layerGroup();
       var routeLayer = L.layerGroup();
 
-      var weatherImpactByBarangay = {};
-      var cityRainIntensityMmPerHour = 0;
-      var cityWindSpeedKph=8,cityWindDirectionDegrees=225,cityThunderstormProbabilityPct=0;
+      var cityWindSpeedKph=8,cityWindDirectionDegrees=225;
+      var windCanvas = null;
+      var windCtx = null;
+      var windAnimationFrame = null;
+      var windParticles=[],weatherFrameTick=0;
       var rainCanvas = null;
       var rainCtx = null;
-      var rainDrops = [];
-      var rainAnimationFrame = null;
-      var rainDropCount = 0;
-      var windParticles=[],weatherFrameTick=0,lightningFrames=0,weatherHud=null;
+      var rainAmountMm = 0;
+      var windBackgroundCanvas = null;
 
-      function ensureRainCanvas() {
-        if (rainCanvas) return;
-        var pane = map.getPanes && map.getPanes().overlayPane;
-        if (!pane) return;
-        rainCanvas = document.createElement('canvas');
-        rainCanvas.className = 'map-rain-canvas';
-        pane.appendChild(rainCanvas);
-        rainCtx = rainCanvas.getContext('2d');
-        weatherHud=document.createElement('div');weatherHud.className='weather-live-hud';map.getContainer().appendChild(weatherHud);
-        refreshRainCanvasSize();
-      }
+      var rainColorStops = [
+        { value: 0, color: [62, 62, 62, 0] },
+        { value: 0.2, color: [75, 86, 190, 105] },
+        { value: 2, color: [44, 105, 229, 175] },
+        { value: 10, color: [16, 198, 244, 210] },
+        { value: 25, color: [41, 238, 143, 225] },
+        { value: 55, color: [175, 247, 56, 228] },
+        { value: 100, color: [255, 214, 42, 232] },
+        { value: 180, color: [255, 117, 20, 238] },
+        { value: 300, color: [196, 25, 12, 242] },
+      ];
 
-      function refreshRainCanvasSize() {
-        if (!rainCanvas) return;
-        var size = map.getSize();
-        rainCanvas.width = Math.max(1, Number(size.x) || 1);
-        rainCanvas.height = Math.max(1, Number(size.y) || 1);
-      }
-
-      function toRainDropCount(rainMmPerHour) {
-        var mm = Number(rainMmPerHour);
-        if (!Number.isFinite(mm) || mm < 0) mm = 0;
-        if(mm<.1)return 0;return Math.round(45+Math.min(380,mm*38));
-      }
-
-      function seedWindParticles(){if(!rainCanvas)return;var count=Math.round(110+Math.min(230,Math.max(0,cityWindSpeedKph)*3));windParticles=[];for(var i=0;i<count;i+=1)windParticles.push({x:Math.random()*rainCanvas.width,y:Math.random()*rainCanvas.height,age:Math.random()*140,life:65+Math.random()*120,length:7+Math.random()*18,alpha:.16+Math.random()*.42,phase:Math.random()*Math.PI*2});}
-      function updateWeatherHud(){if(!weatherHud)return;weatherHud.style.display=Boolean(visibility.weatherOverlay)?'block':'none';var condition=cityThunderstormProbabilityPct>=55?'THUNDERSTORM':cityRainIntensityMmPerHour>=7.5?'HEAVY RAIN':cityRainIntensityMmPerHour>=.1?'RAIN':'WIND';weatherHud.innerHTML='<b>LIVE '+condition+'</b> &nbsp; Rain '+cityRainIntensityMmPerHour.toFixed(1)+' mm/h &nbsp; Wind '+cityWindSpeedKph.toFixed(0)+' km/h &nbsp; Thunder '+cityThunderstormProbabilityPct.toFixed(0)+'%';}
-
-      function seedRainDrops(count) {
-        if (!rainCanvas) return;
-        rainDrops = [];
-        for (var i = 0; i < count; i++) {
-          rainDrops.push({
-            x: Math.random() * rainCanvas.width,
-            y: Math.random() * rainCanvas.height,
-            len: 8 + Math.random() * 10,
-            speed: 3.8 + Math.random() * 4.4,
-            drift: -0.6 - Math.random() * 1.1,
-            alpha: 0.22 + Math.random() * 0.3,
-          });
-        }
-      }
-
-      function animateRainCanvas() {
-        if (!rainCtx || !rainCanvas || !Boolean(visibility.weatherOverlay)) {
-          rainAnimationFrame = null;
-          return;
-        }
-        rainCtx.clearRect(0, 0, rainCanvas.width, rainCanvas.height);
-        weatherFrameTick+=1;
-        var ring = data.boundaryGeoJson && data.boundaryGeoJson.features && data.boundaryGeoJson.features[0]
-          && data.boundaryGeoJson.features[0].geometry && data.boundaryGeoJson.features[0].geometry.coordinates
-          ? data.boundaryGeoJson.features[0].geometry.coordinates[0] : null;
-        if (Array.isArray(ring) && ring.length >= 4) {
-          rainCtx.save();
-          rainCtx.beginPath();
-          ring.forEach(function(coord, idx) {
-            var pt = map.latLngToContainerPoint([Number(coord[1]), Number(coord[0])]);
-            if (idx === 0) rainCtx.moveTo(pt.x, pt.y);
-            else rainCtx.lineTo(pt.x, pt.y);
-          });
-          rainCtx.closePath();
-          rainCtx.clip();
-        }
-        if(cityRainIntensityMmPerHour>=.1){var strength=Math.min(1,cityRainIntensityMmPerHour/16);for(var band=0;band<3;band+=1){var bx=((weatherFrameTick*(.08+band*.025)+band*rainCanvas.width*.38)%(rainCanvas.width*1.5))-rainCanvas.width*.25;var by=rainCanvas.height*(.25+band*.24)+Math.sin(weatherFrameTick*.004+band)*35;var radius=Math.max(90,rainCanvas.width*(.18+strength*.08));var gradient=rainCtx.createRadialGradient(bx,by,0,bx,by,radius);var core=cityRainIntensityMmPerHour>=15?'220,38,38':cityRainIntensityMmPerHour>=7.5?'234,179,8':'34,197,94';gradient.addColorStop(0,'rgba('+core+','+(.10+strength*.12)+')');gradient.addColorStop(.48,'rgba(14,165,233,'+(.08+strength*.1)+')');gradient.addColorStop(1,'rgba(14,165,233,0)');rainCtx.fillStyle=gradient;rainCtx.fillRect(bx-radius,by-radius,radius*2,radius*2);}}
-        var flowAngle=(cityWindDirectionDegrees+90)*Math.PI/180,flowSpeed=.65+Math.min(4.2,cityWindSpeedKph/18),vx=Math.cos(flowAngle)*flowSpeed,vy=Math.sin(flowAngle)*flowSpeed;for(var w=0;w<windParticles.length;w+=1){var particle=windParticles[w],curve=Math.sin(weatherFrameTick*.018+particle.phase+particle.y*.012)*.48,px=particle.x+Math.cos(flowAngle+Math.PI/2)*curve,py=particle.y+Math.sin(flowAngle+Math.PI/2)*curve;rainCtx.strokeStyle='rgba(238,248,255,'+particle.alpha+')';rainCtx.lineWidth=cityWindSpeedKph>=45?1.35:.9;rainCtx.beginPath();rainCtx.moveTo(px,py);rainCtx.quadraticCurveTo(px-vx*particle.length*.55+curve*3,py-vy*particle.length*.55,px-vx*particle.length,py-vy*particle.length);rainCtx.stroke();particle.x+=vx;particle.y+=vy;particle.age+=1;if(particle.age>particle.life||particle.x< -35||particle.x>rainCanvas.width+35||particle.y< -35||particle.y>rainCanvas.height+35){particle.x=Math.random()*rainCanvas.width;particle.y=Math.random()*rainCanvas.height;particle.age=0;}}
-        for (var i = 0; i < rainDrops.length; i++) {
-          var drop = rainDrops[i];
-          rainCtx.strokeStyle='rgba(226,240,255,'+Math.min(.82,drop.alpha+cityRainIntensityMmPerHour/45)+')';rainCtx.lineWidth=cityRainIntensityMmPerHour>=7.5?1.4:1;
-          rainCtx.beginPath();
-          rainCtx.moveTo(drop.x, drop.y);
-          rainCtx.lineTo(drop.x + drop.drift, drop.y + drop.len);
-          rainCtx.stroke();
-          drop.x+=drop.drift*.22+vx*.32;drop.y+=drop.speed+Math.max(0,vy*.18);
-          if (drop.y > rainCanvas.height + 16 || drop.x < -16) {
-            drop.x = Math.random() * rainCanvas.width;
-            drop.y = -14;
+      function interpolateRainColor(value) {
+        var amount = Math.max(0, Number(value) || 0);
+        for (var i = 1; i < rainColorStops.length; i += 1) {
+          var left = rainColorStops[i - 1];
+          var right = rainColorStops[i];
+          if (amount <= right.value) {
+            var mix = (amount - left.value) / Math.max(0.0001, right.value - left.value);
+            return left.color.map(function(channel, index) {
+              return Math.round(channel + (right.color[index] - channel) * Math.max(0, Math.min(1, mix)));
+            });
           }
         }
-        if(cityThunderstormProbabilityPct>=35&&lightningFrames<=0&&Math.random()<(cityThunderstormProbabilityPct/100)*.0022)lightningFrames=7;if(lightningFrames>0){rainCtx.fillStyle='rgba(235,244,255,'+(lightningFrames/18)+')';rainCtx.fillRect(0,0,rainCanvas.width,rainCanvas.height);if(lightningFrames>=5){var lx=rainCanvas.width*(.2+Math.random()*.6);rainCtx.strokeStyle='rgba(255,255,255,.9)';rainCtx.lineWidth=2.2;rainCtx.beginPath();rainCtx.moveTo(lx,0);for(var ly=18;ly<rainCanvas.height*.62;ly+=22){lx+=(Math.random()-.5)*26;rainCtx.lineTo(lx,ly);}rainCtx.stroke();}lightningFrames-=1;}
-        if (Array.isArray(ring) && ring.length >= 4) rainCtx.restore();
-        rainAnimationFrame = requestAnimationFrame(animateRainCanvas);
+        return rainColorStops[rainColorStops.length - 1].color.slice();
       }
 
-      function updateRainEffectVisibility() {
-        ensureRainCanvas();
-        if (!rainCanvas) return;
-        var enabled = Boolean(visibility.weatherOverlay);
-        rainCanvas.style.display = enabled ? 'block' : 'none';
-        updateWeatherHud();
-        if (!enabled) {
-          if (rainCtx) rainCtx.clearRect(0, 0, rainCanvas.width, rainCanvas.height);
-          if (rainAnimationFrame) { cancelAnimationFrame(rainAnimationFrame); rainAnimationFrame = null; }
-          return;
+      function activeForecastFrame() {
+        return weatherTimelineData && weatherTimelineData.frames ? weatherTimelineData.frames[weatherTimeframe] : null;
+      }
+
+      function rainAmountAt(lat, lon) {
+        var frame = activeForecastFrame();
+        if (!frame || !Array.isArray(frame.points) || frame.points.length === 0) return rainAmountMm;
+        var bounds = frame.bounds || {};
+        var rows = Math.max(2, Number(frame.rows) || 2);
+        var cols = Math.max(2, Number(frame.cols) || 2);
+        var latSpan = Math.max(0.000001, Number(bounds.latMax) - Number(bounds.latMin));
+        var lonSpan = Math.max(0.000001, Number(bounds.lonMax) - Number(bounds.lonMin));
+        var rowFloat = Math.max(0, Math.min(rows - 1, ((Number(bounds.latMax) - lat) / latSpan) * (rows - 1)));
+        var colFloat = Math.max(0, Math.min(cols - 1, ((lon - Number(bounds.lonMin)) / lonSpan) * (cols - 1)));
+        var row0 = Math.floor(rowFloat), row1 = Math.min(rows - 1, row0 + 1);
+        var col0 = Math.floor(colFloat), col1 = Math.min(cols - 1, col0 + 1);
+        var rowMix = rowFloat - row0, colMix = colFloat - col0;
+        function at(row, col) { return Math.max(0, Number(frame.points[row * cols + col] && frame.points[row * cols + col].rainAmountMm) || 0); }
+        var top = at(row0, col0) + (at(row0, col1) - at(row0, col0)) * colMix;
+        var bottom = at(row1, col0) + (at(row1, col1) - at(row1, col0)) * colMix;
+        return top + (bottom - top) * rowMix;
+      }
+
+      function renderRainAccumulationSurface() {
+        if (!rainCtx || !rainCanvas) return;
+        rainCtx.clearRect(0, 0, rainCanvas.width, rainCanvas.height);
+        if (!Boolean(visibility.rainOverlay)) return;
+        var scale = 4;
+        var width = Math.max(1, Math.ceil(rainCanvas.width / scale));
+        var height = Math.max(1, Math.ceil(rainCanvas.height / scale));
+        var fieldCanvas = document.createElement('canvas');
+        fieldCanvas.width = width; fieldCanvas.height = height;
+        var fieldCtx = fieldCanvas.getContext('2d');
+        if (!fieldCtx) return;
+        var pixels = fieldCtx.createImageData(width, height);
+        for (var y = 0; y < height; y += 1) {
+          for (var x = 0; x < width; x += 1) {
+            var latlng = map.containerPointToLatLng([x * scale, y * scale]);
+            var color = interpolateRainColor(rainAmountAt(latlng.lat, latlng.lng));
+            var offset = (y * width + x) * 4;
+            pixels.data[offset] = color[0]; pixels.data[offset + 1] = color[1]; pixels.data[offset + 2] = color[2]; pixels.data[offset + 3] = color[3];
+          }
         }
-        if (!rainAnimationFrame) animateRainCanvas();
+        fieldCtx.putImageData(pixels, 0, 0);
+        rainCtx.imageSmoothingEnabled = true;
+        rainCtx.filter = 'blur(3px) saturate(1.12)';
+        rainCtx.drawImage(fieldCanvas, 0, 0, rainCanvas.width, rainCanvas.height);
+        rainCtx.filter = 'none';
       }
 
-      function setRainIntensityFromMmPerHour(rainMmPerHour) {
-        ensureRainCanvas();
-        if (!rainCanvas) return;
-        var nextCount = toRainDropCount(rainMmPerHour);
-        if (nextCount !== rainDropCount || rainDrops.length === 0) {
-          rainDropCount = nextCount;
-          seedRainDrops(rainDropCount);
+      function ensureWindCanvas() {
+        if (windCanvas) return;
+        var pane = map.getPanes && map.getPanes().overlayPane;
+        if (!pane) return;
+        windCanvas = document.createElement('canvas');
+        windCanvas.className = 'map-wind-canvas';
+        pane.appendChild(windCanvas);
+        windCtx = windCanvas.getContext('2d');
+        refreshWindCanvasSize();
+      }
+
+      function refreshWindCanvasSize() {
+        if (!windCanvas) return;
+        var size = map.getSize();
+        windCanvas.width = Math.max(1, Number(size.x) || 1);
+        windCanvas.height = Math.max(1, Number(size.y) || 1);
+        L.DomUtil.setPosition(windCanvas, map.containerPointToLayerPoint([0, 0]));
+        renderWindBackground();
+        seedWindParticles();
+      }
+
+      function seedWindParticles() {
+        if (!windCanvas) return;
+        var count = Math.round(110 + Math.min(230, Math.max(0, cityWindSpeedKph) * 3));
+        windParticles = [];
+        for (var i = 0; i < count; i += 1) {
+          windParticles.push({ x: Math.random() * windCanvas.width, y: Math.random() * windCanvas.height, age: Math.random() * 140, life: 65 + Math.random() * 120, length: 7 + Math.random() * 18, alpha: .16 + Math.random() * .42, phase: Math.random() * Math.PI * 2 });
         }
-        seedWindParticles();updateWeatherHud();
-        updateRainEffectVisibility();
       }
 
-      function resolveRainFillColor(level) {
-        var key = String(level || '').trim().toLowerCase();
-        if (key === 'severe') return '#dc2626';   // Red   — >15 mm/hr
-        if (key === 'heavy')  return '#eab308';   // Yellow — 7.5–15 mm/hr
-        if (key === 'moderate') return '#16a34a'; // Green  — 2.5–7.5 mm/hr
-        return '#7dd3fc';                          // Light Blue — 0–2.5 mm/hr
+      function updateForecastTimebar(){
+        if(!forecastTimebar)return;
+        forecastTimebar.style.display=(Boolean(visibility.windOverlay)||Boolean(visibility.rainOverlay))?'block':'none';
+        var frame=activeForecastFrame();
+        var range=forecastTimebar.querySelector('.forecast-time-range');
+        if(range)range.value=String(Number(String(weatherTimeframe).slice(5))||0);
+        forecastTimebar.querySelectorAll('.forecast-time-label').forEach(function(label){var dayOffset=Number(label.dataset.dayOffset||0);var dayFrame=weatherTimelineData&&weatherTimelineData.frames?weatherTimelineData.frames['hour_'+(dayOffset*24)]:null;label.innerHTML=dayFrame?String(dayFrame.label)+'<span class="forecast-time-date">'+String(dayFrame.dateLabel)+'</span>':'Day '+(dayOffset+1);});
+        var summary=forecastTimebar.querySelector('.forecast-time-summary');
+        if(summary)summary.textContent=frame?String(frame.label)+' '+String(frame.dateLabel||'')+' '+String(frame.hourLabel||'')+' - Wind '+Number(frame.averageSpeedKph||0).toFixed(0)+' km/h':'Loading Open-Meteo wind...';
+      }
+      function applyWeatherTimeframe(key){var frame=weatherTimelineData&&weatherTimelineData.frames?weatherTimelineData.frames[key]:null;if(!frame)return;weatherTimeframe=key;var point=frame.points&&frame.points[0];if(point){rainAmountMm=Number(point.rainAmountMm)||0;cityWindSpeedKph=Number(point.speedKph)||0;cityWindDirectionDegrees=Number(point.directionDegrees)||225;seedWindParticles();}updateForecastTimebar();updateRainEffectVisibility();updateWindEffectVisibility();}
+      function ensureForecastTimebar(){
+        if(forecastTimebar)return;
+        forecastTimebar=document.createElement('div');forecastTimebar.className='forecast-timebar';
+        var track=document.createElement('div');track.className='forecast-time-track';
+        var labels=document.createElement('div');labels.className='forecast-time-labels';
+        for(var dayOffset=0;dayOffset<7;dayOffset+=1){var label=document.createElement('div');label.className='forecast-time-label';label.dataset.dayOffset=String(dayOffset);labels.appendChild(label);}
+        var range=document.createElement('input');range.type='range';range.className='forecast-time-range';range.min='0';range.max='167';range.step='1';range.value='0';range.addEventListener('input',function(event){event.stopPropagation();applyWeatherTimeframe('hour_'+event.target.value);});
+        track.appendChild(labels);track.appendChild(range);forecastTimebar.appendChild(track);var summary=document.createElement('div');summary.className='forecast-time-summary';forecastTimebar.appendChild(summary);map.getContainer().appendChild(forecastTimebar);updateForecastTimebar();
+      }
+      function loadWeatherTimeline(){
+        if(!data.windDataUrl)return;
+        fetch(data.windDataUrl).then(function(response){return response.ok?response.json():null;}).then(function(weather){if(!weather||!weather.frames)return;weatherTimelineData=weather;ensureForecastTimebar();applyWeatherTimeframe('hour_0');}).catch(function(){});
       }
 
-      function renderWeatherFillLayer(geojsonData) {
-        weatherFillLayer.clearLayers();
-        if (!geojsonData || !Boolean(visibility.weatherOverlay)) return;
-        L.geoJSON(geojsonData, {
-          style: function(feature) {
-            var props = (feature && feature.properties) ? feature.properties : {};
-            var key = String(props.barangay_name || props.barangayName || '').toLowerCase().replace(/\\s+/g,'');
-            var impact = weatherImpactByBarangay[key] || null;
-            var level = impact ? String(impact.rainLevel || 'light') : 'light';
-            return { color: '#0f172a', weight: 0.8, opacity: 0.45, fill: true, fillColor: resolveRainFillColor(level), fillOpacity: 0.36 };
-          },
-          interactive: false,
-        }).addTo(weatherFillLayer);
+      function ensureRainCanvas(){
+        if(rainCanvas)return;
+        var pane=map.getPanes&&map.getPanes().overlayPane;
+        if(!pane)return;
+        rainCanvas=document.createElement('canvas');rainCanvas.className='map-rain-canvas';pane.appendChild(rainCanvas);rainCtx=rainCanvas.getContext('2d');refreshRainCanvasSize();
+      }
+      function refreshRainCanvasSize(){if(!rainCanvas)return;var size=map.getSize();rainCanvas.width=Math.max(1,Number(size.x)||1);rainCanvas.height=Math.max(1,Number(size.y)||1);L.DomUtil.setPosition(rainCanvas,map.containerPointToLayerPoint([0,0]));renderRainAccumulationSurface();}
+      function updateRainEffectVisibility(){ensureRainCanvas();if(!rainCanvas)return;var enabled=Boolean(visibility.rainOverlay);rainCanvas.style.display=enabled?'block':'none';if(!enabled){if(rainCtx)rainCtx.clearRect(0,0,rainCanvas.width,rainCanvas.height);return;}renderRainAccumulationSurface();}
+      function loadRainImpact(){
+        if(!data.rainImpactUrl)return;
+        fetch(data.rainImpactUrl).then(function(response){return response.ok?response.json():null;}).then(function(payload){var weather=payload&&payload.cityWeather?payload.cityWeather:{};var amount=Number(weather.rainIntensityMmPerHour);if(Number.isFinite(amount)&&!weatherTimelineData){rainAmountMm=amount;updateRainEffectVisibility();}}).catch(function(){});
+      }
+      function loadIncidentMarkers(){
+        if(!data.incidentUrl)return;
+        fetch(data.incidentUrl).then(function(response){return response.ok?response.json():[];}).then(function(rows){incidentLayer.clearLayers();(Array.isArray(rows)?rows:[]).forEach(function(item){var latitude=Number(item.latitude),longitude=Number(item.longitude);if(!Number.isFinite(latitude)||!Number.isFinite(longitude))return;L.circleMarker([latitude,longitude],{radius:6,color:'#e11d48',fillColor:'#e11d48',fillOpacity:.9,weight:2}).bindPopup('<strong>'+String(item.report_code||'Incident')+'</strong><br>'+String(item.report_type||'incident')+'<br>Status: '+String(item.status||'pending')).addTo(incidentLayer);});applyLayerVisibility();}).catch(function(){});
       }
 
-      function loadWeatherOverlayData() {
-        if (!Boolean(visibility.weatherOverlay)) return;
-        var apiBase = data.apiBaseUrl || 'http://localhost:4000/api';
-        fetch(apiBase + '/flood-risk/calamba/rain-impact')
-          .then(function(r) { return r.ok ? r.json() : null; })
-          .then(function(d) {
-            if (!d) return;
-            var impacts = Array.isArray(d.barangayImpacts) ? d.barangayImpacts : [];
-            var nextLookup = {};
-            impacts.forEach(function(item) {
-              var key = String(item.barangayName || '').toLowerCase().replace(/\\s+/g,'');
-              if (!key) return;
-              nextLookup[key] = {
-                rainLevel: item.rainLevel,
-                rainIntensityMmPerHour: Number(item.rainIntensityMmPerHour) || 0,
-                temperatureCelsius: item.temperatureCelsius,
-              };
-            });
-            weatherImpactByBarangay = nextLookup;
-            var cityRain = Number(d.cityWeather && d.cityWeather.rainIntensityMmPerHour) || 0;
-            var cityWeather=d.cityWeather||{};cityWindSpeedKph=Number(cityWeather.windSpeedKph);if(!Number.isFinite(cityWindSpeedKph))cityWindSpeedKph=8;cityWindDirectionDegrees=Number(cityWeather.windDirectionDegrees);if(!Number.isFinite(cityWindDirectionDegrees))cityWindDirectionDegrees=225;cityThunderstormProbabilityPct=Number(cityWeather.thunderstormProbabilityPct);if(!Number.isFinite(cityThunderstormProbabilityPct))cityThunderstormProbabilityPct=0;
-            cityRainIntensityMmPerHour = cityRain;
-            setRainIntensityFromMmPerHour(cityRain);
-            if (d.barangayOverlay && Array.isArray(d.barangayOverlay.features)) {
-              renderWeatherFillLayer({ type: 'FeatureCollection', features: d.barangayOverlay.features });
-            }
-          })
-          .catch(function() { setRainIntensityFromMmPerHour(0); });
+      var windColorStops = [
+        { value: 0, color: [82, 111, 208, 218] }, { value: 5, color: [45, 174, 224, 224] },
+        { value: 10, color: [41, 210, 135, 228] }, { value: 20, color: [155, 209, 79, 232] },
+        { value: 30, color: [239, 164, 71, 236] }, { value: 40, color: [211, 72, 145, 240] },
+        { value: 60, color: [139, 73, 181, 242] },
+      ];
+
+      function interpolateWindColor(value) {
+        var speed = Math.max(0, Number(value) || 0);
+        for (var i = 1; i < windColorStops.length; i += 1) {
+          var left = windColorStops[i - 1], right = windColorStops[i];
+          if (speed <= right.value) {
+            var mix = (speed - left.value) / Math.max(0.0001, right.value - left.value);
+            return left.color.map(function(channel, index) { return Math.round(channel + (right.color[index] - channel) * Math.max(0, Math.min(1, mix))); });
+          }
+        }
+        return windColorStops[windColorStops.length - 1].color.slice();
       }
 
-      map.on('resize', refreshRainCanvasSize);
-      map.on('move', refreshRainCanvasSize);
+      function windVectorAt(lat, lon) {
+        var frame = activeForecastFrame();
+        if (!frame || !Array.isArray(frame.points) || frame.points.length === 0) return null;
+        var bounds = frame.bounds || {}, rows = Math.max(2, Number(frame.rows) || 2), cols = Math.max(2, Number(frame.cols) || 2);
+        var latSpan = Math.max(0.000001, Number(bounds.latMax) - Number(bounds.latMin));
+        var lonSpan = Math.max(0.000001, Number(bounds.lonMax) - Number(bounds.lonMin));
+        var rowFloat = Math.max(0, Math.min(rows - 1, ((Number(bounds.latMax) - lat) / latSpan) * (rows - 1)));
+        var colFloat = Math.max(0, Math.min(cols - 1, ((lon - Number(bounds.lonMin)) / lonSpan) * (cols - 1)));
+        var row0 = Math.floor(rowFloat), row1 = Math.min(rows - 1, row0 + 1), col0 = Math.floor(colFloat), col1 = Math.min(cols - 1, Math.floor(colFloat) + 1);
+        var rowMix = rowFloat - row0, colMix = colFloat - col0;
+        function at(row, col) { return frame.points[row * cols + col] || { u: 0, v: 0 }; }
+        var topLeft = at(row0, col0), topRight = at(row0, col1), bottomLeft = at(row1, col0), bottomRight = at(row1, col1);
+        var topU = Number(topLeft.u) + (Number(topRight.u) - Number(topLeft.u)) * colMix;
+        var topV = Number(topLeft.v) + (Number(topRight.v) - Number(topLeft.v)) * colMix;
+        var bottomU = Number(bottomLeft.u) + (Number(bottomRight.u) - Number(bottomLeft.u)) * colMix;
+        var bottomV = Number(bottomLeft.v) + (Number(bottomRight.v) - Number(bottomLeft.v)) * colMix;
+        var u = topU + (bottomU - topU) * rowMix, v = topV + (bottomV - topV) * rowMix;
+        return { u: u, v: v, speedKph: Math.sqrt(u * u + v * v) * 3.6 };
+      }
+
+      function clipCanvasToCalamba(context) {
+        var ring = data.boundaryGeoJson && data.boundaryGeoJson.features && data.boundaryGeoJson.features[0] && data.boundaryGeoJson.features[0].geometry && data.boundaryGeoJson.features[0].geometry.coordinates ? data.boundaryGeoJson.features[0].geometry.coordinates[0] : null;
+        if (!Array.isArray(ring) || ring.length < 4) return false;
+        context.beginPath();
+        ring.forEach(function(coord, index) { var point = map.latLngToContainerPoint([Number(coord[1]), Number(coord[0])]); if (index === 0) context.moveTo(point.x, point.y); else context.lineTo(point.x, point.y); });
+        context.closePath(); context.clip(); return true;
+      }
+
+      function renderWindBackground() {
+        if (!windCanvas || !windCtx || !activeForecastFrame()) return;
+        var scale = 4, width = Math.max(1, Math.ceil(windCanvas.width / scale)), height = Math.max(1, Math.ceil(windCanvas.height / scale));
+        windBackgroundCanvas = document.createElement('canvas'); windBackgroundCanvas.width = windCanvas.width; windBackgroundCanvas.height = windCanvas.height;
+        var lowCanvas = document.createElement('canvas'); lowCanvas.width = width; lowCanvas.height = height;
+        var lowCtx = lowCanvas.getContext('2d'), backgroundCtx = windBackgroundCanvas.getContext('2d'); if (!lowCtx || !backgroundCtx) return;
+        var pixels = lowCtx.createImageData(width, height);
+        for (var y = 0; y < height; y += 1) for (var x = 0; x < width; x += 1) {
+          var latlng = map.containerPointToLatLng([x * scale, y * scale]), vector = windVectorAt(latlng.lat, latlng.lng) || { speedKph: 0 }, color = interpolateWindColor(vector.speedKph), offset = (y * width + x) * 4;
+          pixels.data[offset] = color[0]; pixels.data[offset + 1] = color[1]; pixels.data[offset + 2] = color[2]; pixels.data[offset + 3] = color[3];
+        }
+        lowCtx.putImageData(pixels, 0, 0); backgroundCtx.save(); clipCanvasToCalamba(backgroundCtx); backgroundCtx.imageSmoothingEnabled = true; backgroundCtx.drawImage(lowCanvas, 0, 0, windCanvas.width, windCanvas.height); backgroundCtx.restore();
+      }
+
+      function animateWindCanvas() {
+        if (!windCtx || !windCanvas || !Boolean(visibility.windOverlay) || !activeForecastFrame()) { windAnimationFrame = null; return; }
+        windCtx.clearRect(0, 0, windCanvas.width, windCanvas.height);
+        if (windBackgroundCanvas) windCtx.drawImage(windBackgroundCanvas, 0, 0);
+        windCtx.save();
+        clipCanvasToCalamba(windCtx);
+        weatherFrameTick += 1;
+        for (var w=0; w<windParticles.length; w+=1) {
+          var particle=windParticles[w], latlng=map.containerPointToLatLng([particle.x,particle.y]), vector=windVectorAt(latlng.lat,latlng.lng);
+          if (!vector || !isWithinCalambaBoundary(latlng) || particle.age >= particle.life) { particle.x=Math.random()*windCanvas.width; particle.y=Math.random()*windCanvas.height; particle.age=0; continue; }
+          var motionScale=.42+Math.min(1.5,vector.speedKph/28), vx=vector.u*motionScale, vy=-vector.v*motionScale, tailScale=6+Math.min(9,vector.speedKph/2.8), ageFade=Math.min(1,particle.age/8)*Math.min(1,(particle.life-particle.age)/12);
+          windCtx.strokeStyle='rgba(255,255,255,'+(.52+ageFade*.42)+')'; windCtx.lineWidth=vector.speedKph>=35?1.7:1.25; windCtx.beginPath(); windCtx.moveTo(particle.x-vx*tailScale,particle.y-vy*tailScale); windCtx.lineTo(particle.x,particle.y); windCtx.stroke(); particle.x+=vx; particle.y+=vy; particle.age+=1;
+        }
+        windCtx.restore();
+        windAnimationFrame = requestAnimationFrame(animateWindCanvas);
+      }
+
+      function updateWindEffectVisibility() {
+        ensureWindCanvas();
+        if (!windCanvas) return;
+        var enabled=Boolean(visibility.windOverlay);
+        windCanvas.style.display=enabled?'block':'none';
+        if (!enabled) { if (windCtx) windCtx.clearRect(0,0,windCanvas.width,windCanvas.height); if (windAnimationFrame) { cancelAnimationFrame(windAnimationFrame); windAnimationFrame=null; } return; }
+        renderWindBackground();
+        seedWindParticles();
+        if (!windAnimationFrame) animateWindCanvas();
+      }
+
+      function refreshWeatherCanvases() {
+        refreshWindCanvasSize();
+        refreshRainCanvasSize();
+      }
+      map.on('resize', refreshWeatherCanvases);
+      map.on('moveend zoomend', refreshWeatherCanvases);
       var shorelinePolyline = [
         [14.254, 121.217],
         [14.239, 121.218],
@@ -1162,8 +977,7 @@ function buildLeafletHtml(
           renderFloodHazardLayer(barangayGeoJsonData);
           return;
         }
-        var apiBase = data.apiBaseUrl || 'http://localhost:4000/api';
-        fetch(apiBase + '/flood-risk/calamba/barangays')
+        fetch(data.floodHazardUrl)
           .then(function(r) { return r.ok ? r.json() : null; })
           .then(function(d) {
             if (d) {
@@ -1217,14 +1031,71 @@ function buildLeafletHtml(
         setLayerVisible(areaLayer, Boolean(visibility.evacuationAreas));
         setLayerVisible(userLayer, Boolean(visibility.userMarker));
         setLayerVisible(routeLayer, Boolean(visibility.route));
-        setLayerVisible(floodHazardLayer, Boolean(visibility.raster));
-        setLayerVisible(weatherFillLayer, Boolean(visibility.weatherOverlay));
+        setLayerVisible(floodHazardLayer, Boolean(visibility.floodHazard));
+        setLayerVisible(incidentLayer, Boolean(visibility.incidentMarkers));
         updateRainEffectVisibility();
+        updateWindEffectVisibility();
         applyIronMapTint();
         renderLegendControl();
-        if (Boolean(visibility.weatherOverlay)) {
-          loadWeatherOverlayData();
-        }
+      }
+
+      function renderLayerControl() {
+        var control = L.control({ position: 'topright' });
+        control.onAdd = function() {
+          var wrap = L.DomUtil.create('div', 'layer-control');
+          var button = L.DomUtil.create('button', 'layer-control-button', wrap);
+          button.type = 'button';
+          button.textContent = 'Map Layers';
+          var panel = L.DomUtil.create('div', 'layer-control-panel', wrap);
+          var title = L.DomUtil.create('div', 'layer-control-title', panel);
+          title.textContent = 'Map Layers';
+          var rows = [
+            ['boundary', 'Calamba Boundary'],
+            ['evacuationAreas', 'Evacuation Areas'],
+            ['userMarker', 'Your Location'],
+            ['route', 'Responder Route'],
+            ['floodHazard', 'Flood Hazard'],
+            ['incidentMarkers', 'Incidents'],
+            ['rainOverlay', 'Rain Accumulation'],
+            ['windOverlay', 'Wind Layer'],
+          ];
+          rows.forEach(function(row) {
+            var line = L.DomUtil.create('label', 'layer-control-row', panel);
+            line.textContent = row[1];
+            var checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = Boolean(visibility[row[0]]);
+            checkbox.addEventListener('change', function() {
+              visibility[row[0]] = checkbox.checked;
+              if (row[0] === 'rainOverlay' && checkbox.checked) {
+                visibility.floodHazard = false;
+              }
+              if (row[0] === 'floodHazard' && checkbox.checked) {
+                visibility.rainOverlay = false;
+              }
+              panel.querySelectorAll('input').forEach(function(input, index) {
+                input.checked = Boolean(visibility[rows[index][0]]);
+              });
+              applyLayerVisibility();
+              updateForecastTimebar();
+              var message = JSON.stringify({ type: 'layer-visibility', visibility: visibility });
+              if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(message);
+              } else if (window.parent !== window) {
+                window.parent.postMessage(message, '*');
+              }
+            });
+            line.appendChild(checkbox);
+          });
+          button.addEventListener('click', function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            panel.classList.toggle('open');
+          });
+          L.DomEvent.disableClickPropagation(wrap);
+          return wrap;
+        };
+        control.addTo(map);
       }
 
       var userMarker = L.circleMarker([data.userLocation.latitude, data.userLocation.longitude], {
@@ -1265,10 +1136,12 @@ function buildLeafletHtml(
           );
 
           marker.on('click', function() {
-            window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'select-area',
-              areaId: area.id
-            }));
+            var message = JSON.stringify({ type: 'select-area', areaId: area.id });
+            if (window.ReactNativeWebView) {
+              window.ReactNativeWebView.postMessage(message);
+            } else if (window.parent !== window) {
+              window.parent.postMessage(message, '*');
+            }
           });
           fitBounds.extend([area.latitude, area.longitude]);
         });
@@ -1301,16 +1174,23 @@ function buildLeafletHtml(
 
       loadBarangayFloodLayer();
       loadOsmWaterways();
+      loadWeatherTimeline();
+      loadRainImpact();
+      loadIncidentMarkers();
       renderBoundary();
-      weatherFillLayer.addTo(map);
+      renderLayerControl();
       applyLayerVisibility();
       map.on('click', function(event) {
-        if (!visibility.raster) {
+        if (!visibility.floodHazard) {
           return;
         }
         identifyFloodAt(event.latlng);
       });
       userMarker.openPopup();
+      window.setTimeout(function() {
+        map.invalidateSize();
+        refreshWeatherCanvases();
+      }, 150);
     </script>
   </body>
 </html>
@@ -1318,6 +1198,7 @@ function buildLeafletHtml(
 }
 
 export default function RescueMapScreen() {
+  const { showNotice, noticeModal } = useNoticeModal();
   const navigation = useNavigation<any>();
   const [userLocation, setUserLocation] = useState<Coordinate | null>(null);
   const [requestStarted, setRequestStarted] = useState(false);
@@ -1327,30 +1208,33 @@ export default function RescueMapScreen() {
   const [routeCoordinates, setRouteCoordinates] = useState<Coordinate[]>([]);
   const [routeDistanceKm, setRouteDistanceKm] = useState<number | null>(null);
   const [routeEtaText, setRouteEtaText] = useState<string | null>(null);
-  const [routeSource, setRouteSource] = useState<'osrm' | 'dijkstra' | null>(null);
+  const [routeSource, setRouteSource] = useState<'osrm' | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [routingRecommendation, setRoutingRecommendation] = useState(false);
   const [rescueNotes, setRescueNotes] = useState('');
   const [loading, setLoading] = useState(true);
-  const [evacuationAreas, setEvacuationAreas] = useState<EvacuationArea[]>(fallbackEvacuationAreas);
+  const [evacuationAreas, setEvacuationAreas] = useState<EvacuationArea[]>([]);
   const [recentRescueRecords, setRecentRescueRecords] = useState<RescueRecord[]>([]);
   const [layerVisibility, setLayerVisibility] = useState<UserMapLayerVisibility>({
     boundary: true,
     evacuationAreas: true,
     userMarker: true,
     route: true,
-    raster: false,
-    weatherOverlay: true,
+    floodHazard: false,
+    incidentMarkers: true,
+    rainOverlay: true,
+    windOverlay: true,
   });
-  const [showLayerPanel, setShowLayerPanel] = useState(false);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const recordSyncInFlightRef = useRef(false);
+  const appliedRoadPlanAreaIdRef = useRef<EvacuationArea['id'] | null>(null);
 
   const loadEvacuationAreas = useCallback(async () => {
     try {
       const areasResult = await api.get('/content/evacuation-areas').then((res) => res.data);
       if (!Array.isArray(areasResult) || areasResult.length === 0) {
-        setEvacuationAreas(fallbackEvacuationAreas);
-        return fallbackEvacuationAreas;
+        setEvacuationAreas([]);
+        return [];
       }
 
       const normalized: EvacuationArea[] = areasResult
@@ -1383,11 +1267,11 @@ export default function RescueMapScreen() {
         return normalized;
       }
 
-      setEvacuationAreas(fallbackEvacuationAreas);
-      return fallbackEvacuationAreas;
+      setEvacuationAreas([]);
+      return [];
     } catch {
-      setEvacuationAreas(fallbackEvacuationAreas);
-      return fallbackEvacuationAreas;
+      setEvacuationAreas([]);
+      return [];
     }
   }, []);
 
@@ -1397,16 +1281,37 @@ export default function RescueMapScreen() {
     }
 
     setRequestStarted(true);
+    setSelectedAreaId(null);
+    setRouteCoordinates([]);
+    setRouteDistanceKm(null);
+    setRouteEtaText(null);
+    setRouteSource(null);
     const latestAreas = await loadEvacuationAreas();
-    const nearestAvailable = findNearestAvailableArea(userLocation, latestAreas);
-    if (nearestAvailable) {
-      setSelectedAreaId(nearestAvailable.id);
+    if (!latestAreas.some((area) => !isAreaFull(area))) {
+      showNotice('No available evacuation area', 'All evacuation areas are currently full. Please try again shortly.');
       return;
     }
 
-    setSelectedAreaId(null);
-    Alert.alert('No available evacuation area', 'All evacuation areas are currently full. Please try again shortly.');
-  }, [loadEvacuationAreas, userLocation]);
+    setRoutingRecommendation(true);
+    try {
+      const plan = await resolveBestRoadPlan(userLocation, latestAreas);
+      if (!plan) {
+        showNotice(
+          'No reachable evacuation area',
+          'No available evacuation center could be reached through the current road network. Please try again shortly.',
+        );
+        return;
+      }
+      applyRoadPlan(plan);
+    } catch {
+      showNotice(
+        'Road routing unavailable',
+        'Unable to verify a safe road route to an evacuation center. Please check your connection and try again.',
+      );
+    } finally {
+      setRoutingRecommendation(false);
+    }
+  }, [loadEvacuationAreas, showNotice, userLocation]);
 
   const loadRecentRescueRecords = useCallback(async () => {
     if (recordSyncInFlightRef.current) {
@@ -1492,102 +1397,14 @@ export default function RescueMapScreen() {
     [evacuationAreas, selectedAreaId],
   );
 
-  function buildFallbackPlan(targetArea?: EvacuationArea) {
-    if (!userLocation) {
-      return null;
-    }
-
-    const { nodes, adj } = buildGraph(userLocation, evacuationAreas);
-
-    if (targetArea) {
-      const result = dijkstra(adj, targetArea.id, 'U');
-      if (!Number.isFinite(result.distanceKm)) {
-        return null;
-      }
-
-      const route = result.path
-        .map((id) => nodes.get(id))
-        .filter((node): node is { id: string; latitude: number; longitude: number } => Boolean(node))
-        .map((node) => ({ latitude: node.latitude, longitude: node.longitude }))
-        .reverse();
-
-      const etaMinutes = Math.max(3, Math.round((result.distanceKm / 24) * 60));
-      return {
-        area: targetArea,
-        distanceKm: result.distanceKm,
-        etaText: formatEtaText(etaMinutes),
-        routeCoordinates: route,
-        source: 'dijkstra' as const,
-      };
-    }
-
-    let best: RescueCandidate | null = null;
-    for (const area of evacuationAreas.filter((item) => !isAreaFull(item))) {
-      const result = dijkstra(adj, area.id, 'U');
-      if (!Number.isFinite(result.distanceKm)) {
-        continue;
-      }
-      if (!best || result.distanceKm < best.distanceKm) {
-        best = { area, distanceKm: result.distanceKm, path: result.path };
-      }
-    }
-
-    if (!best) {
-      return null;
-    }
-
-    const route = best.path
-      .map((id) => nodes.get(id))
-      .filter((node): node is { id: string; latitude: number; longitude: number } => Boolean(node))
-      .map((node) => ({ latitude: node.latitude, longitude: node.longitude }))
-      .reverse();
-    const etaMinutes = Math.max(3, Math.round((best.distanceKm / 24) * 60));
-    return {
-      area: best.area,
-      distanceKm: best.distanceKm,
-      etaText: formatEtaText(etaMinutes),
-      routeCoordinates: route,
-      source: 'dijkstra' as const,
-    };
+  function applyRoadPlan(plan: RescuePlan) {
+    appliedRoadPlanAreaIdRef.current = plan.area.id;
+    setSelectedAreaId(plan.area.id);
+    setRouteCoordinates(plan.routeCoordinates);
+    setRouteDistanceKm(plan.distanceKm);
+    setRouteEtaText(plan.etaText);
+    setRouteSource(plan.source);
   }
-
-  useEffect(() => {
-    if (!requestStarted || !userLocation || selectedAreaId) {
-      return;
-    }
-
-    let active = true;
-    resolveFastestRoadPlan(userLocation, evacuationAreas)
-      .then((plan) => {
-        if (!active) {
-          return;
-        }
-
-        if (plan) {
-          setSelectedAreaId(plan.area.id);
-          return;
-        }
-
-        const fallback = buildFallbackPlan();
-        if (fallback) {
-          setSelectedAreaId(fallback.area.id);
-        }
-      })
-      .catch(() => {
-        if (!active) {
-          return;
-        }
-
-        const fallback = buildFallbackPlan();
-        if (fallback) {
-          setSelectedAreaId(fallback.area.id);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [evacuationAreas, requestStarted, selectedAreaId, userLocation]);
 
   useEffect(() => {
     if (!requestStarted || !userLocation || !selectedArea) {
@@ -1598,7 +1415,13 @@ export default function RescueMapScreen() {
       return;
     }
 
+    if (appliedRoadPlanAreaIdRef.current === selectedArea.id) {
+      appliedRoadPlanAreaIdRef.current = null;
+      return;
+    }
+
     let active = true;
+    setRoutingRecommendation(true);
 
     fetchRoadRoute(userLocation, {
       latitude: selectedArea.latitude,
@@ -1618,27 +1441,28 @@ export default function RescueMapScreen() {
         if (!active) {
           return;
         }
-
-        const fallback = buildFallbackPlan(selectedArea);
-        if (fallback) {
-          setRouteCoordinates(fallback.routeCoordinates);
-          setRouteDistanceKm(fallback.distanceKm);
-          setRouteEtaText(fallback.etaText);
-          setRouteSource('dijkstra');
-        } else {
-          setRouteCoordinates([]);
-          setRouteDistanceKm(null);
-          setRouteEtaText(null);
-          setRouteSource(null);
+        setSelectedAreaId(null);
+        setRouteCoordinates([]);
+        setRouteDistanceKm(null);
+        setRouteEtaText(null);
+        setRouteSource(null);
+        showNotice(
+          'Evacuation center unreachable',
+          `${selectedArea.name} does not have a practical driving route from your current location. Please choose another center.`,
+        );
+      })
+      .finally(() => {
+        if (active) {
+          setRoutingRecommendation(false);
         }
       });
 
     return () => {
       active = false;
     };
-  }, [evacuationAreas, requestStarted, selectedArea, userLocation]);
+  }, [requestStarted, selectedArea?.id, selectedArea?.latitude, selectedArea?.longitude, showNotice, userLocation]);
 
-  const apiBaseUrl = useMemo(() => String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, ''), []);
+  const apiBaseUrl = String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '');
 
   const mapHtml = useMemo(() => {
     if (!userLocation) {
@@ -1656,19 +1480,10 @@ export default function RescueMapScreen() {
     );
   }, [evacuationAreas, layerVisibility, apiBaseUrl, requestStarted, routeCoordinates, selectedAreaId, userLocation]);
 
-  const layerRows: Array<{ key: keyof UserMapLayerVisibility; label: string }> = [
-    { key: 'boundary', label: 'Calamba Municipal Boundary' },
-    { key: 'evacuationAreas', label: 'Evacuation Area' },
-    { key: 'userMarker', label: 'Incident / User Marker' },
-    { key: 'route', label: 'Responder Route' },
-    { key: 'raster', label: 'Flood Hazard Layer' },
-    { key: 'weatherOverlay', label: 'Live Weather Overlay' },
-  ];
-
   async function handleUploadProof() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission needed', 'Please allow photo access to upload proof.');
+      showNotice('Permission needed', 'Please allow photo access to upload proof.');
       return;
     }
 
@@ -1691,9 +1506,17 @@ export default function RescueMapScreen() {
     }
   }
 
-  function handleMapMessage(data: string) {
+  async function handleMapMessage(data: string) {
     try {
-      const payload = JSON.parse(data) as { type?: string; areaId?: string };
+      const payload = JSON.parse(data) as {
+        type?: string;
+        areaId?: string;
+        visibility?: Partial<UserMapLayerVisibility>;
+      };
+      if (payload.type === 'layer-visibility' && payload.visibility) {
+        setLayerVisibility((current) => ({ ...current, ...payload.visibility }));
+        return;
+      }
       if (payload.type === 'select-area' && payload.areaId) {
         const chosen = evacuationAreas.find((area) => area.id === payload.areaId);
         if (!chosen) {
@@ -1701,13 +1524,27 @@ export default function RescueMapScreen() {
         }
 
         if (isAreaFull(chosen)) {
-          const nearestAvailable = userLocation ? findNearestAvailableArea(userLocation, evacuationAreas) : null;
-          if (nearestAvailable) {
-            setSelectedAreaId(nearestAvailable.id);
-            Alert.alert('Area at full capacity', `The selected area is full. You were redirected to ${nearestAvailable.name}.`);
-          } else {
+          if (!userLocation) {
+            return;
+          }
+          setRoutingRecommendation(true);
+          try {
+            const plan = await resolveBestRoadPlan(userLocation, evacuationAreas);
+            if (plan) {
+              applyRoadPlan(plan);
+              showNotice(
+                'Area at full capacity',
+                `${chosen.name} is full. The shortest reachable road route is to ${plan.area.name}.`,
+              );
+            } else {
+              setSelectedAreaId(null);
+              showNotice('No reachable evacuation area', 'No available evacuation center is reachable through the current road network.');
+            }
+          } catch {
             setSelectedAreaId(null);
-            Alert.alert('No available evacuation area', 'All evacuation areas are currently full. Please try again shortly.');
+            showNotice('Road routing unavailable', 'Unable to verify another reachable evacuation center right now.');
+          } finally {
+            setRoutingRecommendation(false);
           }
           return;
         }
@@ -1728,13 +1565,24 @@ export default function RescueMapScreen() {
     const refreshedSelected = latestAreas.find((area) => area.id === selectedArea.id) || selectedArea;
 
     if (isAreaFull(refreshedSelected)) {
-      const nearestAvailable = findNearestAvailableArea(userLocation, latestAreas);
-      if (nearestAvailable) {
-        setSelectedAreaId(nearestAvailable.id);
-        Alert.alert('Area at full capacity', `The selected area is full. You were redirected to ${nearestAvailable.name}.`);
-      } else {
+      setRoutingRecommendation(true);
+      try {
+        const plan = await resolveBestRoadPlan(userLocation, latestAreas);
+        if (plan) {
+          applyRoadPlan(plan);
+          showNotice(
+            'Area at full capacity',
+            `${refreshedSelected.name} is full. The shortest reachable road route is to ${plan.area.name}.`,
+          );
+        } else {
+          setSelectedAreaId(null);
+          showNotice('No reachable evacuation area', 'No available evacuation center is reachable through the current road network.');
+        }
+      } catch {
         setSelectedAreaId(null);
-        Alert.alert('No available evacuation area', 'All evacuation areas are currently full. Please try again shortly.');
+        showNotice('Road routing unavailable', 'Unable to verify another reachable evacuation center right now.');
+      } finally {
+        setRoutingRecommendation(false);
       }
       return;
     }
@@ -1745,7 +1593,7 @@ export default function RescueMapScreen() {
       const session = await loadSession();
       const token = String(session?.token || '').trim();
       if (!token) {
-        Alert.alert('Session expired', 'Please log in again before submitting a rescue request.');
+        showNotice('Session expired', 'Please log in again before submitting a rescue request.');
         return;
       }
 
@@ -1781,9 +1629,33 @@ export default function RescueMapScreen() {
       setRouteSource(null);
       await loadRecentRescueRecords();
 
-      Alert.alert('Request submitted', 'Your rescue request has been submitted with image proof.');
+      showNotice('Request submitted', 'Your rescue request has been submitted with image proof.');
     } catch (err: any) {
       const status = Number(err?.response?.status || 0);
+      const errorCode = String(err?.response?.data?.code || '');
+      if (errorCode === 'NO_AVAILABLE_EVACUATION_AREA' && userLocation) {
+        setRoutingRecommendation(true);
+        try {
+          const refreshedAreas = await loadEvacuationAreas();
+          const replacementPlan = await resolveBestRoadPlan(userLocation, refreshedAreas);
+          if (replacementPlan) {
+            applyRoadPlan(replacementPlan);
+            showNotice(
+              'Evacuation route updated',
+              `The previous center became unavailable. The shortest reachable road route is now to ${replacementPlan.area.name}. Please review and submit again.`,
+            );
+          } else {
+            setSelectedAreaId(null);
+            showNotice('No reachable evacuation area', 'No available evacuation center is currently reachable through the road network.');
+          }
+        } catch {
+          setSelectedAreaId(null);
+          showNotice('Road routing unavailable', 'Unable to calculate a replacement evacuation route right now.');
+        } finally {
+          setRoutingRecommendation(false);
+        }
+        return;
+      }
       const message =
         err?.response?.data?.message ||
         (status === 401
@@ -1793,7 +1665,8 @@ export default function RescueMapScreen() {
             : !err?.response
               ? 'Cannot reach the server right now. Please check your connection and try again.'
               : 'Unable to submit rescue request.');
-      Alert.alert('Submit failed', message);
+      const notice = submissionErrorNotice(err, message);
+      showNotice(notice.title, notice.message);
     } finally {
       setSubmitting(false);
     }
@@ -1814,15 +1687,16 @@ export default function RescueMapScreen() {
 
   return (
     <View style={st.root}>
+      {noticeModal}
       <View style={st.header}>
         <Text style={st.headerTitle}>Request Rescue</Text>
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
         {/* Fullscreen map modal */}
-        <Modal visible={isMapFullscreen} animationType="fade" statusBarTranslucent>
+        <Modal visible={isMapFullscreen} animationType="fade" statusBarTranslucent onRequestClose={() => setIsMapFullscreen(false)}>
           <View style={{ flex: 1, backgroundColor: '#000' }}>
-            <PlatformMap style={{ flex: 1 }} html={mapHtml} onMessage={handleMapMessage} />
+            <PlatformMap style={{ flex: 1 }} html={mapHtml} baseUrl={apiBaseUrl} onMessage={handleMapMessage} />
             {/* Exit fullscreen — bottom-right */}
             <TouchableOpacity
               style={st.fsExitBtn}
@@ -1835,7 +1709,7 @@ export default function RescueMapScreen() {
         </Modal>
 
         <View style={st.mapContainer}>
-          <PlatformMap style={st.map} html={mapHtml} onMessage={handleMapMessage} />
+          <PlatformMap style={st.map} html={mapHtml} baseUrl={apiBaseUrl} onMessage={handleMapMessage} />
           {/* Fullscreen enter — bottom-right */}
           <TouchableOpacity
             style={st.fsEnterBtn}
@@ -1844,44 +1718,6 @@ export default function RescueMapScreen() {
           >
             <MaterialCommunityIcons name="fullscreen" size={18} color="#fff" />
           </TouchableOpacity>
-        </View>
-
-        <View style={st.layerToggleWrap}>
-          <TouchableOpacity
-            style={st.layerToggleBtn}
-            activeOpacity={0.88}
-            onPress={() => setShowLayerPanel((prev) => !prev)}
-          >
-            <View style={st.layerToggleLeft}>
-              <MaterialCommunityIcons name="layers-triple" size={18} color="#ffffff" />
-              <Text style={st.layerToggleText}>Map Layers</Text>
-            </View>
-            <MaterialCommunityIcons name={showLayerPanel ? 'chevron-up' : 'chevron-down'} size={20} color="#ffffff" />
-          </TouchableOpacity>
-
-          {showLayerPanel ? (
-            <View style={st.layerPanel}>
-              {layerRows.map((row) => (
-                <View key={row.key} style={st.layerRow}>
-                  <Text style={st.layerLabel}>{row.label}</Text>
-                  <Switch
-                    value={layerVisibility[row.key]}
-                    onValueChange={(value) => {
-                      setLayerVisibility((prev) => {
-                        const next = { ...prev, [row.key]: value };
-                        // Mutual exclusion: weather overlay and flood hazard cannot both be on
-                        if (row.key === 'weatherOverlay' && value) next.raster = false;
-                        if (row.key === 'raster' && value) next.weatherOverlay = false;
-                        return next;
-                      });
-                    }}
-                    trackColor={{ false: '#cbd5e1', true: '#22c55e' }}
-                    thumbColor="#ffffff"
-                  />
-                </View>
-              ))}
-            </View>
-          ) : null}
         </View>
 
         {requestStarted ? (
@@ -1896,10 +1732,12 @@ export default function RescueMapScreen() {
               <TouchableOpacity
                 style={[
                   st.submitBtn,
-                  !proofImageUri || !proofImageBase64 || !selectedArea || submitting ? st.submitBtnDisabled : null,
+                  !proofImageUri || !proofImageBase64 || !selectedArea || routeSource !== 'osrm' || routingRecommendation || submitting
+                    ? st.submitBtnDisabled
+                    : null,
                 ]}
                 activeOpacity={0.88}
-                disabled={!proofImageUri || !proofImageBase64 || !selectedArea || submitting}
+                disabled={!proofImageUri || !proofImageBase64 || !selectedArea || routeSource !== 'osrm' || routingRecommendation || submitting}
                 onPress={handleSubmitRescue}
               >
                 {submitting ? <ActivityIndicator color="#fff" /> : <Text style={st.submitBtnText}>Submit</Text>}
@@ -1935,6 +1773,7 @@ export default function RescueMapScreen() {
             <TouchableOpacity
               style={st.actionBtn}
               activeOpacity={0.88}
+              disabled={routingRecommendation}
               onPress={() => {
                 if (requestStarted) {
                   setRequestStarted(false);
@@ -1954,7 +1793,9 @@ export default function RescueMapScreen() {
                 });
               }}
             >
-              <Text style={st.actionText}>{requestStarted ? 'Cancel' : 'Send Rescue Request'}</Text>
+              <Text style={st.actionText}>
+                {routingRecommendation ? 'Finding Road Route...' : requestStarted ? 'Cancel' : 'Send Rescue Request'}
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -1983,18 +1824,16 @@ export default function RescueMapScreen() {
                     <Text style={st.areaMetaLabel}>ETA:</Text>
                     <Text style={st.areaAddr}>{routeEtaText || 'Calculating...'}</Text>
                     <Text style={st.areaMetaLabel}>Route Type:</Text>
-                    <Text style={st.areaAddr}>
-                      {routeSource === 'osrm'
-                        ? 'Car road route'
-                        : routeSource === 'dijkstra'
-                          ? 'Fallback shortest path'
-                          : 'Calculating...'}
-                    </Text>
+                    <Text style={st.areaAddr}>{routeSource === 'osrm' ? 'Verified driving route' : 'Verifying road access...'}</Text>
                   </View>
                 </View>
               ) : (
                 <View style={st.areaHintCard}>
-                  <Text style={st.areaHintText}>Selecting the nearest evacuation area now. You can tap another map pin if needed.</Text>
+                  <Text style={st.areaHintText}>
+                    {routingRecommendation
+                      ? 'Comparing road distance and reachability for every available evacuation center...'
+                      : 'No road-reachable evacuation center is selected. Tap a map pin to check another center.'}
+                  </Text>
                 </View>
               )}
             </>
@@ -2056,7 +1895,7 @@ const st = StyleSheet.create({
 
   mapContainer: {
     marginHorizontal: 14, marginTop: 10, borderRadius: 12, overflow: 'hidden',
-    borderWidth: 1, borderColor: '#cbd5e1', height: 360, backgroundColor: '#fff',
+    borderWidth: 1, borderColor: '#cbd5e1', aspectRatio: 1.08, minHeight: 280, maxHeight: 420, backgroundColor: '#fff',
   },
   map: { flex: 1 },
   fsEnterBtn: {
@@ -2071,34 +1910,6 @@ const st = StyleSheet.create({
     padding: 10, zIndex: 9999,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.4, shadowRadius: 5, elevation: 8,
   },
-  layerToggleWrap: {
-    marginHorizontal: 14,
-    marginTop: 8,
-  },
-  layerToggleBtn: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#0d3558',
-    backgroundColor: '#0d3558',
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  layerToggleLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  layerToggleText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
-  layerPanel: {
-    marginTop: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  layerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5 },
-  layerLabel: { color: '#334155', fontSize: 12, fontWeight: '700' },
   mapBottomActionsWrap: { paddingHorizontal: 14, marginTop: 8 },
 
   notesInput: {
@@ -2170,5 +1981,3 @@ const st = StyleSheet.create({
   submitBtnDisabled: { backgroundColor: '#94a3b8' },
   submitBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
 });
-
-

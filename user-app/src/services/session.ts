@@ -9,6 +9,7 @@ export type SessionUser = {
   email?: string;
   address?: string;
   contactNumber?: string;
+  barangayName?: string | null;
 };
 
 export type SessionData = {

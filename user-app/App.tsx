@@ -19,6 +19,7 @@ import {
 } from './src/services/session';
 import { AppProfile, ensureAccountForSession, patchAccountProfile } from './src/services/appAccount';
 import { getAuthMe, putAuthMe, setApiAuthorizationToken, setAuthFailureHandler } from './src/services/api';
+import ResidentFloodAlert from './src/components/ResidentFloodAlert';
 
 function isBlank(value?: string | null) {
   return !String(value ?? '').trim();
@@ -223,6 +224,7 @@ export default function App() {
 
   return (
     <NavigationContainer>
+      <ResidentFloodAlert onTestAccountRemoved={handleLogout} />
       <Tab.Navigator
         id="MainTabs"
         screenOptions={({ route }) => ({

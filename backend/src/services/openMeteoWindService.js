@@ -71,28 +71,16 @@ function buildPointFrame(point, location, frameKey) {
   let gustKph = safeNumber(current.wind_gusts_10m, speedKph);
   let forecastAt = currentTime || new Date().toISOString();
 
-  if (frameKey === 'next_hour') {
-    rainAmountMm = safeNumber(precipitation[firstFutureIndex]);
-    speedKph = safeNumber(windSpeed[firstFutureIndex]);
-    directionDegrees = safeNumber(windDirection[firstFutureIndex]);
-    gustKph = safeNumber(windGusts[firstFutureIndex], speedKph);
-    forecastAt = times[firstFutureIndex] || forecastAt;
-  } else if (frameKey === 'day') {
-    forecastIndex = Math.min(times.length - 1, firstFutureIndex + 23);
-    rainAmountMm = sumRange(precipitation, firstFutureIndex, 24);
-    rainProbabilityPct = maxRange(precipitationProbability, firstFutureIndex, 24);
+  if (String(frameKey).startsWith('hour_')) {
+    const hourOffset = Math.max(0, Number(String(frameKey).slice(5)) || 0);
+    const hourIndex = Math.min(times.length - 1, firstFutureIndex + hourOffset);
+    forecastIndex = hourIndex;
+    rainAmountMm = safeNumber(precipitation[hourIndex]);
+    rainProbabilityPct = safeNumber(precipitationProbability[hourIndex]);
     speedKph = safeNumber(windSpeed[forecastIndex]);
     directionDegrees = safeNumber(windDirection[forecastIndex]);
     gustKph = safeNumber(windGusts[forecastIndex], speedKph);
-    forecastAt = times[forecastIndex] || forecastAt;
-  } else if (frameKey === 'week') {
-    forecastIndex = Math.min(times.length - 1, firstFutureIndex + 167);
-    rainAmountMm = sumRange(precipitation, firstFutureIndex, 168);
-    rainProbabilityPct = maxRange(precipitationProbability, firstFutureIndex, 168);
-    speedKph = safeNumber(windSpeed[forecastIndex]);
-    directionDegrees = safeNumber(windDirection[forecastIndex]);
-    gustKph = safeNumber(windGusts[forecastIndex], speedKph);
-    forecastAt = times[forecastIndex] || forecastAt;
+    forecastAt = times[hourIndex] || forecastAt;
   }
 
   if (!Number.isFinite(speedKph) || !Number.isFinite(directionDegrees)) {
@@ -154,12 +142,17 @@ async function fetchOpenMeteoGrid(points) {
   const batchResponses = await Promise.all(batches.map((batch) => fetchOpenMeteoBatch(batch)));
   const locations = batchResponses.flat();
 
-  const definitions = {
-    current: { label: 'Current', rainWindow: 'Current precipitation' },
-    next_hour: { label: 'Next hour', rainWindow: 'Next 1 hour' },
-    day: { label: 'Next day', rainWindow: 'Next 24 hours' },
-    week: { label: 'Next week', rainWindow: 'Next 7 days' },
-  };
+  const firstForecastIndex = Math.max(0, locations[0]?.hourly?.time?.findIndex((time) => String(time) > String(locations[0]?.current?.time || '')) || 0);
+  const definitions = Object.fromEntries(Array.from({ length: 168 }, (_, hourOffset) => {
+    const time = locations[0]?.hourly?.time?.[firstForecastIndex + hourOffset];
+    const date = time ? new Date(time) : new Date();
+    return [`hour_${hourOffset}`, {
+      label: date.toLocaleDateString('en-US', { weekday: 'long' }),
+      dateLabel: date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' }),
+      hourLabel: date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+      rainWindow: 'Hourly rain accumulation',
+    }];
+  }));
   const frames = {};
   Object.keys(definitions).forEach((frameKey) => {
     const framePoints = points.map((point, index) => buildPointFrame(point, locations[index], frameKey));
@@ -190,7 +183,7 @@ async function getCalambaWindField() {
 
   try {
     const frames = await fetchOpenMeteoGrid(gridCoordinates());
-    const currentFrame = frames.current;
+    const currentFrame = frames.hour_0;
     cachedWindField = {
       source: 'Open-Meteo',
       sourceUrl: 'https://open-meteo.com/',

@@ -3,6 +3,7 @@ const auth = require('../middleware/auth');
 const {
   getAlerts,
   createAlert,
+  publishFloodSensorAlert,
   getAnnouncements,
   createAnnouncement,
   getEvacuationAreas,
@@ -17,6 +18,7 @@ const router = express.Router();
 // Alerts and announcements are publicly readable, admin posting is protected.
 router.get('/alerts', getAlerts);
 router.post('/alerts', auth, createAlert);
+router.post('/flood-sensor-alerts', auth, publishFloodSensorAlert);
 
 router.get('/announcements', getAnnouncements);
 router.post('/announcements', auth, createAnnouncement);

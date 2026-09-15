@@ -122,6 +122,18 @@ async function initDb() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS flood_sensor_alert_events (
+      id SERIAL PRIMARY KEY,
+      event_key VARCHAR(160) NOT NULL,
+      barangay_name VARCHAR(120) NOT NULL,
+      hardware_no VARCHAR(80),
+      level VARCHAR(20) NOT NULL,
+      water_level_percentage DOUBLE PRECISION NOT NULL,
+      sensor_updated_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE (event_key, level)
+    );
+
     CREATE TABLE IF NOT EXISTS user_refresh_tokens (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -171,6 +183,18 @@ async function initDb() {
 
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS archived_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+    ALTER TABLE user_notifications
+    ADD COLUMN IF NOT EXISTS category VARCHAR(60) NOT NULL DEFAULT 'report';
+
+    ALTER TABLE user_notifications
+    ADD COLUMN IF NOT EXISTS severity VARCHAR(20) NOT NULL DEFAULT 'medium';
+
+    ALTER TABLE user_notifications
+    ADD COLUMN IF NOT EXISTS barangay_name VARCHAR(120);
+
+    ALTER TABLE user_notifications
+    ADD COLUMN IF NOT EXISTS source_event_key VARCHAR(160);
 
     ALTER TABLE users
     DROP CONSTRAINT IF EXISTS users_username_key;
@@ -241,6 +265,12 @@ async function initDb() {
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS barangay_name VARCHAR(120);
 
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS is_test_account BOOLEAN NOT NULL DEFAULT FALSE;
+
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS test_account_expires_at TIMESTAMP;
+
     CREATE INDEX IF NOT EXISTS users_barangay_name_idx
     ON users (barangay_name)
     WHERE barangay_name IS NOT NULL;
@@ -278,12 +308,30 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS user_notifications_user_id_idx
     ON user_notifications (user_id, created_at DESC);
 
+    CREATE UNIQUE INDEX IF NOT EXISTS user_notifications_flood_event_unique_idx
+    ON user_notifications (user_id, source_event_key, severity)
+    WHERE category = 'flood_sensor' AND source_event_key IS NOT NULL;
+
     CREATE UNIQUE INDEX IF NOT EXISTS user_refresh_tokens_hash_unique_idx
     ON user_refresh_tokens (token_hash);
 
     CREATE INDEX IF NOT EXISTS user_refresh_tokens_user_id_idx
     ON user_refresh_tokens (user_id, created_at DESC);
 
+  `);
+
+  await pool.query(`
+    UPDATE users
+    SET barangay_name = CASE
+      WHEN LOWER(COALESCE(address, '')) LIKE '%palingon%' THEN 'Palingon'
+      WHEN LOWER(COALESCE(address, '')) LIKE '%sampiruhan%' THEN 'Sampiruhan'
+      WHEN LOWER(COALESCE(address, '')) LIKE '%lingga%' THEN 'Lingga'
+      WHEN LOWER(COALESCE(address, '')) LIKE '%parian%' THEN 'Parian'
+      WHEN LOWER(COALESCE(address, '')) LIKE '%looc%' THEN 'Looc'
+      WHEN LOWER(COALESCE(address, '')) LIKE '%uwisan%' THEN 'Uwisan'
+      ELSE barangay_name
+    END
+    WHERE role = 'user' AND COALESCE(barangay_name, '') = '';
   `);
 
   // One-time migration for reports created before jurisdiction assignment was

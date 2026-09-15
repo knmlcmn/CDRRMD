@@ -1,7 +1,7 @@
+import { submissionErrorNotice, useNoticeModal } from '../components/useNoticeModal';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -26,6 +26,7 @@ const WATER_LEVELS = ['Ankle', 'Knee', 'Waist', 'Chest', 'Roof'];
 const FLOOD_TYPES = ['Flash Flood', 'River Overflow', 'Drainage Backflow', 'Storm Surge', 'Other'];
 
 export default function ReportFloodScreen() {
+  const { showNotice, noticeModal } = useNoticeModal();
   const navigation = useNavigation();
   const [reportId] = useState(generateReportId);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
@@ -52,7 +53,7 @@ export default function ReportFloodScreen() {
     try {
       const permission = await Location.requestForegroundPermissionsAsync();
       if (permission.status !== 'granted') {
-        Alert.alert('Location permission denied', 'Please allow location permission to use this feature.');
+        showNotice('Location permission denied', 'Please allow location permission to use this feature.');
         return;
       }
 
@@ -61,7 +62,7 @@ export default function ReportFloodScreen() {
       setLocation(text);
       setDeviceCoords({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
     } catch {
-      Alert.alert('Location unavailable', 'Unable to get your device location right now.');
+      showNotice('Location unavailable', 'Unable to get your device location right now.');
     } finally {
       setLocating(false);
     }
@@ -70,7 +71,7 @@ export default function ReportFloodScreen() {
   async function pickProofImage() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission denied', 'Please allow media library access to upload proof.');
+      showNotice('Permission denied', 'Please allow media library access to upload proof.');
       return;
     }
 
@@ -86,7 +87,7 @@ export default function ReportFloodScreen() {
 
     const asset = result.assets[0];
     if (!asset.base64) {
-      Alert.alert('Image unavailable', 'Unable to read selected image.');
+      showNotice('Image unavailable', 'Unable to read selected image.');
       return;
     }
 
@@ -97,7 +98,7 @@ export default function ReportFloodScreen() {
 
   async function submitReport() {
     if (!location.trim() || !floodType || !waterLevel || !notes.trim() || !imageBase64) {
-      Alert.alert('Incomplete report', 'Please provide location, flood type, water level, description, and uploaded proof image.');
+      showNotice('Incomplete report', 'Please provide location, flood type, water level, description, and uploaded proof image.');
       return;
     }
 
@@ -124,7 +125,7 @@ export default function ReportFloodScreen() {
       });
 
       const createdCode = response.data?.report_code || reportId;
-      Alert.alert('Flood report submitted', `Report ID ${createdCode}`);
+      showNotice('Flood report submitted', `Report ID ${createdCode}`);
       setFloodType('');
       setWaterLevel('');
       setArePeopleTrapped('');
@@ -136,7 +137,8 @@ export default function ReportFloodScreen() {
       setDeviceCoords(null);
     } catch (err: any) {
       const message = err?.response?.data?.message || 'Unable to submit report right now.';
-      Alert.alert('Submission failed', message);
+      const notice = submissionErrorNotice(err, message);
+      showNotice(notice.title, notice.message);
     } finally {
       setSubmitting(false);
     }
@@ -144,6 +146,7 @@ export default function ReportFloodScreen() {
 
   return (
     <View style={st.root}>
+      {noticeModal}
       <View style={st.header}>
         <TouchableOpacity style={st.backBtn} onPress={() => navigation.goBack()}>
           <MaterialCommunityIcons name="arrow-left" size={22} color="#fff" />

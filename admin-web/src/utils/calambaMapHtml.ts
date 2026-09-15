@@ -165,12 +165,15 @@ export function buildCalambaMapHtml(
       .wind-live-hud { backdrop-filter: blur(7px); background: rgba(61,61,61,.9); border: 1px solid rgba(255,255,255,.28); border-radius: 18px; color: #fff; display: none; font: 700 11px/1.35 Arial,sans-serif; left: 50%; padding: 7px 13px; pointer-events: none; position: absolute; top: 10px; transform: translateX(-50%); z-index: 700; white-space: nowrap; box-shadow: 0 3px 12px rgba(0,0,0,.34); }
       .wind-live-hud .wind-source { color: #facc15; }
       .wind-live-hud.wind-error { background: rgba(127,29,29,.94); border-color: rgba(254,202,202,.55); max-width: min(520px,calc(100vw - 28px)); white-space: normal; text-align: center; }
-      .forecast-timebar { backdrop-filter: blur(9px); background: rgba(15,23,42,.9); border: 1px solid rgba(148,163,184,.35); border-radius: 12px; bottom: 12px; box-shadow: 0 5px 18px rgba(0,0,0,.38); color: #fff; display: none; left: 50%; padding: 6px; pointer-events: auto; position: absolute; transform: translateX(-50%); z-index: 700; }
-      .forecast-time-options { display: flex; gap: 4px; }
-      .forecast-time-button { background: transparent; border: 1px solid transparent; border-radius: 7px; color: #cbd5e1; cursor: pointer; font: 700 10px/1 Arial,sans-serif; padding: 7px 9px; white-space: nowrap; }
-      .forecast-time-button:hover { background: rgba(148,163,184,.14); color: #fff; }
-      .forecast-time-button.active { background: #0ea5e9; border-color: rgba(255,255,255,.34); color: #fff; }
-      .forecast-time-summary { color: #dbeafe; font: 700 9px/1.3 Arial,sans-serif; padding: 5px 5px 1px; text-align: center; white-space: nowrap; }
+      .forecast-timebar { backdrop-filter: blur(9px); background: rgba(7,17,24,.94); border: 1px solid rgba(148,163,184,.35); border-radius: 18px; bottom: 12px; box-shadow: 0 5px 18px rgba(0,0,0,.38); color: #fff; display: none; left: 50%; max-width: min(94vw, 1340px); padding: 8px 14px 7px; pointer-events: auto; position: absolute; transform: translateX(-50%); width: calc(100% - 28px); z-index: 700; }
+      .forecast-time-track { position: relative; }
+      .forecast-time-labels { display: flex; justify-content: space-between; margin: 0 8px 3px; }
+      .forecast-time-label { color: #f8fafc; font: 700 14px/1.1 Arial,sans-serif; text-align: center; }
+      .forecast-time-date { color: #cbd5e1; display: block; font: 11px/1 Arial,sans-serif; }
+      .forecast-time-range { appearance: none; background: repeating-linear-gradient(90deg, rgba(203,213,225,.7) 0 1px, transparent 1px 12px); border: 0; display: block; height: 30px; margin: 0; outline: none; width: 100%; }
+      .forecast-time-range::-webkit-slider-thumb { appearance: none; background: #f97316; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 2px rgba(249,115,22,.3); cursor: grab; height: 18px; width: 5px; }
+      .forecast-time-range::-moz-range-thumb { background: #f97316; border: 2px solid #fff; border-radius: 50%; cursor: grab; height: 18px; width: 5px; }
+      .forecast-time-summary { color: #dbeafe; font: 700 10px/1.3 Arial,sans-serif; text-align: center; white-space: nowrap; }
       /* In-map layer control */
       .layer-ctrl-wrap {
         font-family: Arial, sans-serif;
@@ -387,7 +390,7 @@ export function buildCalambaMapHtml(
       var windHud = null;
       var windFieldData = null;
       var weatherTimelineData = null;
-      var weatherTimeframe = 'current';
+      var weatherTimeframe = 'hour_0';
       var forecastTimebar = null;
       var windParticles = [];
       var windAnimationFrame = null;
@@ -490,13 +493,6 @@ export function buildCalambaMapHtml(
         return rainColorStops[rainColorStops.length - 1].color.slice();
       }
 
-      var timeframeDefinitions = [
-        { key: 'current', shortLabel: 'Now' },
-        { key: 'next_hour', shortLabel: '+1 hour' },
-        { key: 'day', shortLabel: '+1 day' },
-        { key: 'week', shortLabel: '+1 week' },
-      ];
-
       function activeForecastFrame() {
         if (weatherTimelineData && weatherTimelineData.frames && weatherTimelineData.frames[weatherTimeframe]) {
           return weatherTimelineData.frames[weatherTimeframe];
@@ -509,8 +505,16 @@ export function buildCalambaMapHtml(
         var visible = (Boolean(visibility.weatherOverlay) || Boolean(visibility.windOverlay)) && !focusModeActive;
         forecastTimebar.style.display = visible ? 'block' : 'none';
         if (!visible) return;
-        forecastTimebar.querySelectorAll('.forecast-time-button').forEach(function(button) {
-          button.classList.toggle('active', button.dataset.timeframe === weatherTimeframe);
+        var range = forecastTimebar.querySelector('.forecast-time-range');
+        if (range) range.value = String(Number(String(weatherTimeframe).slice(5)) || 0);
+        forecastTimebar.querySelectorAll('.forecast-time-label').forEach(function(label) {
+          var dayOffset = Number(label.dataset.dayOffset || 0);
+          var dayFrame = weatherTimelineData && weatherTimelineData.frames
+            ? weatherTimelineData.frames['hour_' + (dayOffset * 24)]
+            : null;
+          label.innerHTML = dayFrame
+            ? String(dayFrame.label) + '<span class="forecast-time-date">' + String(dayFrame.dateLabel) + '</span>'
+            : 'Day ' + (dayOffset + 1);
         });
         var summary = forecastTimebar.querySelector('.forecast-time-summary');
         if (!summary) return;
@@ -524,8 +528,8 @@ export function buildCalambaMapHtml(
           return;
         }
         if (Boolean(visibility.weatherOverlay)) {
-          summary.textContent = String(frame.rainWindow || frame.label || 'Rain') + ': ' +
-            Number(frame.averageRainAmountMm || 0).toFixed(1) + ' mm average';
+          summary.textContent = String(frame.label || 'Day') + ' ' + String(frame.dateLabel || '') + ' ' + String(frame.hourLabel || '') + ' - Rain ' +
+            Number(frame.averageRainAmountMm || 0).toFixed(1) + ' mm - Wind ' + Number(frame.averageSpeedKph || 0).toFixed(0) + ' km/h';
         } else {
           summary.textContent = String(frame.label || 'Wind') + ': ' +
             Number(frame.averageSpeedKph || 0).toFixed(0) + ' km/h average · gusts ' +
@@ -549,24 +553,26 @@ export function buildCalambaMapHtml(
         if (forecastTimebar) return;
         forecastTimebar = document.createElement('div');
         forecastTimebar.className = 'forecast-timebar';
-        var options = document.createElement('div');
-        options.className = 'forecast-time-options';
-        timeframeDefinitions.forEach(function(definition) {
-          var button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'forecast-time-button';
-          button.dataset.timeframe = definition.key;
-          button.textContent = definition.shortLabel;
-          button.addEventListener('click', function(event) {
-            event.preventDefault();
-            event.stopPropagation();
-            applyWeatherTimeframe(definition.key);
-          });
-          options.appendChild(button);
+        var track = document.createElement('div');
+        track.className = 'forecast-time-track';
+        var labels = document.createElement('div');
+        labels.className = 'forecast-time-labels';
+        for (var dayOffset = 0; dayOffset < 7; dayOffset += 1) {
+          var label = document.createElement('div');
+          label.className = 'forecast-time-label';
+          label.dataset.dayOffset = String(dayOffset);
+          labels.appendChild(label);
+        }
+        var range = document.createElement('input');
+        range.type = 'range'; range.className = 'forecast-time-range'; range.min = '0'; range.max = '167'; range.step = '1'; range.value = '0';
+        range.addEventListener('input', function(event) {
+          event.stopPropagation();
+          applyWeatherTimeframe('hour_' + event.target.value);
         });
+        track.appendChild(labels); track.appendChild(range);
         var summary = document.createElement('div');
         summary.className = 'forecast-time-summary';
-        forecastTimebar.appendChild(options);
+        forecastTimebar.appendChild(track);
         forecastTimebar.appendChild(summary);
         forecastTimebar.addEventListener('mousedown', function(event) { event.stopPropagation(); });
         forecastTimebar.addEventListener('dblclick', function(event) { event.stopPropagation(); });
@@ -622,8 +628,6 @@ export function buildCalambaMapHtml(
       }
 
       function rainHoursForTimeframe() {
-        if (weatherTimeframe === 'day') return 24;
-        if (weatherTimeframe === 'week') return 168;
         return 1;
       }
 

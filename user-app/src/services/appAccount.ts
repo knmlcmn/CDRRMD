@@ -7,6 +7,7 @@ export type AppProfile = {
   email: string;
   address: string;
   contactNumber: string;
+  barangayName: string;
 };
 
 export type AppAccount = {
@@ -36,6 +37,7 @@ const EMPTY_PROFILE: AppProfile = {
   email: '',
   address: '',
   contactNumber: '',
+  barangayName: '',
 };
 
 function clean(value?: string | null) {
@@ -53,6 +55,7 @@ function mergeProfile(current: AppProfile, next?: PartialProfile): AppProfile {
     email: clean(next.email) || current.email,
     address: clean(next.address) || current.address,
     contactNumber: clean(next.contactNumber) || current.contactNumber,
+    barangayName: clean(next.barangayName) || current.barangayName,
   };
 }
 
@@ -105,6 +108,7 @@ export async function ensureAccountForSession(session: SessionData) {
     email: session.user.email,
     address: session.user.address,
     contactNumber: session.user.contactNumber,
+    barangayName: session.user.barangayName ?? undefined,
   };
 
   const fromSession = session.appUserId ? registry.accountsById[session.appUserId] : undefined;

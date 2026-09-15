@@ -8,10 +8,10 @@ const FALLBACK_CURRENT =
 
 const FALLBACK_FORECAST =
   `https://api.open-meteo.com/v1/forecast?latitude=${CITY_LATITUDE}&longitude=${CITY_LONGITUDE}` +
-  '&current=temperature_2m,wind_speed_10m,weather_code,relative_humidity_2m,apparent_temperature' +
-  '&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,precipitation_probability' +
-  '&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_probability_max' +
-  '&forecast_days=14&timezone=auto';
+  '&current=temperature_2m,wind_speed_10m,weather_code,relative_humidity_2m,apparent_temperature,precipitation' +
+  '&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,precipitation,precipitation_probability' +
+  '&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_sum,precipitation_probability_max' +
+  '&forecast_days=7&timezone=auto';
 
 async function fetchFallback(url: string) {
   const response = await fetch(url);
@@ -33,10 +33,10 @@ export async function getCityCurrentWeather() {
 
 export async function getCityForecastWeather() {
   try {
-    const response = await api.get(`/weather?latitude=${CITY_LATITUDE}&longitude=${CITY_LONGITUDE}&forecast_days=14`);
+    const response = await api.get(`/weather?latitude=${CITY_LATITUDE}&longitude=${CITY_LONGITUDE}&forecast_days=7`);
     return response.data ?? null;
   } catch {
-    // Preserve 14-day forecast UX even during API outages.
+    // Preserve the 7-day forecast UX even during API outages.
     return fetchFallback(FALLBACK_FORECAST);
   }
 }

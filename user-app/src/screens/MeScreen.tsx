@@ -10,12 +10,15 @@ type Props = {
   onLogout?: () => void | Promise<void>;
 };
 
+const SUPPORTED_BARANGAYS = ['Palingon', 'Sampiruhan', 'Lingga', 'Parian', 'Looc', 'Uwisan'];
+
 const EMPTY_PROFILE: AppProfile = {
     firstName: '',
     lastName: '',
     email: '',
     address: '',
     contactNumber: '',
+    barangayName: '',
   };
 
 export default function MeScreen({ appUserId, onLogout }: Props) {
@@ -63,6 +66,7 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
         email: draftProfile.email,
         address: draftProfile.address,
         contactNumber: draftProfile.contactNumber,
+        barangayName: draftProfile.barangayName,
       });
       await updateAccountProfile(appUserId, draftProfile);
       setProfile(draftProfile);
@@ -138,6 +142,10 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
               <Text style={st.infoLabel}>Address</Text>
               <Text style={st.infoValue}>{profile.address || '-'}</Text>
             </View>
+            <View style={st.infoRow}>
+              <Text style={st.infoLabel}>Barangay</Text>
+              <Text style={st.infoValue}>{profile.barangayName || 'Not selected'}</Text>
+            </View>
             <View style={[st.infoRow, { borderBottomWidth: 0, paddingBottom: 0 }]}>
               <Text style={st.infoLabel}>Contact Number</Text>
               <Text style={st.infoValue}>{profile.contactNumber || '-'}</Text>
@@ -171,6 +179,20 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
               <MaterialCommunityIcons name="map-marker-outline" size={18} color="#64748b" />
               <TextInput style={st.input} value={draftProfile.address} onChangeText={(t) => onChange('address', t)} placeholder="Address" placeholderTextColor="#94a3b8" />
             </View>
+            {/* Contact */}
+            <Text style={st.barangayLabel}>Barangay</Text>
+            <View style={st.barangayChoices}>
+              {SUPPORTED_BARANGAYS.map((name) => (
+                <TouchableOpacity
+                  key={name}
+                  style={[st.barangayChoice, draftProfile.barangayName === name && st.barangayChoiceActive]}
+                  onPress={() => onChange('barangayName', name)}
+                >
+                  <Text style={[st.barangayChoiceText, draftProfile.barangayName === name && st.barangayChoiceTextActive]}>{name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             {/* Contact */}
             <View style={st.inputRow}>
               <MaterialCommunityIcons name="phone-outline" size={18} color="#64748b" />
@@ -218,6 +240,12 @@ const st = StyleSheet.create({
   editHeaderText: { color: '#fff', fontSize: 13, fontWeight: '800' },
 
   card: { backgroundColor: '#f8fafc', borderRadius: 14, padding: 14, marginBottom: 10 },
+  barangayLabel: { color: '#334155', fontSize: 13, fontWeight: '700', marginBottom: 7 },
+  barangayChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 10 },
+  barangayChoice: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 7 },
+  barangayChoiceActive: { backgroundColor: '#0d3558', borderColor: '#0d3558' },
+  barangayChoiceText: { color: '#475569', fontSize: 12, fontWeight: '700' },
+  barangayChoiceTextActive: { color: '#fff' },
 
   profileRow: { flexDirection: 'row', alignItems: 'center' },
   avatar: {

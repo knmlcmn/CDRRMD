@@ -32,7 +32,7 @@ async function findStaffByAccountId(accountId, role) {
 
 async function findPublicUserById(id) {
   const result = await pool.query(
-    `SELECT id, username, email, first_name, last_name, address, contact_number, role
+    `SELECT id, username, email, first_name, last_name, address, contact_number, role, barangay_name
      FROM users
      WHERE id = $1
        AND COALESCE(is_archived, FALSE) = FALSE
@@ -52,10 +52,11 @@ async function createUser(user) {
       address,
       contact_number,
       password_hash,
-      role
+      role,
+      barangay_name
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-    RETURNING id, username, email, first_name, last_name, address, contact_number, role`,
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING id, username, email, first_name, last_name, address, contact_number, role, barangay_name`,
     [
       user.username,
       user.email,
@@ -65,6 +66,7 @@ async function createUser(user) {
       user.contactNumber,
       user.passwordHash,
       user.role,
+      user.barangayName,
     ],
   );
 
@@ -79,10 +81,11 @@ async function updateMyProfile(userId, profile) {
        last_name = $2,
        email = $3,
        address = $4,
-       contact_number = $5
-     WHERE id = $6
-     RETURNING id, username, role, email, first_name, last_name, address, contact_number`,
-    [profile.firstName, profile.lastName, profile.email, profile.address, profile.contactNumber, userId],
+       contact_number = $5,
+       barangay_name = $6
+     WHERE id = $7
+     RETURNING id, username, role, email, first_name, last_name, address, contact_number, barangay_name`,
+    [profile.firstName, profile.lastName, profile.email, profile.address, profile.contactNumber, profile.barangayName, userId],
   );
 
   return result.rows[0] || null;

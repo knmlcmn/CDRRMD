@@ -57,6 +57,77 @@ async function createAlert(req, res) {
   return res.status(201).json(result.rows[0]);
 }
 
+const SUPPORTED_SENSOR_BARANGAYS = ['Palingon', 'Sampiruhan', 'Lingga', 'Parian', 'Looc', 'Uwisan'];
+
+function canonicalSensorBarangay(value) {
+  const normalized = String(value || '').toLowerCase().replace(/^(brgy\.?|barangay)\s+/, '').trim();
+  return SUPPORTED_SENSOR_BARANGAYS.find((name) => name.toLowerCase() === normalized) || null;
+}
+
+async function publishFloodSensorAlert(req, res) {
+  if (req.user?.role !== 'admin') {
+    return res.status(403).json({ message: 'Admin access required.' });
+  }
+
+  const eventKey = String(req.body?.eventKey || '').trim();
+  const barangayName = canonicalSensorBarangay(req.body?.barangayName);
+  const level = String(req.body?.level || '').trim().toLowerCase();
+  const percentage = Number(req.body?.waterLevelPercentage);
+  const hardwareNo = String(req.body?.hardwareNo || '').trim() || null;
+  const sensorUpdatedAt = req.body?.updatedAt ? new Date(req.body.updatedAt) : null;
+
+  if (!eventKey || !barangayName || !['moderate', 'high'].includes(level) || !Number.isFinite(percentage)) {
+    return res.status(400).json({ message: 'A valid event, barangay, medium/high level, and percentage are required.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const inserted = await client.query(
+      `INSERT INTO flood_sensor_alert_events
+         (event_key, barangay_name, hardware_no, level, water_level_percentage, sensor_updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (event_key, level) DO NOTHING
+       RETURNING id`,
+      [eventKey, barangayName, hardwareNo, level, Math.max(0, Math.min(100, percentage)), sensorUpdatedAt],
+    );
+
+    const severityLabel = level === 'high' ? 'High' : 'Medium';
+    const title = `${severityLabel} flood warning`;
+    const body = `Barangay ${barangayName} has reached a ${severityLabel.toLowerCase()} water level (${Math.round(percentage)}%) according to ${hardwareNo || 'the local water sensor'}. Stay alert and follow barangay safety instructions.`;
+    const recipients = await client.query(
+      `INSERT INTO user_notifications
+         (user_id, report_id, title, body, category, severity, barangay_name, source_event_key)
+       SELECT id, NULL, $1, $2, 'flood_sensor', $3, $4::varchar, $5
+       FROM users
+       WHERE role = 'user'
+         AND COALESCE(is_archived, FALSE) = FALSE
+         AND (
+           LOWER(COALESCE(barangay_name, '')) = LOWER($4::varchar)
+           OR (
+             COALESCE(barangay_name, '') = ''
+             AND LOWER(COALESCE(address, '')) LIKE '%' || LOWER($4::varchar) || '%'
+           )
+         )
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      [title, body, level, barangayName, eventKey],
+    );
+
+    await client.query('COMMIT');
+    return res.status(inserted.rows.length > 0 ? 201 : 200).json({
+      published: inserted.rows.length > 0,
+      duplicate: inserted.rows.length === 0,
+      recipients: recipients.rows.length,
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function getAnnouncements(req, res) {
   const result = await pool.query(
     'SELECT id, title, body, created_at FROM announcements ORDER BY created_at DESC LIMIT 50',
@@ -308,6 +379,7 @@ async function getDashboardSummary(req, res) {
 module.exports = {
   getAlerts,
   createAlert,
+  publishFloodSensorAlert,
   getAnnouncements,
   createAnnouncement,
   getEvacuationAreas,

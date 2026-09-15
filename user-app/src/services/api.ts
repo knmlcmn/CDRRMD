@@ -339,6 +339,7 @@ export async function putAuthMe(payload: {
   email?: string;
   address?: string;
   contactNumber?: string;
+  barangayName?: string;
 }) {
   const host = await getHealthyHost();
 
