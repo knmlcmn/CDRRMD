@@ -14,7 +14,6 @@ export type MonitoringLayerVisibility = {
 const MIN_ACTIVE_RAIN_MM_PER_HOUR = 0.1;
 export function buildCalambaMapHtml(
   areas: EvacuationAreaItem[],
-  responderLocation: Coordinate | null,
   routeCoordinates: Coordinate[],
   incidentLocation: Coordinate | null,
   selectedReportCode: string | null,
@@ -29,7 +28,6 @@ export function buildCalambaMapHtml(
 ) {
   const payload = JSON.stringify({
     areas,
-    responderLocation,
     routeCoordinates,
     incidentLocation,
     selectedReportCode,
@@ -312,6 +310,18 @@ export function buildCalambaMapHtml(
       var baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: ''
       }).addTo(map);
+
+      var cdrrmdIcon = L.divIcon({
+        className: '',
+        html: '<div style="align-items:center;background:#16a34a;border:3px solid #fff;border-radius:50% 50% 50% 0;box-shadow:0 3px 9px rgba(0,0,0,.45);display:flex;height:25px;justify-content:center;transform:rotate(-45deg);width:25px"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-landmark.svg" style="filter:brightness(0) invert(1);height:15px;transform:rotate(45deg);width:15px" /></div>',
+        iconSize: [31, 31],
+        iconAnchor: [15, 30],
+        popupAnchor: [0, -28]
+      });
+      L.marker([14.194052, 121.159688], { icon: cdrrmdIcon, zIndexOffset: 1200 })
+        .addTo(map)
+        .bindTooltip('CDRRMD - Calamba City Hall', { direction: 'top', offset: [0, -25] })
+        .bindPopup('<strong>CDRRMD</strong><br>Calamba City Hall<br>14.194052, 121.159688');
 
       function applyBasemap() {
         // Keep map labels and roads readable beneath the 50% rain surface.
@@ -1905,7 +1915,7 @@ export function buildCalambaMapHtml(
 
       var areaPinIcon = L.divIcon({
         className: 'evac-pin',
-        html: '<div style="width:16px;height:16px;background:#e11d48;border:3px solid #fff;border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.3);"></div>',
+        html: '<div style="align-items:center;background:#e11d48;border:3px solid #fff;border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.3);display:flex;height:16px;justify-content:center;width:16px"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" style="filter:brightness(0) invert(1);height:12px;width:12px" /></div>',
         iconSize: [22, 22],
         iconAnchor: [11, 11],
       });
@@ -1937,17 +1947,6 @@ export function buildCalambaMapHtml(
           fillColor: '#dc2626',
           fillOpacity: 0.95,
         }).addTo(responderRouteLayer).bindPopup('<strong>' + escapeHtml(routeLabels.origin || 'Selected incident') + '</strong><br/>' + (payload.selectedReportCode || 'Rescue report'));
-      }
-
-      if (payload.responderLocation && inCalamba(Number(payload.responderLocation.latitude), Number(payload.responderLocation.longitude))) {
-        fitBounds.extend([payload.responderLocation.latitude, payload.responderLocation.longitude]);
-        L.circleMarker([payload.responderLocation.latitude, payload.responderLocation.longitude], {
-          radius: 8,
-          color: '#fff',
-          weight: 2,
-          fillColor: '#0ea5e9',
-          fillOpacity: 1,
-        }).addTo(responderRouteLayer).bindPopup('<strong>' + escapeHtml(routeLabels.destination || 'Closest responder base') + '</strong>');
       }
 
       if ((payload.routeCoordinates || []).length > 1) {

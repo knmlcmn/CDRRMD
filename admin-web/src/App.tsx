@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE_URL, setAuthToken, api } from './services/apiClient';
+import BackupNotifications from './components/BackupNotifications';
 import DashboardPage from './pages/DashboardPage';
 import EvacuationAreasPage from './pages/EvacuationAreasPage';
 import LoginPage from './pages/LoginPage';
@@ -189,6 +190,7 @@ function App() {
         />
       ) : null}
       {currentPage}
+      <BackupNotifications key={view} />
     </>
   );
 }

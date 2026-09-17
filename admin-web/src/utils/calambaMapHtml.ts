@@ -309,6 +309,18 @@ export function buildCalambaMapHtml(
         attribution: ''
       }).addTo(map);
 
+      var cdrrmdIcon = L.divIcon({
+        className: '',
+        html: '<div style="align-items:center;background:#16a34a;border:3px solid #fff;border-radius:50% 50% 50% 0;box-shadow:0 3px 9px rgba(0,0,0,.45);display:flex;height:25px;justify-content:center;transform:rotate(-45deg);width:25px"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-landmark.svg" style="filter:brightness(0) invert(1);height:15px;transform:rotate(45deg);width:15px" /></div>',
+        iconSize: [31, 31],
+        iconAnchor: [15, 30],
+        popupAnchor: [0, -28]
+      });
+      L.marker([14.194052, 121.159688], { icon: cdrrmdIcon, zIndexOffset: 1200 })
+        .addTo(map)
+        .bindTooltip('CDRRMD - Calamba City Hall', { direction: 'top', offset: [0, -25] })
+        .bindPopup('<strong>CDRRMD</strong><br>Calamba City Hall<br>14.194052, 121.159688');
+
       function applyBasemap() {
         // Keep map labels and roads readable beneath the 50% rain surface.
         var tilePane = map.getPanes().tilePane;
@@ -1922,7 +1934,7 @@ export function buildCalambaMapHtml(
 
       var areaPinIcon = L.divIcon({
         className: 'evac-pin',
-        html: '<div style="width:16px;height:16px;background:#e11d48;border:3px solid #fff;border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.3);"></div>',
+        html: '<div style="align-items:center;background:#e11d48;border:3px solid #fff;border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.3);display:flex;height:16px;justify-content:center;width:16px"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" style="filter:brightness(0) invert(1);height:12px;width:12px" /></div>',
         iconSize: [22, 22],
         iconAnchor: [11, 11],
       });

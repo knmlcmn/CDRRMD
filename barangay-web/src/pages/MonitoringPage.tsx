@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/apiClient';
+import BackupRequest, { type BackupRequestState } from '../components/BackupRequest';
 import BarangayShell from '../components/BarangayShell';
 import { d } from '../barangayDesign';
 import type { IncidentReport, EvacuationAreaItem } from '../types';
@@ -45,11 +46,7 @@ const ACTIVE_RESCUE_STATUSES = new Set(['pending', 'accepted', 'in_progress']);
 // How long a just-rescued case keeps showing its "route to evacuation center"
 // on the active board before it falls back to the Resolved history tab only.
 const RESOLVED_VISIBILITY_WINDOW_MS = 3 * 60 * 60 * 1000;
-// How often we re-check the rescuer's live device location (ms).
-const RESCUER_LOCATION_POLL_MS = 15000;
-// Ignore ordinary GPS jitter so the embedded map is not rebuilt while the
-// rescuer device is stationary (roughly a 20-metre tolerance).
-const RESCUER_LOCATION_JITTER_DEGREES = 0.0002;
+const CDRRMD_LOCATION: Coordinate = { latitude: 14.194052, longitude: 121.159688 };
 
 function sameData(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
@@ -63,7 +60,7 @@ function isRescueReport(report?: IncidentReport | null) {
 function isRescueAwaitingPickup(report?: IncidentReport | null) {
   if (!isRescueReport(report)) return false;
   const status = String(report?.status || '').toLowerCase();
-  return status === 'pending' || status === 'accepted';
+  return status === 'pending' || status === 'accepted' || status === 'in_progress';
 }
 
 function isRecentlyResolvedRescue(report: IncidentReport) {
@@ -83,7 +80,7 @@ function isRescueEnRouteToEvac(report?: IncidentReport | null) {
 function formatRescueAwareStatus(report?: IncidentReport | null) {
   if (isRescueReport(report)) {
     const status = String(report?.status || 'pending').toLowerCase();
-    if (status === 'pending' || status === 'accepted') return 'Rescue Requested';
+    if (status === 'pending' || status === 'accepted' || status === 'in_progress') return 'Rescue Requested';
     if (status === 'resolved') return 'Rescued';
     if (status === 'declined') return 'Declined';
   }
@@ -112,7 +109,7 @@ function distanceSquared(a: Coordinate, b: Coordinate) {
 async function fetchRoadRoute(from: Coordinate, to: Coordinate) {
   const url =
     `https://router.project-osrm.org/route/v1/driving/${from.longitude},${from.latitude};` +
-    `${to.longitude},${to.latitude}?overview=full&geometries=geojson&alternatives=false&steps=false`;
+    `${to.longitude},${to.latitude}?overview=full&geometries=geojson&alternatives=true&steps=false`;
 
   const response = await fetch(url);
   if (!response.ok) {
@@ -123,7 +120,9 @@ async function fetchRoadRoute(from: Coordinate, to: Coordinate) {
     routes?: Array<{ distance?: number; duration?: number; geometry?: { coordinates?: number[][] } }>;
   };
 
-  const route = data.routes?.[0];
+  const route = data.routes
+    ?.filter((candidate) => candidate.distance && candidate.duration && candidate.geometry?.coordinates?.length)
+    .sort((left, right) => Number(left.distance) - Number(right.distance))[0];
   if (!route?.distance || !route?.duration || !route.geometry?.coordinates?.length) {
     throw new Error('No route');
   }
@@ -153,9 +152,11 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
   const [reports, setReports] = useState<IncidentReport[]>([]);
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationAreaItem[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
+  const [backupRequest, setBackupRequest] = useState<BackupRequestState | null>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<Coordinate[]>([]);
   const [routeDistanceKm, setRouteDistanceKm] = useState<number | null>(null);
   const [routeEtaMinutes, setRouteEtaMinutes] = useState<number | null>(null);
+  const [routeOriginLabel, setRouteOriginLabel] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -170,8 +171,6 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
   const [rainUpdatedAt, setRainUpdatedAt] = useState<string | null>(null);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const mapWrapRef = useRef<HTMLElement | null>(null);
-  const [rescuerLocation, setRescuerLocation] = useState<Coordinate | null>(null);
-  const [rescuerLocationError, setRescuerLocationError] = useState<string | null>(null);
   const [layerVisibility] = useState<MonitoringLayerVisibility>({
     boundary: true,
     floodHazard: false,
@@ -276,45 +275,6 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
-  // Track the rescuer's own live position on this barangay web device, so the
-  // route can always be drawn from "where the rescuer is now" to the current
-  // destination (resident, then evacuation center).
-  useEffect(() => {
-    if (!('geolocation' in navigator)) {
-      setRescuerLocationError('Geolocation is not supported on this device.');
-      return;
-    }
-
-    let cancelled = false;
-
-    function pollLocation() {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          if (cancelled) return;
-          const nextLocation = { latitude: position.coords.latitude, longitude: position.coords.longitude };
-          setRescuerLocation((current) => {
-            if (!current) return nextLocation;
-            const movement = Math.sqrt(distanceSquared(current, nextLocation));
-            return movement < RESCUER_LOCATION_JITTER_DEGREES ? current : nextLocation;
-          });
-          setRescuerLocationError(null);
-        },
-        (geoErr) => {
-          if (cancelled) return;
-          setRescuerLocationError(geoErr?.message || 'Unable to determine current location.');
-        },
-        { enableHighAccuracy: true, maximumAge: 10000, timeout: 8000 },
-      );
-    }
-
-    pollLocation();
-    const locationTimer = setInterval(pollLocation, RESCUER_LOCATION_POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(locationTimer);
-    };
-  }, []);
-
   function enterFullscreen() {
     const el = mapWrapRef.current;
     if (el?.requestFullscreen) el.requestFullscreen().then(() => setIsMapFullscreen(true)).catch(() => {});
@@ -345,6 +305,17 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
     [filteredReports, selectedReportId],
   );
 
+  useEffect(() => {
+    if (backupRequest?.report_id && reports.some((report) => report.id === backupRequest.report_id)) {
+      setSelectedReportId(backupRequest.report_id);
+    }
+  }, [backupRequest?.report_id, reports]);
+
+  const selectedResidentLocation = useMemo(
+    () => extractCoordinate(selectedReport?.location, selectedReport?.latitude, selectedReport?.longitude),
+    [selectedReport],
+  );
+
   // The evacuation center this resident is assigned to (automatically
   // resolved by their own barangay/jurisdiction — see backend).
   const assignedEvacuationArea = useMemo(() => {
@@ -368,25 +339,15 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
       .sort((x, y) => x.dist - y.dist)[0]?.a ?? null;
   }, [evacuationAreas, selectedReport]);
 
-  // Fallback "home base" for the rescuer's route origin if live device
-  // geolocation is unavailable/denied — the barangay's own evacuation area.
-  const barangayBaseLocation = useMemo<Coordinate | null>(() => {
-    const active = evacuationAreas.find((a) => a.is_active);
-    return active ? { latitude: active.latitude, longitude: active.longitude } : null;
-  }, [evacuationAreas]);
-
-  const rescuerOrigin = rescuerLocation || barangayBaseLocation;
-
-  // The single source of truth for "where is the rescuer heading right now":
-  // the resident, until confirmed rescued — then the evacuation center.
+  // Before pickup the route ends at the resident. After pickup it ends at the
+  // assigned evacuation center.
   const routeDestination = useMemo<RouteDestination | null>(() => {
     if (!selectedReport || !isRescueReport(selectedReport)) return null;
 
     if (isRescueAwaitingPickup(selectedReport)) {
-      const residentLocation = extractCoordinate(selectedReport.location, selectedReport.latitude, selectedReport.longitude);
-      if (!residentLocation) return null;
+      if (!selectedResidentLocation) return null;
       const code = selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`;
-      return { location: residentLocation, type: 'resident', label: `Resident needs rescue — ${code}` };
+      return { location: selectedResidentLocation, type: 'resident', label: `Resident needs rescue — ${code}` };
     }
 
     if (isRescueEnRouteToEvac(selectedReport)) {
@@ -399,50 +360,152 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
     }
 
     return null;
-  }, [assignedEvacuationArea, selectedReport]);
+  }, [assignedEvacuationArea, selectedReport, selectedResidentLocation]);
+
+  const backupRouteDestination = useMemo<RouteDestination | null>(() => {
+    if (!backupRequest?.acknowledged_at) return null;
+    const storedLatitude = backupRequest.report_latitude === null ? Number.NaN : Number(backupRequest.report_latitude);
+    const storedLongitude = backupRequest.report_longitude === null ? Number.NaN : Number(backupRequest.report_longitude);
+    let location = Number.isFinite(storedLatitude) && Number.isFinite(storedLongitude)
+      ? { latitude: storedLatitude, longitude: storedLongitude }
+      : null;
+    if (!location && backupRequest.report_id) {
+      const linkedReport = reports.find((report) => report.id === backupRequest.report_id);
+      location = extractCoordinate(linkedReport?.location, linkedReport?.latitude, linkedReport?.longitude);
+    }
+    if (!location) return null;
+    const reportCode = backupRequest.report_code
+      || (backupRequest.report_id ? `RPT-${String(backupRequest.report_id).padStart(6, '0')}` : 'Incident');
+    return { location, type: 'resident', label: `Resident requiring CDRRMD backup — ${reportCode}` };
+  }, [backupRequest, reports]);
+
+  const activeRouteDestination = backupRouteDestination || routeDestination;
 
   useEffect(() => {
-    if (!routeDestination || !rescuerOrigin) {
+    let cancelled = false;
+
+    function clearRoute() {
+      if (cancelled) return;
       setRouteCoordinates([]);
       setRouteDistanceKm(null);
       setRouteEtaMinutes(null);
-      return;
+      setRouteOriginLabel(null);
     }
 
-    let cancelled = false;
-    fetchRoadRoute(rescuerOrigin, routeDestination.location)
-      .then((route) => {
+    function applyRoute(route: Awaited<ReturnType<typeof fetchRoadRoute>>, originLabel: string) {
+      if (cancelled) return;
+      setRouteCoordinates(route.coordinates);
+      setRouteDistanceKm(route.distanceKm);
+      setRouteEtaMinutes(route.etaMinutes);
+      setRouteOriginLabel(originLabel);
+    }
+
+    function applyFallback(from: Coordinate, to: Coordinate, originLabel: string) {
+      if (cancelled) return;
+      setRouteCoordinates([from, to]);
+      setRouteDistanceKm(null);
+      setRouteEtaMinutes(null);
+      setRouteOriginLabel(originLabel);
+    }
+
+    async function calculateRoute() {
+      if (backupRouteDestination) {
+        try {
+          applyRoute(
+            await fetchRoadRoute(CDRRMD_LOCATION, backupRouteDestination.location),
+            'CDRRMD — Calamba City Hall',
+          );
+        } catch {
+          applyFallback(CDRRMD_LOCATION, backupRouteDestination.location, 'CDRRMD — Calamba City Hall');
+        }
+        return;
+      }
+
+      if (!routeDestination) {
+        clearRoute();
+        return;
+      }
+
+      if (routeDestination.type === 'resident') {
+        const candidates = evacuationAreas.filter((area) => area.is_active);
+        if (candidates.length === 0) {
+          clearRoute();
+          return;
+        }
+
+        const results = await Promise.allSettled(candidates.map(async (area) => ({
+          area,
+          route: await fetchRoadRoute(
+            { latitude: area.latitude, longitude: area.longitude },
+            routeDestination.location,
+          ),
+        })));
         if (cancelled) return;
-        setRouteCoordinates(route.coordinates);
-        setRouteDistanceKm(route.distanceKm);
-        setRouteEtaMinutes(route.etaMinutes);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setRouteCoordinates([rescuerOrigin, routeDestination.location]);
-        setRouteDistanceKm(null);
-        setRouteEtaMinutes(null);
-      });
+        const reachable = results
+          .filter((result): result is PromiseFulfilledResult<{
+            area: EvacuationAreaItem;
+            route: Awaited<ReturnType<typeof fetchRoadRoute>>;
+          }> => result.status === 'fulfilled')
+          .map((result) => result.value)
+          .sort((left, right) => left.route.distanceKm - right.route.distanceKm);
+        if (reachable[0]) {
+          applyRoute(reachable[0].route, `Evacuation Center — ${reachable[0].area.name}`);
+          return;
+        }
+
+        const nearestFallback = [...candidates].sort((left, right) =>
+          distanceSquared({ latitude: left.latitude, longitude: left.longitude }, routeDestination.location)
+          - distanceSquared({ latitude: right.latitude, longitude: right.longitude }, routeDestination.location))[0];
+        applyFallback(
+          { latitude: nearestFallback.latitude, longitude: nearestFallback.longitude },
+          routeDestination.location,
+          `Evacuation Center — ${nearestFallback.name}`,
+        );
+        return;
+      }
+
+      if (!selectedResidentLocation) {
+        clearRoute();
+        return;
+      }
+      try {
+        applyRoute(
+          await fetchRoadRoute(selectedResidentLocation, routeDestination.location),
+          'Resident pickup location',
+        );
+      } catch {
+        applyFallback(selectedResidentLocation, routeDestination.location, 'Resident pickup location');
+      }
+    }
+
+    void calculateRoute().catch(() => {
+      if (!cancelled) {
+        clearRoute();
+      }
+    });
+
     return () => {
       cancelled = true;
     };
   }, [
-    rescuerOrigin?.latitude,
-    rescuerOrigin?.longitude,
-    routeDestination?.type,
-    routeDestination?.location.latitude,
-    routeDestination?.location.longitude,
+    backupRouteDestination,
+    routeDestination,
+    selectedResidentLocation,
+    evacuationAreas,
   ]);
+
+  const mappedResidentLocation = backupRouteDestination?.location || selectedResidentLocation;
 
   const mapHtml = useMemo(
     () => buildCalambaMapHtml(
       evacuationAreas,
-      rescuerOrigin,
       routeCoordinates,
-      routeDestination?.location ?? null,
-      selectedReport && routeDestination
-        ? (selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`)
-        : null,
+      mappedResidentLocation,
+      backupRouteDestination
+        ? (backupRequest?.report_code || (backupRequest?.report_id ? `RPT-${String(backupRequest.report_id).padStart(6, '0')}` : 'Backup incident'))
+        : selectedReport && routeDestination
+          ? (selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`)
+          : null,
       activeReports
         .map((r) => ({
           reportCode: r.report_code || `RPT-${String(r.id).padStart(6, '0')}`,
@@ -458,9 +521,11 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/weather/wind-field`,
       layerVisibility,
       barangayName,
-      { origin: routeDestination?.label || 'Destination', destination: 'Rescuer — current location' },
+      backupRouteDestination
+        ? { origin: backupRouteDestination.label, destination: 'CDRRMD — Calamba City Hall' }
+        : { origin: routeDestination?.label || 'Resident location', destination: routeOriginLabel || 'Evacuation center' },
     ),
-    [activeReports, evacuationAreas, layerVisibility, rescuerOrigin, routeCoordinates, routeDestination, selectedReport, barangayName],
+    [activeReports, evacuationAreas, layerVisibility, routeCoordinates, routeDestination, mappedResidentLocation, backupRouteDestination, backupRequest, routeOriginLabel, selectedReport, barangayName],
   );
 
   // layerRows handled inside the Leaflet map Layers button (top-right)
@@ -549,6 +614,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
     <BarangayShell
       activeView="monitoring"
       title="Incident Monitoring"
+      actions={<BackupRequest reportId={selectedReport?.id ?? null} onRequestChange={setBackupRequest} />}
       subtitle={`Showing incidents within Barangay ${barangayName}`}
       noMainScroll
       barangayName={barangayName}
@@ -643,6 +709,15 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
                 <p><strong>Reporter:</strong> {[selectedReport.first_name, selectedReport.last_name].filter(Boolean).join(' ') || selectedReport.email || 'N/A'}</p>
                 <p><strong>Contact:</strong> {selectedReport.contact_number || 'N/A'}</p>
                 <p><strong>Reported:</strong> {new Date(selectedReport.created_at).toLocaleString()}</p>
+                {backupRouteDestination ? (
+                  <div style={{ margin: '10px 0', padding: '10px 12px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #86efac', color: '#166534', fontSize: '0.78rem', fontWeight: 700 }}>
+                    CDRRMD acknowledged the backup request. The map is showing the shortest road route from CDRRMD at Calamba City Hall to this resident.
+                    <div style={{ marginTop: 4, fontWeight: 600 }}>
+                      Route: {routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : 'Calculating…'}
+                      {' · '}ETA: {routeEtaMinutes ? `${routeEtaMinutes} mins` : 'Calculating…'}
+                    </div>
+                  </div>
+                ) : null}
                 {isRescueReport(selectedReport) ? (
                   <>
                     <div
@@ -663,16 +738,18 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
                           ? '✅ Resident Rescued — routing to evacuation center'
                           : 'Rescue case'}
                       <div style={{ marginTop: 4, fontWeight: 600 }}>
-                        Current destination: {routeDestination?.label || 'Calculating…'}
+                        Current destination: {activeRouteDestination?.label || 'Calculating…'}
                       </div>
                     </div>
                     <p><strong>Evacuation Area:</strong> {selectedReport.evacuation_area_name || assignedEvacuationArea?.name || 'N/A'}</p>
                     <p><strong>Route Distance:</strong> {routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : 'Calculating...'}</p>
                     <p><strong>Route ETA:</strong> {routeEtaMinutes ? `${routeEtaMinutes} mins` : 'Calculating...'}</p>
                     <p style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                      {rescuerLocation
-                        ? 'Route origin: your device\u2019s live location.'
-                        : `Route origin: barangay base location (live GPS unavailable${rescuerLocationError ? `: ${rescuerLocationError}` : ''}).`}
+                      {backupRouteDestination
+                        ? 'Route origin: CDRRMD, Calamba City Hall (14.194052, 121.159688).'
+                        : routeOriginLabel
+                          ? `Route origin: ${routeOriginLabel}${routeDestination?.type === 'resident' ? ' (nearest active center by road distance).' : '.'}`
+                          : 'Calculating the nearest active evacuation center…'}
                     </p>
                   </>
                 ) : null}

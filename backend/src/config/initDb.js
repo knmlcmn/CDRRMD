@@ -35,6 +35,20 @@ async function initDb() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS backup_requests (
+      id SERIAL PRIMARY KEY,
+      barangay_name VARCHAR(120) NOT NULL,
+      requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      arrived_at TIMESTAMPTZ,
+      confirmed_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+    );
+    ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
+    ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS acknowledged_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS backup_requests_active_barangay_idx
+      ON backup_requests (LOWER(barangay_name)) WHERE arrived_at IS NULL;
+
     CREATE TABLE IF NOT EXISTS alerts (
       id SERIAL PRIMARY KEY,
       title VARCHAR(160) NOT NULL,
@@ -155,8 +169,40 @@ async function initDb() {
     ALTER TABLE incident_reports
     ADD COLUMN IF NOT EXISTS assigned_barangay VARCHAR(120);
 
+    ALTER TABLE backup_requests
+    ADD COLUMN IF NOT EXISTS report_id INTEGER;
+
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'backup_requests_report_id_fkey'
+      ) THEN
+        ALTER TABLE backup_requests
+        ADD CONSTRAINT backup_requests_report_id_fkey
+        FOREIGN KEY (report_id) REFERENCES incident_reports(id) ON DELETE SET NULL;
+      END IF;
+    END $$;
+
     CREATE INDEX IF NOT EXISTS incident_reports_assigned_barangay_idx
     ON incident_reports (LOWER(assigned_barangay), created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS backup_requests_report_id_idx
+    ON backup_requests (report_id);
+
+    UPDATE backup_requests br
+    SET report_id = (
+      SELECT ir.id
+      FROM incident_reports ir
+      WHERE LOWER(ir.assigned_barangay) = LOWER(br.barangay_name)
+        AND ir.latitude IS NOT NULL
+        AND ir.longitude IS NOT NULL
+      ORDER BY
+        CASE WHEN LOWER(ir.status) IN ('pending', 'accepted', 'in_progress') THEN 0 ELSE 1 END,
+        ir.created_at DESC
+      LIMIT 1
+    )
+    WHERE br.report_id IS NULL AND br.arrived_at IS NULL;
   `);
 
   await pool.query(`

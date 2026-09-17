@@ -33,6 +33,8 @@ type NominatimResult = {
   lat: string;
   lon: string;
   address?: {
+    neighbourhood?: string;
+    quarter?: string;
     suburb?: string;
     village?: string;
     town?: string;
@@ -83,13 +85,17 @@ function buildMapHtml(areas: EvacuationAreaItem[], selectedId: number | null, pr
     <style>
       html, body, #map { margin: 0; width: 100%; height: 100%; }
       .pin {
+        align-items: center;
         width: 16px;
         height: 16px;
         border-radius: 999px;
         background: #e11d48;
         border: 3px solid #fff;
         box-shadow: 0 2px 6px rgba(0,0,0,.35);
+        display: flex;
+        justify-content: center;
       }
+      .pin img { filter: brightness(0) invert(1); height: 12px; width: 12px; }
       .pin.selected {
         background: #14b8a6;
         width: 18px;
@@ -114,12 +120,24 @@ function buildMapHtml(areas: EvacuationAreaItem[], selectedId: number | null, pr
         attribution: '&copy; OpenStreetMap contributors'
       }).addTo(map);
 
+      var cdrrmdIcon = L.divIcon({
+        className: '',
+        html: '<div style="align-items:center;background:#16a34a;border:3px solid #fff;border-radius:50% 50% 50% 0;box-shadow:0 3px 9px rgba(0,0,0,.45);display:flex;height:25px;justify-content:center;transform:rotate(-45deg);width:25px"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-landmark.svg" style="filter:brightness(0) invert(1);height:15px;transform:rotate(45deg);width:15px" /></div>',
+        iconSize: [31, 31],
+        iconAnchor: [15, 30],
+        popupAnchor: [0, -28]
+      });
+      L.marker([14.194052, 121.159688], { icon: cdrrmdIcon, zIndexOffset: 1200 })
+        .addTo(map)
+        .bindTooltip('CDRRMD - Calamba City Hall', { direction: 'top', offset: [0, -25] })
+        .bindPopup('<strong>CDRRMD</strong><br>Calamba City Hall<br>14.194052, 121.159688');
+
       var markers = [];
       data.areas.forEach(function(area) {
         var isSelected = Number(area.id) === Number(data.selectedId);
         var icon = L.divIcon({
           className: '',
-          html: '<div class="pin' + (isSelected ? ' selected' : '') + '"></div>',
+          html: '<div class="pin' + (isSelected ? ' selected' : '') + '"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" /></div>',
           iconSize: [20, 20],
           iconAnchor: [10, 10],
         });
@@ -133,7 +151,7 @@ function buildMapHtml(areas: EvacuationAreaItem[], selectedId: number | null, pr
       if (data.previewPin) {
         var previewIcon = L.divIcon({
           className: '',
-          html: '<div class="pin preview"></div>',
+          html: '<div class="pin preview"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" /></div>',
           iconSize: [22, 22],
           iconAnchor: [11, 11],
         });
@@ -278,10 +296,10 @@ export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenA
     const lat = parseFloat(result.lat);
     const lng = parseFloat(result.lon);
     const barangay =
+      result.address?.quarter ||
       result.address?.suburb ||
+      result.address?.neighbourhood ||
       result.address?.village ||
-      result.address?.town ||
-      result.address?.city ||
       '';
 
     setForm((prev) =>

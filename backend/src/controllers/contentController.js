@@ -24,7 +24,15 @@ async function resolveCanonicalBarangayName(rawBarangay, latitude, longitude) {
   if (!supported) return null;
 
   const requestedKey = normalizeBarangayName(rawBarangay);
-  if (requestedKey && requestedKey !== normalizeBarangayName(supported.barangay_name)) {
+  // Nominatim sometimes returns the municipality (Calamba) when a result has
+  // no barangay-level address field. In that case, trust the verified polygon
+  // match instead of treating the city name as a conflicting barangay.
+  const isCalambaMunicipalityFallback = ['calamba', 'calamba city', 'city of calamba'].includes(requestedKey);
+  if (
+    requestedKey &&
+    !isCalambaMunicipalityFallback &&
+    requestedKey !== normalizeBarangayName(supported.barangay_name)
+  ) {
     const error = new Error(`The selected location is inside Barangay ${supported.barangay_name}, not Barangay ${String(rawBarangay).trim()}.`);
     error.code = 'BARANGAY_BOUNDARY_MISMATCH';
     error.status = 400;

@@ -58,6 +58,7 @@ app.use('/api/weather', weatherRoutes);
 app.use('/api/flood-risk', floodRiskRoutes);
 app.use('/api/admins', adminRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/backup-requests', require('./routes/backupRoutes'));
 app.use('/api/barangay', barangayRoutes);
 
 app.use((err, req, res, next) => {

@@ -278,6 +278,18 @@ function buildLeafletHtml(
         attribution: ''
       }).addTo(map);
 
+      var cdrrmdIcon = L.divIcon({
+        className: '',
+        html: '<div style="align-items:center;background:#16a34a;border:3px solid #fff;border-radius:50% 50% 50% 0;box-shadow:0 3px 9px rgba(0,0,0,.45);display:flex;height:25px;justify-content:center;transform:rotate(-45deg);width:25px"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-landmark.svg" style="filter:brightness(0) invert(1);height:15px;transform:rotate(45deg);width:15px" /></div>',
+        iconSize: [31, 31],
+        iconAnchor: [15, 30],
+        popupAnchor: [0, -28]
+      });
+      L.marker([14.194052, 121.159688], { icon: cdrrmdIcon, zIndexOffset: 1200 })
+        .addTo(map)
+        .bindTooltip('CDRRMD - Calamba City Hall', { direction: 'top', offset: [0, -25] })
+        .bindPopup('<strong>CDRRMD</strong><br>Calamba City Hall<br>14.194052, 121.159688');
+
       function applyIronMapTint() {
         var tilePane = map.getPanes().tilePane;
         if (tilePane) {
@@ -1098,25 +1110,32 @@ function buildLeafletHtml(
         control.addTo(map);
       }
 
-      var userMarker = L.circleMarker([data.userLocation.latitude, data.userLocation.longitude], {
-        radius: 8,
-        color: '#ef4444',
-        fillColor: '#ef4444',
-        fillOpacity: 0.95
+      var userPinIcon = L.divIcon({
+        className: '',
+        html: '<div style="align-items:center;background:#ef4444;border:3px solid #fff;border-radius:999px;box-shadow:0 2px 7px rgba(0,0,0,.35);display:flex;height:19px;justify-content:center;width:19px"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-user.svg" style="filter:brightness(0) invert(1);height:14px;width:14px" /></div>',
+        iconSize: [25, 25],
+        iconAnchor: [12, 12],
+        popupAnchor: [0, -12]
+      });
+      var userMarker = L.marker([data.userLocation.latitude, data.userLocation.longitude], {
+        icon: userPinIcon,
+        zIndexOffset: 1000
       }).addTo(userLayer).bindPopup('Your location');
 
-      var areaPinIcon = L.icon({
-        iconUrl: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
-        iconSize: [24, 24],
-        iconAnchor: [12, 24],
-        popupAnchor: [0, -22]
+      var areaPinIcon = L.divIcon({
+        className: '',
+        html: '<div style="align-items:center;background:#e11d48;border:3px solid #fff;border-radius:999px;box-shadow:0 2px 6px rgba(0,0,0,.35);display:flex;height:20px;justify-content:center;width:20px"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" style="filter:brightness(0) invert(1);height:15px;width:15px" /></div>',
+        iconSize: [26, 26],
+        iconAnchor: [13, 13],
+        popupAnchor: [0, -13]
       });
 
-      var selectedAreaPinIcon = L.icon({
-        iconUrl: 'https://cdn-icons-png.flaticon.com/512/447/447031.png',
-        iconSize: [26, 26],
-        iconAnchor: [13, 26],
-        popupAnchor: [0, -24]
+      var selectedAreaPinIcon = L.divIcon({
+        className: '',
+        html: '<div style="align-items:center;background:#14b8a6;border:3px solid #fff;border-radius:999px;box-shadow:0 2px 8px rgba(0,0,0,.45);display:flex;height:22px;justify-content:center;width:22px"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" style="filter:brightness(0) invert(1);height:16px;width:16px" /></div>',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14],
+        popupAnchor: [0, -14]
       });
 
       var fitBounds = L.latLngBounds([[data.userLocation.latitude, data.userLocation.longitude]]);
