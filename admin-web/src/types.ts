@@ -100,6 +100,37 @@ export type BarangayAccount = {
   last_login: string | null;
 };
 
+export type RescuerAccount = {
+  id: number;
+  rescuer_id: string;
+  username: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  address: string | null;
+  contact_number: string | null;
+  created_at: string;
+  last_login: string | null;
+  is_online: boolean;
+  is_available: boolean;
+};
+
+export type BackupRequest = {
+  id: number;
+  report_id: number;
+  acknowledged_at: string | null;
+  assigned_rescuer_id: number | null;
+  assigned_at: string | null;
+  picked_up_at: string | null;
+  rescuer_name?: string | null;
+  rescuer_account_id?: string | null;
+  rescuer_latitude?: number | null;
+  rescuer_longitude?: number | null;
+  rescuer_location_updated_at?: string | null;
+  evacuation_latitude?: number | null;
+  evacuation_longitude?: number | null;
+};
+
 export type MonitoringReport = {
   id: number;
   report_code: string;

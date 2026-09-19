@@ -1,8 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import cdrrmdLogo from '../assets/cdrrmd-logo.png';
 import { d } from '../adminDesign';
 
-type ActiveView = 'dashboard' | 'admin' | 'users' | 'barangay' | 'monitoring' | 'flood-monitoring' | 'evacuation' | 'post-updates';
+type ActiveView = 'dashboard' | 'admin' | 'users' | 'barangay' | 'rescuers' | 'monitoring' | 'flood-monitoring' | 'evacuation' | 'post-updates';
 
 type Props = {
   activeView: ActiveView;
@@ -14,6 +14,7 @@ type Props = {
   onOpenAdmin: () => void;
   onOpenUsers: () => void;
   onOpenBarangay: () => void;
+  onOpenRescuers: () => void;
   onOpenMonitoring: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationAreas: () => void;
@@ -82,6 +83,7 @@ export default function AdminShell({
   onOpenAdmin,
   onOpenUsers,
   onOpenBarangay,
+  onOpenRescuers,
   onOpenMonitoring,
   onOpenFloodMonitoring,
   onOpenEvacuationAreas,
@@ -89,18 +91,10 @@ export default function AdminShell({
   actions,
   children,
 }: Props) {
-  const [isAccountsExpanded, setIsAccountsExpanded] = useState(activeView === 'admin' || activeView === 'users' || activeView === 'barangay');
-
-  useEffect(() => {
-    if (activeView === 'admin' || activeView === 'users' || activeView === 'barangay') {
-      setIsAccountsExpanded(true);
-      return;
-    }
-    setIsAccountsExpanded(false);
-  }, [activeView]);
+  const [isAccountsExpanded, setIsAccountsExpanded] = useState(activeView === 'admin' || activeView === 'users' || activeView === 'barangay' || activeView === 'rescuers');
 
   function onAccountsClick() {
-    if (activeView !== 'admin' && activeView !== 'users' && activeView !== 'barangay') {
+    if (activeView !== 'admin' && activeView !== 'users' && activeView !== 'barangay' && activeView !== 'rescuers') {
       onOpenAdmin();
       setIsAccountsExpanded(true);
       return;
@@ -144,7 +138,7 @@ export default function AdminShell({
             </button>
 
             <div>
-              <button onClick={onAccountsClick} className={itemClass(activeView === 'admin' || activeView === 'users' || activeView === 'barangay')}>
+              <button onClick={onAccountsClick} className={itemClass(activeView === 'admin' || activeView === 'users' || activeView === 'barangay' || activeView === 'rescuers')}>
                 <NavLabel icon="accounts" label="Accounts" />
               </button>
               {isAccountsExpanded ? (
@@ -166,6 +160,12 @@ export default function AdminShell({
                     className={[d.shell.accountsDropdownItem, activeView === 'barangay' ? d.shell.accountsDropdownItemActive : d.shell.accountsDropdownItemIdle].join(' ')}
                   >
                     Barangay
+                  </button>
+                  <button
+                    onClick={onOpenRescuers}
+                    className={[d.shell.accountsDropdownItem, activeView === 'rescuers' ? d.shell.accountsDropdownItemActive : d.shell.accountsDropdownItemIdle].join(' ')}
+                  >
+                    CDRRMD Rescuers
                   </button>
                 </div>
               ) : null}
@@ -225,7 +225,7 @@ export default function AdminShell({
             title="Accounts"
             className={[
               d.shell.mobileNavItem,
-              activeView === 'admin' || activeView === 'users' || activeView === 'barangay' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
+              activeView === 'admin' || activeView === 'users' || activeView === 'barangay' || activeView === 'rescuers' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
             <NavIcon name="accounts" />

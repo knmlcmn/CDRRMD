@@ -10,6 +10,9 @@ import AdminPage from './pages/AdminPage';
 import UsersPage from './pages/UsersPage';
 import PostUpdatesPage from './pages/PostUpdatesPage';
 import BarangayAccountsPage from './pages/BarangayAccountsPage';
+import RescuerAccountsPage from './pages/RescuerAccountsPage';
+import RescuerDashboardPage from './pages/RescuerDashboardPage';
+import type { StaffPortal } from './services/authService';
 import WaterLevelUpdateToast, { type WaterLevelUpdateNoticeKind } from './components/WaterLevelUpdateToast';
 import { loadWaterLevelSensors, type WaterLevelSensor } from './services/waterLevelSensors';
 
@@ -18,6 +21,7 @@ type View =
   | 'admin'
   | 'users'
   | 'barangay'
+  | 'rescuers'
   | 'monitoring'
   | 'flood-monitoring'
   | 'evacuation-areas'
@@ -29,10 +33,24 @@ type WaterUpdateNotice = {
   sensors: WaterLevelSensor[];
 };
 
+function roleFromToken(token: string | null): StaffPortal | null {
+  try {
+    if (!token) return null;
+    const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const role = JSON.parse(atob(payload)).role;
+    return role === 'admin' || role === 'rescuer' ? role : null;
+  } catch {
+    return null;
+  }
+}
+
 function App() {
   const [token, setToken] = useState<string | null>(
     () => localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token'),
   );
+  const [role, setRole] = useState<StaffPortal | null>(() => roleFromToken(
+    localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token'),
+  ));
   const [view, setView] = useState<View>('dashboard');
   const [backupReportId, setBackupReportId] = useState<number | null>(null);
   const [waterUpdateNotices, setWaterUpdateNotices] = useState<WaterUpdateNotice[]>([]);
@@ -59,7 +77,7 @@ function App() {
   }, [token]);
 
   useEffect(() => {
-    if (!token || view === 'dashboard') {
+    if (!token || role !== 'admin' || view === 'dashboard') {
       return undefined;
     }
 
@@ -108,7 +126,7 @@ function App() {
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [token, view]);
+  }, [token, role, view]);
 
   useEffect(() => {
     function handleUnload() {
@@ -126,7 +144,7 @@ function App() {
     return () => window.removeEventListener('beforeunload', handleUnload);
   }, []);
 
-  function onLoggedIn(nextToken: string, rememberMe: boolean) {
+  function onLoggedIn(nextToken: string, rememberMe: boolean, nextRole: StaffPortal) {
     if (rememberMe) {
       localStorage.setItem('admin_token', nextToken);
       sessionStorage.removeItem('admin_token');
@@ -136,6 +154,7 @@ function App() {
     }
     setAuthToken(nextToken);
     setToken(nextToken);
+    setRole(nextRole);
   }
 
   function onLogout() {
@@ -146,6 +165,7 @@ function App() {
     setBackupReportId(null);
     lastNotifiedWaterBucketRef.current = {};
     setToken(null);
+    setRole(null);
     setView('dashboard');
   }
 
@@ -158,12 +178,17 @@ function App() {
     return <LoginPage onLoggedIn={onLoggedIn} />;
   }
 
+  if (role === 'rescuer') {
+    return <RescuerDashboardPage onLogout={onLogout} onAuthError={onLogout} />;
+  }
+
   const shellProps = {
     onLogout,
     onOpenDashboard: () => openView('dashboard'),
     onOpenAdmin: () => openView('admin'),
     onOpenUsers: () => openView('users'),
     onOpenBarangay: () => openView('barangay'),
+    onOpenRescuers: () => openView('rescuers'),
     onOpenMonitoring: () => openView('monitoring'),
     onOpenFloodMonitoring: () => openView('flood-monitoring'),
     onOpenEvacuationAreas: () => openView('evacuation-areas'),
@@ -176,6 +201,7 @@ function App() {
   if (view === 'admin') currentPage = <AdminPage {...shellProps} />;
   if (view === 'users') currentPage = <UsersPage {...shellProps} />;
   if (view === 'barangay') currentPage = <BarangayAccountsPage {...shellProps} />;
+  if (view === 'rescuers') currentPage = <RescuerAccountsPage {...shellProps} />;
   if (view === 'monitoring') currentPage = <MonitoringPage key={backupReportId ?? 'monitoring'} {...shellProps} backupReportId={backupReportId} />;
   if (view === 'flood-monitoring') currentPage = <FloodMonitoringPage {...shellProps} />;
   if (view === 'post-updates') currentPage = <PostUpdatesPage {...shellProps} />;

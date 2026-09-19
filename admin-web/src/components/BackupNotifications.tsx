@@ -97,7 +97,7 @@ export default function BackupNotifications({ onConfirm }: { onConfirm: (reportI
     <p><strong>Estimated people:</strong> {active.estimated_people ?? '-'}</p>
     {active.report_notes ? <p><strong>Details:</strong> {active.report_notes}</p> : null}
     <p><strong>Requested:</strong> {new Date(active.created_at).toLocaleString()}</p>
-    <p>Dismissed notifications return after 5 seconds. Confirming dispatches CDRRMD while the barangay continues responding.</p>
+    <p>Dismissed notifications return after 5 seconds. After confirmation, assign an available CDRRMD Rescuer team while the Barangay continues responding.</p>
     {error && <p role="alert" className="backup-error">{error}</p>}
     <div className="backup-actions">
       <button className="backup-button backup-button-secondary" disabled={busy} onClick={dismiss}>Dismiss</button>

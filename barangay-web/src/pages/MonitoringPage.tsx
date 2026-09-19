@@ -359,6 +359,18 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
   const routeDestination = useMemo<RouteDestination | null>(() => {
     if (!selectedReport || !isRescueReport(selectedReport)) return null;
 
+    const isLinkedBackup = backupRequest?.report_id === selectedReport.id;
+    if (isLinkedBackup && backupRequest?.picked_up_at) {
+      const latitude = Number(backupRequest.evacuation_latitude ?? assignedEvacuationArea?.latitude);
+      const longitude = Number(backupRequest.evacuation_longitude ?? assignedEvacuationArea?.longitude);
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+      return {
+        location: { latitude, longitude },
+        type: 'evacuation_center',
+        label: selectedReport.evacuation_area_name || assignedEvacuationArea?.name || 'Designated evacuation center',
+      };
+    }
+
     if (isRescueAwaitingPickup(selectedReport)) {
       if (!selectedResidentLocation) return null;
       const code = selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`;
@@ -366,10 +378,10 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
     }
 
     return null;
-  }, [selectedReport, selectedResidentLocation]);
+  }, [assignedEvacuationArea, backupRequest, selectedReport, selectedResidentLocation]);
 
   const backupRouteDestination = useMemo<RouteDestination | null>(() => {
-    if (!backupRequest?.acknowledged_at) return null;
+    if (!backupRequest?.acknowledged_at || backupRequest.assigned_rescuer_id) return null;
     const linkedReport = backupRequest.report_id
       ? reports.find((report) => report.id === backupRequest.report_id)
       : null;
@@ -620,9 +632,14 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
     setError(null);
 
     try {
-      await api.patch(`/barangay/reports/${selectedReport.id}/status`, {
-        status: 'resolved',
-      });
+      const assignedBackup = backupRequest?.report_id === selectedReport.id
+        && backupRequest.assigned_rescuer_id
+        && !backupRequest.picked_up_at;
+      if (assignedBackup) {
+        await api.patch(`/backup-requests/${backupRequest.id}/pickup`);
+      } else {
+        await api.patch(`/barangay/reports/${selectedReport.id}/status`, { status: 'resolved' });
+      }
       await loadData(false);
     } catch (err: unknown) {
       const apiError = err as ApiError;
@@ -730,7 +747,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
                 <p><strong>ID:</strong> {selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`}</p>
                 <p><strong>Type:</strong> {formatType(selectedReport.report_type)}</p>
                 <p><strong>Incident:</strong> {formatType(selectedReport.incident_type)}</p>
-                <p><strong>Status:</strong> {formatRescueAwareStatus(selectedReport)}</p>
+                <p><strong>Status:</strong> {backupRequest?.report_id === selectedReport.id && backupRequest.picked_up_at ? 'Transporting to Evacuation Center' : formatRescueAwareStatus(selectedReport)}</p>
                 <p><strong>Location:</strong> {selectedReport.location}</p>
                 <p><strong>Reporter:</strong> {[selectedReport.first_name, selectedReport.last_name].filter(Boolean).join(' ') || selectedReport.email || 'N/A'}</p>
                 <p><strong>Contact:</strong> {selectedReport.contact_number || 'N/A'}</p>
@@ -782,6 +799,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
                 {selectedReport.water_level ? <p><strong>Water Level:</strong> {selectedReport.water_level}</p> : null}
                 {selectedReport.are_people_trapped ? <p><strong>People Trapped:</strong> {selectedReport.estimated_people ?? 'Unknown'}</p> : null}
                 {selectedReport.assigned_team ? <p><strong>Assigned Team:</strong> {selectedReport.assigned_team}</p> : null}
+                {backupRequest?.assigned_rescuer_id ? <p><strong>CDRRMD Rescuer:</strong> {backupRequest.rescuer_name || backupRequest.rescuer_account_id || 'Assigned team'}</p> : null}
                 {selectedReport.admin_notes ? <p><strong>Admin Notes:</strong> {selectedReport.admin_notes}</p> : null}
                 {selectedReport.notes ? <p><strong>Reporter Notes:</strong> {selectedReport.notes}</p> : null}
                 {selectedReport.image_base64 ? (
@@ -876,7 +894,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
                 <p className={d.monitoring.validationEmpty}>Select a report to review.</p>
               ) : (
                 <div className={d.monitoring.validationStack}>
-                <p className={d.monitoring.validationCurrent}>Current status: {formatRescueAwareStatus(selectedReport)}</p>
+                <p className={d.monitoring.validationCurrent}>Current status: {backupRequest?.report_id === selectedReport.id && backupRequest.picked_up_at ? 'Transporting to Evacuation Center' : formatRescueAwareStatus(selectedReport)}</p>
                 <p className={d.monitoring.validationCurrent}>Report type: {formatType(selectedReport.report_type)}</p>
                 {isRescueReport(selectedReport) && (selectedReport.evacuation_area_name || assignedEvacuationArea?.name) ? (
                   <p className={d.monitoring.assignNote}>
@@ -890,11 +908,14 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
                     <button onClick={() => setActionMode('decline')} className={d.btn.declineDisabled} disabled={busy}>Decline</button>
                   </div>
                 ) : null}
-                {isRescueReport(selectedReport) && selectedReport.status === 'accepted' ? (
+                {isRescueReport(selectedReport)
+                  && ['accepted', 'in_progress'].includes(selectedReport.status)
+                  && !(backupRequest?.report_id === selectedReport.id && backupRequest.picked_up_at)
+                  && (backupRequest?.report_id !== selectedReport.id || Boolean(backupRequest.assigned_rescuer_id)) ? (
                   <div className={d.monitoring.actionBox}>
                     <p style={{ fontSize: '0.75rem', color: '#334155', margin: 0 }}>
-                      Once you've reached and picked up the resident, confirm below to automatically switch the route
-                      to their designated evacuation center.
+                      Once you've reached and picked up the resident, confirm below to switch both response teams toward
+                      the designated evacuation center.
                     </p>
                     <div className={d.monitoring.actionRow}>
                       <button onClick={() => confirmResidentRescued()} className={d.btn.acceptDisabled} disabled={busy}>
@@ -903,6 +924,11 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
                     </div>
                   </div>
                 ) : null}
+                {backupRequest?.report_id === selectedReport.id
+                  && backupRequest.acknowledged_at
+                  && !backupRequest.assigned_rescuer_id ? (
+                    <p className={d.monitoring.assignNote}>Admin confirmed the backup request. Continue responding while a CDRRMD Rescuer team is assigned.</p>
+                  ) : null}
                 {actionMode === 'accept' ? (
                   <div className={d.monitoring.actionBox}>
                     <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Add validation notes" className={d.form.textareaSm} />

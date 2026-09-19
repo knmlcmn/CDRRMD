@@ -2,7 +2,7 @@
 import { api } from '../services/apiClient';
 import AdminShell from '../components/AdminShell';
 import { d } from '../adminDesign';
-import type { EvacuationAreaItem, MonitoringReport } from '../types';
+import type { BackupRequest, EvacuationAreaItem, MonitoringReport, RescuerAccount } from '../types';
 import { buildCalambaMapHtml } from '../utils/calambaMapHtml';
 
 type Props = {
@@ -11,6 +11,7 @@ type Props = {
   onOpenAdmin: () => void;
   onOpenUsers: () => void;
   onOpenBarangay: () => void;
+  onOpenRescuers: () => void;
   onOpenEvacuationAreas: () => void;
   onOpenPostUpdates: () => void;
   onOpenFloodMonitoring: () => void;
@@ -110,14 +111,16 @@ function distanceSquared(a: Coordinate, b: Coordinate) {
   return dLat * dLat + dLon * dLon;
 }
 
-export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenEvacuationAreas, onOpenPostUpdates, onOpenFloodMonitoring, onAuthError, backupReportId = null }: Props) {
+export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenEvacuationAreas, onOpenPostUpdates, onOpenFloodMonitoring, onAuthError, backupReportId = null }: Props) {
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationAreaItem[]>([]);
   const [reports, setReports] = useState<MonitoringReport[]>([]);
+  const [backupRequests, setBackupRequests] = useState<BackupRequest[]>([]);
+  const [rescuers, setRescuers] = useState<RescuerAccount[]>([]);
+  const [rescuerChoice, setRescuerChoice] = useState('');
   const [selectedReportId, setSelectedReportId] = useState<number | null>(backupReportId);
   const [routeCoordinates, setRouteCoordinates] = useState<Coordinate[]>([]);
   const [routeDistanceKm, setRouteDistanceKm] = useState<number | null>(null);
   const [routeEtaMinutes, setRouteEtaMinutes] = useState<number | null>(null);
-  const [liveResponderLocation, setLiveResponderLocation] = useState<Coordinate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loadingMap, setLoadingMap] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -147,9 +150,11 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     }
 
     try {
-      const [areasResponse, reportsResponse] = await Promise.all([
+      const [areasResponse, reportsResponse, backupResponse, rescuerResponse] = await Promise.all([
         api.get('/content/evacuation-areas'),
         api.get('/reports'),
+        api.get('/backup-requests'),
+        api.get('/rescuers/accounts'),
       ]);
 
       const nextAreas = Array.isArray(areasResponse.data) ? areasResponse.data : [];
@@ -157,6 +162,8 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
 
       setEvacuationAreas(nextAreas);
       setReports(nextReports);
+      setBackupRequests(Array.isArray(backupResponse.data) ? backupResponse.data : []);
+      setRescuers(Array.isArray(rescuerResponse.data) ? rescuerResponse.data : []);
 
       if (nextReports.length > 0 && !nextReports.some((item: MonitoringReport) => item.id === selectedReportId)) {
         setSelectedReportId(nextReports[0].id);
@@ -260,39 +267,23 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     [filteredReports, selectedReportId],
   );
 
+  const selectedBackup = useMemo(
+    () => selectedReport ? backupRequests.find((request) => request.report_id === selectedReport.id) || null : null,
+    [backupRequests, selectedReport],
+  );
+
   const isBackupResponse = Boolean(
     selectedReport
-    && selectedReport.id === backupReportId
+    && selectedBackup?.acknowledged_at
     && selectedReport.report_type === 'rescue'
     && isActiveRescueStatus(selectedReport.status),
   );
 
-  const shouldTrackResponder = Boolean(
-    selectedReport
-    && selectedReport.report_type === 'rescue'
-    && isActiveRescueStatus(selectedReport.status)
-    && (isBackupResponse || ['accepted', 'in_progress'].includes(String(selectedReport.status).toLowerCase())),
-  );
-
-  useEffect(() => {
-    if (!shouldTrackResponder || !navigator.geolocation) {
-      setLiveResponderLocation(null);
-      return undefined;
-    }
-
-    let lastUpdate = 0;
-    const watchId = navigator.geolocation.watchPosition(
-      ({ coords }) => {
-        const now = Date.now();
-        if (now - lastUpdate < 2000) return;
-        lastUpdate = now;
-        setLiveResponderLocation({ latitude: coords.latitude, longitude: coords.longitude });
-      },
-      () => setLiveResponderLocation(null),
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 },
-    );
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [shouldTrackResponder, selectedReport?.id]);
+  const liveResponderLocation = useMemo<Coordinate | null>(() => {
+    const latitude = Number(selectedBackup?.rescuer_latitude);
+    const longitude = Number(selectedBackup?.rescuer_longitude);
+    return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
+  }, [selectedBackup]);
 
   const assignedResponderArea = useMemo(() => {
     if (!selectedReport || !isActiveRescueStatus(selectedReport.status)) {
@@ -357,8 +348,13 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     if (!selectedReport || !isActiveRescueStatus(selectedReport.status)) {
       return null;
     }
+    if (selectedBackup?.picked_up_at) {
+      const latitude = Number(selectedBackup.evacuation_latitude);
+      const longitude = Number(selectedBackup.evacuation_longitude);
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) return { latitude, longitude };
+    }
     return extractCoordinate(selectedReport.location, selectedReport.latitude, selectedReport.longitude);
-  }, [selectedReport]);
+  }, [selectedBackup, selectedReport]);
 
   useEffect(() => {
     let cancelled = false;
@@ -369,15 +365,14 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       return undefined;
     }
 
-    const incidentPoint = extractCoordinate(selectedReport.location, selectedReport.latitude, selectedReport.longitude);
-    if (!incidentPoint || !responderLocation) {
+    if (!selectedIncidentLocation || !responderLocation) {
       setRouteCoordinates([]);
       setRouteDistanceKm(null);
       setRouteEtaMinutes(null);
       return undefined;
     }
 
-    fetchRoadRoute(responderLocation, incidentPoint)
+    fetchRoadRoute(responderLocation, selectedIncidentLocation)
       .then((route) => {
         if (cancelled) return;
         setRouteCoordinates(route.coordinates);
@@ -386,12 +381,12 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       })
       .catch(() => {
         if (cancelled) return;
-        setRouteCoordinates([responderLocation, incidentPoint]);
+        setRouteCoordinates([responderLocation, selectedIncidentLocation]);
         setRouteDistanceKm(null);
         setRouteEtaMinutes(null);
       });
     return () => { cancelled = true; };
-  }, [responderLocation, selectedReport]);
+  }, [responderLocation, selectedIncidentLocation, selectedReport]);
 
   useEffect(() => {
     const onFsChange = () => {
@@ -438,7 +433,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/weather/wind-field`,
       layerVisibility,
       liveResponderLocation
-        ? `${isBackupResponse ? 'CDRRMD' : 'Admin'} rescuer live location`
+        ? 'Assigned CDRRMD Rescuer live location'
         : isBackupResponse ? 'CDRRMD - Calamba City Hall' : 'Closest responder base',
     ),
     [activeRescueReports, evacuationAreas, isBackupResponse, layerVisibility, liveResponderLocation, responderLocation, routeCoordinates, selectedIncidentLocation, selectedReport],
@@ -501,6 +496,23 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     }
   }
 
+  async function assignRescuer() {
+    if (!selectedBackup || !rescuerChoice || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api.patch(`/backup-requests/${selectedBackup.id}/assign`, { rescuerId: Number(rescuerChoice) });
+      setRescuerChoice('');
+      await loadData(false);
+    } catch (err: unknown) {
+      const apiError = err as { response?: { status?: number; data?: { message?: string } } };
+      if (apiError.response?.status === 401) return onAuthError();
+      setError(apiError.response?.data?.message || 'Failed to assign the CDRRMD Rescuer team.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <AdminShell
       activeView="monitoring"
@@ -511,6 +523,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       onOpenAdmin={onOpenAdmin}
       onOpenUsers={onOpenUsers}
         onOpenBarangay={onOpenBarangay}
+      onOpenRescuers={onOpenRescuers}
       onOpenMonitoring={() => {}}
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationAreas={onOpenEvacuationAreas}
@@ -609,11 +622,13 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
                 <p><strong>Contact:</strong> {selectedReport.contact_number || 'N/A'}</p>
                 <p><strong>Reported:</strong> {new Date(selectedReport.created_at).toLocaleString()}</p>
                 <p><strong>Assigned Team:</strong> {selectedReport.assigned_team || '-'}</p>
+                {selectedBackup ? <p><strong>Backup:</strong> {selectedBackup.assigned_rescuer_id ? `Assigned to ${selectedBackup.rescuer_name || selectedBackup.rescuer_account_id}` : selectedBackup.acknowledged_at ? 'Confirmed - awaiting team assignment' : 'Awaiting Admin confirmation'}</p> : null}
                 <p><strong>Evacuation Destination:</strong> {selectedReport.evacuation_area_name || '-'}</p>
                 <p><strong>Route Origin:</strong> {liveResponderLocation
-                  ? `${isBackupResponse ? 'CDRRMD' : 'Admin'} rescuer live location`
+                  ? 'Assigned CDRRMD Rescuer live location'
                   : isBackupResponse ? 'CDRRMD - Calamba City Hall'
                   : assignedResponderArea ? `${assignedResponderArea.name} (${assignedResponderArea.barangay})` : 'No nearby active evacuation area'}</p>
+                {selectedBackup?.picked_up_at ? <p><strong>Current Destination:</strong> {selectedReport.evacuation_area_name || 'Designated evacuation center'}</p> : null}
                 <p><strong>Admin Notes:</strong> {selectedReport.admin_notes || '-'}</p>
                 <p><strong>Distance:</strong> {routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : 'Calculating...'}</p>
                 <p><strong>ETA:</strong> {routeEtaMinutes ? `${routeEtaMinutes} mins` : 'Calculating...'}</p>
@@ -680,16 +695,37 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
               ) : (
                 <div className={d.monitoring.validationStack}>
                 <p className={d.monitoring.validationCurrent}>Current status: {formatStatus(selectedReport.status)}</p>
+                {selectedBackup?.acknowledged_at ? (
+                  <div className={d.monitoring.actionBox}>
+                    <p className={d.monitoring.validationCurrent}>CDRRMD Backup Assignment</p>
+                    {selectedBackup.assigned_rescuer_id ? (
+                      <p className={d.monitoring.assignNote}>
+                        Assigned to {selectedBackup.rescuer_name || selectedBackup.rescuer_account_id}. The Admin tracks the response; the CDRRMD and Barangay teams perform the rescue together.
+                      </p>
+                    ) : (
+                      <>
+                        <select value={rescuerChoice} onChange={(event) => setRescuerChoice(event.target.value)} className={d.form.selectSm}>
+                          <option value="">Select an available CDRRMD Rescuer</option>
+                          {rescuers.filter((rescuer) => rescuer.is_available).map((rescuer) => (
+                            <option key={rescuer.id} value={rescuer.id}>{rescuer.rescuer_id} - {[rescuer.first_name, rescuer.last_name].filter(Boolean).join(' ') || rescuer.username}</option>
+                          ))}
+                        </select>
+                        <button onClick={() => void assignRescuer()} className={d.btn.acceptDisabled} disabled={busy || !rescuerChoice}>Assign Rescuer Team</button>
+                        {!rescuers.some((rescuer) => rescuer.is_available) ? <p className="text-amber-700">No CDRRMD Rescuer team is currently available. Add a team in Accounts or complete an active assignment.</p> : null}
+                      </>
+                    )}
+                  </div>
+                ) : null}
                 {selectedReport.status === 'pending' ? (
                   <div className={d.monitoring.actionRow}>
                     <button onClick={() => setActionMode('accept')} className={d.btn.acceptDisabled} disabled={busy}>Accept</button>
                     <button onClick={() => setActionMode('decline')} className={d.btn.declineDisabled} disabled={busy}>Decline</button>
                   </div>
                 ) : null}
-                {selectedReport.status === 'accepted' ? (
+                {selectedReport.status === 'accepted' && !selectedBackup ? (
                   <button onClick={() => setActionMode('in_progress')} className={d.btn.inProgressDisabled} disabled={busy}>Mark In Progress</button>
                 ) : null}
-                {selectedReport.status === 'in_progress' ? (
+                {selectedReport.status === 'in_progress' && !selectedBackup ? (
                   <button onClick={() => setActionMode('resolved')} className={d.btn.resolvedDisabled} disabled={busy}>Mark Resolved</button>
                 ) : null}
                 {actionMode === 'accept' ? (

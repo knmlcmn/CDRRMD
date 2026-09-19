@@ -45,6 +45,9 @@ async function initDb() {
     );
     ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMPTZ;
     ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS acknowledged_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+    ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS assigned_rescuer_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
+    ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ;
+    ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS picked_up_at TIMESTAMPTZ;
 
     CREATE UNIQUE INDEX IF NOT EXISTS backup_requests_active_barangay_idx
       ON backup_requests (LOWER(barangay_name)) WHERE arrived_at IS NULL;
@@ -189,6 +192,10 @@ async function initDb() {
 
     CREATE INDEX IF NOT EXISTS backup_requests_report_id_idx
     ON backup_requests (report_id);
+
+    CREATE INDEX IF NOT EXISTS backup_requests_active_rescuer_idx
+    ON backup_requests (assigned_rescuer_id)
+    WHERE arrived_at IS NULL AND assigned_rescuer_id IS NOT NULL;
 
     UPDATE backup_requests br
     SET report_id = (
@@ -780,6 +787,23 @@ async function initDb() {
         [brgyExisting.rows[0].id, barangayDisplayName],
       );
     }
+  }
+
+  // Local development includes one assignable CDRRMD team so the complete
+  // Barangay -> Admin -> Rescuer workflow can be tested immediately.
+  const rescuerUsername = 'cdrrmd_rescuer_1';
+  const rescuerEmail = 'rescuer1@cddrmd.local';
+  const rescuerExisting = await pool.query(
+    `SELECT id FROM users WHERE username = $1 OR LOWER(email) = LOWER($2) ORDER BY id ASC LIMIT 1`,
+    [rescuerUsername, rescuerEmail],
+  );
+  if (rescuerExisting.rows.length === 0) {
+    const rescuerPasswordHash = await bcrypt.hash('CDRRMD@123', 10);
+    await pool.query(
+      `INSERT INTO users (username, email, first_name, last_name, contact_number, password_hash, role, is_active)
+       VALUES ($1, $2, 'Rescuer', 'Team 1', '09170000001', $3, 'rescuer', FALSE)`,
+      [rescuerUsername, rescuerEmail, rescuerPasswordHash],
+    );
   }
 }
 

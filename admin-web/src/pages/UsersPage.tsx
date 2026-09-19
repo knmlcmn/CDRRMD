@@ -11,6 +11,7 @@ type Props = {
   onOpenAdmin: () => void;
   onOpenUsers: () => void;
   onOpenBarangay: () => void;
+  onOpenRescuers: () => void;
   onOpenMonitoring: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationAreas: () => void;
@@ -56,7 +57,7 @@ function toForm(user: UserAccount): UserForm {
   };
 }
 
-export default function UsersPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationAreas, onOpenPostUpdates, onAuthError }: Props) {
+export default function UsersPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationAreas, onOpenPostUpdates, onAuthError }: Props) {
   const [users, setUsers] = useState<UserAccount[]>([]);
   const [archivedUsers, setArchivedUsers] = useState<UserAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -260,6 +261,7 @@ export default function UsersPage({ onLogout, onOpenDashboard, onOpenAdmin, onOp
       onOpenAdmin={onOpenAdmin}
       onOpenUsers={onOpenUsers}
         onOpenBarangay={onOpenBarangay}
+        onOpenRescuers={onOpenRescuers}
       onOpenMonitoring={onOpenMonitoring}
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationAreas={onOpenEvacuationAreas}

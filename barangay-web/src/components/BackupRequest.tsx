@@ -12,6 +12,13 @@ export type BackupRequestState = {
   report_location: string | null;
   report_latitude: number | null;
   report_longitude: number | null;
+  assigned_rescuer_id: number | null;
+  assigned_at: string | null;
+  picked_up_at: string | null;
+  rescuer_name?: string | null;
+  rescuer_account_id?: string | null;
+  evacuation_latitude?: number | null;
+  evacuation_longitude?: number | null;
 };
 type Mode = 'request' | 'sent' | null;
 
@@ -82,7 +89,7 @@ export default function BackupRequest({ reportId, onRequestChange }: Props) {
       <span className="backup-tooltip-wrap">
         <button className={`backup-button ${active?.acknowledged_at ? 'backup-button-acknowledged' : ''}`} disabled={busy || Boolean(active)}
           aria-describedby="backup-tooltip" onClick={() => { setError(''); setMode('request'); }}>
-          {active?.acknowledged_at ? 'CDRRMD Responding' : active ? 'Backup Requested' : 'Request Backup'}
+          {active?.picked_up_at ? 'Transporting to Evacuation' : active?.assigned_rescuer_id ? 'CDRRMD Team Assigned' : active?.acknowledged_at ? 'Awaiting Team Assignment' : active ? 'Backup Requested' : 'Request Backup'}
         </button>
         <span role="tooltip" id="backup-tooltip" className="backup-tooltip">
           {active

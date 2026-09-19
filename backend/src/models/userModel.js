@@ -17,7 +17,7 @@ async function findUserByUsername(username) {
 }
 
 async function findStaffByAccountId(accountId, role) {
-  const prefix = role === 'admin' ? 'ADM' : role === 'barangay' ? 'BRG' : null;
+  const prefix = role === 'admin' ? 'ADM' : role === 'barangay' ? 'BRG' : role === 'rescuer' ? 'RSC' : null;
   if (!prefix) return null;
   const result = await pool.query(
     `SELECT * FROM users

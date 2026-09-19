@@ -11,6 +11,7 @@ type Props = {
   onOpenAdmin: () => void;
   onOpenUsers: () => void;
   onOpenBarangay: () => void;
+  onOpenRescuers: () => void;
   onOpenMonitoring: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationAreas: () => void;
@@ -68,7 +69,7 @@ const ARCHIVE_ICON = 'https://cdn-icons-png.flaticon.com/512/3143/3143462.png';
 const BARANGAY_OPTIONS = ['Lingga', 'Looc', 'Palingon', 'Parian', 'Sampiruhan', 'Uwisan'];
 
 export default function BarangayAccountsPage({
-  onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay,
+  onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers,
   onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationAreas, onOpenPostUpdates, onAuthError,
 }: Props) {
   const [accounts, setAccounts] = useState<BarangayAccount[]>([]);
@@ -238,7 +239,7 @@ export default function BarangayAccountsPage({
   }, [accounts, search, barangayFilter]);
 
   const shellProps = {
-    onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay,
+    onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers,
     onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationAreas, onOpenPostUpdates,
   };
 

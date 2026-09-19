@@ -96,11 +96,21 @@ async function register(payload) {
 
 async function login(payload) {
   const { email, username, accountId, portal, password } = payload || {};
-  const staffRole = portal === 'admin' ? 'admin' : portal === 'barangay' ? 'barangay' : null;
+  const staffRole = portal === 'admin'
+    ? 'admin'
+    : portal === 'barangay'
+      ? 'barangay'
+      : portal === 'rescuer'
+        ? 'rescuer'
+        : null;
 
   if (staffRole) {
     const normalizedAccountId = String(accountId || '').trim().toUpperCase();
-    const expectedPattern = staffRole === 'admin' ? /^ADM-\d{4}-\d{5}$/ : /^BRG-\d{4}-\d{5}$/;
+    const expectedPattern = staffRole === 'admin'
+      ? /^ADM-\d{4}-\d{5}$/
+      : staffRole === 'barangay'
+        ? /^BRG-\d{4}-\d{5}$/
+        : /^RSC-\d{4}-\d{5}$/;
     if (!expectedPattern.test(normalizedAccountId) || !password) {
       throw httpError(401, 'Invalid account ID or password.');
     }
@@ -135,7 +145,7 @@ async function login(payload) {
     throw httpError(401, 'Invalid email or password.');
   }
 
-  if (user.role === 'admin' || user.role === 'barangay') {
+  if (['admin', 'barangay', 'rescuer'].includes(user.role)) {
     throw httpError(401, 'Staff accounts must log in with their account ID through the correct web portal.');
   }
 

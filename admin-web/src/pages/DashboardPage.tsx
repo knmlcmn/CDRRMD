@@ -22,6 +22,7 @@ type Props = {
   onOpenAdmin: () => void;
   onOpenUsers: () => void;
   onOpenBarangay: () => void;
+  onOpenRescuers: () => void;
   onOpenEvacuationAreas: () => void;
   onOpenMonitoring: () => void;
   onOpenFloodMonitoring: () => void;
@@ -90,7 +91,7 @@ function buildMapHtml(
   );
 }
 
-export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenEvacuationAreas, onOpenMonitoring, onOpenFloodMonitoring, onOpenPostUpdates, onAuthError }: Props) {
+export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenEvacuationAreas, onOpenMonitoring, onOpenFloodMonitoring, onOpenPostUpdates, onAuthError }: Props) {
   const [areas, setAreas] = useState<EvacuationAreaItem[]>([]);
   const [incidents, setIncidents] = useState<DashboardIncident[]>([]);
   const [waterLevelSensors, setWaterLevelSensors] = useState<WaterLevelSensor[]>([]);
@@ -357,6 +358,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       onOpenAdmin={onOpenAdmin}
       onOpenUsers={onOpenUsers}
         onOpenBarangay={onOpenBarangay}
+        onOpenRescuers={onOpenRescuers}
       onOpenMonitoring={onOpenMonitoring}
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationAreas={onOpenEvacuationAreas}

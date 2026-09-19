@@ -10,6 +10,7 @@ type Props = {
   onOpenAdmin: () => void;
   onOpenUsers: () => void;
   onOpenBarangay: () => void;
+  onOpenRescuers: () => void;
   onOpenMonitoring: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenPostUpdates: () => void;
@@ -167,7 +168,7 @@ function buildMapHtml(areas: EvacuationAreaItem[], selectedId: number | null, pr
 </html>`;
 }
 
-export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenMonitoring, onOpenFloodMonitoring, onOpenPostUpdates }: Props) {
+export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenMonitoring, onOpenFloodMonitoring, onOpenPostUpdates }: Props) {
   const [areas, setAreas] = useState<EvacuationAreaItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form, setForm] = useState<DetailForm | null>(null);
@@ -481,6 +482,7 @@ export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenA
       onOpenAdmin={onOpenAdmin}
       onOpenUsers={onOpenUsers}
         onOpenBarangay={onOpenBarangay}
+        onOpenRescuers={onOpenRescuers}
       onOpenMonitoring={onOpenMonitoring}
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationAreas={() => {}}

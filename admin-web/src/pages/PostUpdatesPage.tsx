@@ -11,6 +11,7 @@ type Props = {
   onOpenAdmin: () => void;
   onOpenUsers: () => void;
   onOpenBarangay: () => void;
+  onOpenRescuers: () => void;
   onOpenMonitoring: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationAreas: () => void;
@@ -23,6 +24,7 @@ export default function PostUpdatesPage({
   onOpenAdmin,
   onOpenUsers,
   onOpenBarangay,
+  onOpenRescuers,
   onOpenMonitoring,
   onOpenFloodMonitoring,
   onOpenEvacuationAreas,
@@ -168,6 +170,7 @@ export default function PostUpdatesPage({
       onOpenAdmin={onOpenAdmin}
       onOpenUsers={onOpenUsers}
         onOpenBarangay={onOpenBarangay}
+        onOpenRescuers={onOpenRescuers}
       onOpenMonitoring={onOpenMonitoring}
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationAreas={onOpenEvacuationAreas}

@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { loginAdmin } from '../services/authService';
+import { loginStaff, type StaffPortal } from '../services/authService';
 import bangaPhoto from '../assets/Banga,_Calamba,_Laguna,_March_2023.jpg';
 import cdrrmdLogo from '../assets/cdrrmd-logo.png';
 import { d } from '../adminDesign';
 
 type Props = {
-  onLoggedIn: (token: string, rememberMe: boolean) => void;
+  onLoggedIn: (token: string, rememberMe: boolean, role: StaffPortal) => void;
 };
 
 export default function LoginPage({ onLoggedIn }: Props) {
@@ -15,16 +15,17 @@ export default function LoginPage({ onLoggedIn }: Props) {
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [portal, setPortal] = useState<StaffPortal>('admin');
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
     setError('');
     setLoading(true);
     try {
-      const data = await loginAdmin(accountId, password);
-      onLoggedIn(data.token, rememberMe);
+      const data = await loginStaff(accountId, password, portal);
+      onLoggedIn(data.token, rememberMe, data.user.role);
     } catch {
-      setError('Login failed. Check your admin ID and password.');
+      setError(`Login failed. Check your ${portal === 'admin' ? 'Admin' : 'CDRRMD Rescuer'} ID and password.`);
     } finally {
       setLoading(false);
     }
@@ -34,14 +35,18 @@ export default function LoginPage({ onLoggedIn }: Props) {
     <div className={d.login.root}>
       <div className={d.login.layout}>
         <section className={d.login.left}>
-          <p className={d.login.overline}>Admin Access</p>
+          <p className={d.login.overline}>{portal === 'admin' ? 'Admin Access' : 'CDRRMD Rescuer Access'}</p>
           <h1 className={d.login.title}>WELCOME BACK!</h1>
 
           <form onSubmit={onSubmit} className={d.login.form}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <button type="button" onClick={() => { setPortal('admin'); setAccountId(''); setError(''); }} className={portal === 'admin' ? d.btn.primary : d.btn.secondary}>Admin</button>
+              <button type="button" onClick={() => { setPortal('rescuer'); setAccountId(''); setError(''); }} className={portal === 'rescuer' ? d.btn.primary : d.btn.secondary}>CDRRMD Rescuer</button>
+            </div>
             <input
               value={accountId}
               onChange={(e) => setAccountId(e.target.value.toUpperCase())}
-              placeholder="Admin ID (ADM-YYYY-00000)"
+              placeholder={portal === 'admin' ? 'Admin ID (ADM-YYYY-00000)' : 'Rescuer ID (RSC-YYYY-00000)'}
               className={d.login.input}
               autoComplete="username"
             />
