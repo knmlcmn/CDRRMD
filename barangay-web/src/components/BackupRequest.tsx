@@ -13,7 +13,7 @@ export type BackupRequestState = {
   report_latitude: number | null;
   report_longitude: number | null;
 };
-type Mode = 'request' | 'sent' | 'arrived' | 'complete' | null;
+type Mode = 'request' | 'sent' | null;
 
 type Props = {
   reportId: number | null;
@@ -24,7 +24,6 @@ export default function BackupRequest({ reportId, onRequestChange }: Props) {
   const [active, setActive] = useState<BackupRequestState | null>(null);
   const [mode, setMode] = useState<Mode>(null);
   const [busy, setBusy] = useState(false);
-  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState('');
   const mutation = useRef(false);
   const generation = useRef(0);
@@ -41,7 +40,6 @@ export default function BackupRequest({ reportId, onRequestChange }: Props) {
         if (!stopped && version === generation.current) {
           const next = data[0] || null;
           setActive((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next);
-          setLoaded(true);
           setError('');
         }
       } catch {
@@ -65,17 +63,14 @@ export default function BackupRequest({ reportId, onRequestChange }: Props) {
     setBusy(true);
     setError('');
     try {
-      if (mode === 'arrived' && active) {
-        await api.patch('/backup-requests/' + active.id + '/arrived');
-        setActive(null);
-        setMode('complete');
-      } else if (mode === 'request') {
+      if (mode === 'request') {
         const { data } = await api.post<BackupRequestState>('/backup-requests', { reportId });
         setActive(data);
         setMode('sent');
       }
-    } catch {
-      setError('Unable to save. Please check your connection and try again.');
+    } catch (err: unknown) {
+      const apiError = err as { response?: { data?: { message?: string } } };
+      setError(apiError.response?.data?.message || 'Unable to save. Please check your connection and try again.');
     } finally {
       mutation.current = false;
       setBusy(false);
@@ -85,26 +80,29 @@ export default function BackupRequest({ reportId, onRequestChange }: Props) {
   return (
     <div>
       <span className="backup-tooltip-wrap">
-        <button className={`backup-button ${active?.acknowledged_at ? 'backup-button-acknowledged' : ''}`} disabled={!loaded || busy || (!active && !reportId)}
-          aria-describedby="backup-tooltip" onClick={() => { setError(''); setMode(active ? 'arrived' : 'request'); }}>
-          {active ? 'Confirm Backup Arrived' : 'Request Backup'}
+        <button className={`backup-button ${active?.acknowledged_at ? 'backup-button-acknowledged' : ''}`} disabled={busy || Boolean(active)}
+          aria-describedby="backup-tooltip" onClick={() => { setError(''); setMode('request'); }}>
+          {active?.acknowledged_at ? 'CDRRMD Responding' : active ? 'Backup Requested' : 'Request Backup'}
         </button>
         <span role="tooltip" id="backup-tooltip" className="backup-tooltip">
-          {active ? 'Confirm that CDRRMD backup is now there' : 'Request Backup from CDRRMD now'}
+          {active
+            ? 'Barangay and CDRRMD response stays active until the resident is rescued.'
+            : 'Request backup from CDRRMD while the barangay continues responding.'}
         </span>
       </span>
       {error && !mode && <p role="alert" className="backup-error">{error}</p>}
-      {mode && <BackupModal title={mode === 'request' ? 'Request Backup?' : mode === 'sent' ? 'Backup Request Sent' : mode === 'arrived' ? 'Confirm Backup Arrival?' : 'Backup Arrival Confirmed'} onClose={close}>
-        <p>{mode === 'request' ? 'Proceed with requesting backup from CDRRMD now?' :
-          mode === 'sent' ? 'Your backup request has been sent to CDRRMD. Admins will be reminded every 5 minutes until you confirm backup has arrived.' :
-          mode === 'arrived' ? 'Has CDRRMD backup arrived at your barangay? Confirming will stop the admin reminders.' :
-          'Backup arrival is confirmed. Admin reminders have stopped.'}</p>
+      {mode && <BackupModal title={mode === 'request' ? 'Request Backup?' : 'Backup Request Sent'} onClose={close}>
+        <p>{mode === 'request'
+          ? reportId
+            ? 'Request CDRRMD backup for this rescue? Your barangay must continue responding and cooperating until the resident is rescued.'
+            : 'There is no active rescue request available. Select or accept a pending rescue request before requesting CDRRMD backup.'
+          : 'Your request was sent. The Admin will be reminded every 5 seconds until it is confirmed. Barangay and CDRRMD will respond together until the resident is rescued.'}</p>
         {error && <p role="alert" className="backup-error">{error}</p>}
         <div className="backup-actions">
-          {mode === 'request' || mode === 'arrived' ? <>
+          {mode === 'request' && reportId ? <>
             <button className="backup-button-secondary backup-button" disabled={busy} onClick={close}>Cancel</button>
             <button className="backup-button" disabled={busy} onClick={() => { void submit(); }}>
-              {busy ? 'Sending?' : mode === 'request' ? 'Yes, Request Backup' : 'Yes, Backup Has Arrived'}
+              {busy ? 'Sending…' : 'Yes, Request Backup'}
             </button>
           </> : <button className="backup-button" onClick={close}>OK</button>}
         </div>

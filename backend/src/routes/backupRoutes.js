@@ -1,6 +1,9 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const pool = require('../config/db');
+const { SUPPORTED_BARANGAYS, isSupportedBarangay } = require('../services/supportedBarangays');
+
+const SUPPORTED_BARANGAY_KEYS = SUPPORTED_BARANGAYS.map((name) => name.toLowerCase());
 
 const router = express.Router();
 router.use(auth);
@@ -16,6 +19,9 @@ router.use(async (req, res, next) => {
   if (actor.role === 'barangay' && !actor.barangay_name?.trim()) {
     return res.status(403).json({ message: 'No barangay assigned to this account.' });
   }
+  if (actor.role === 'barangay' && !isSupportedBarangay(actor.barangay_name)) {
+    return res.status(403).json({ message: 'Backup requests are available only to the six supported barangays.' });
+  }
   req.backupActor = actor;
   return next();
 });
@@ -24,17 +30,22 @@ router.get('/', async (req, res) => {
   const actor = req.backupActor;
   const { rows } = await pool.query(
     `SELECT br.id, br.barangay_name, br.created_at, br.acknowledged_at, br.report_id,
-            ir.report_code, ir.location AS report_location,
+            ir.report_code, ir.report_type, ir.incident_type, ir.status AS report_status,
+            ir.location AS report_location, ir.notes AS report_notes,
+            ir.are_people_trapped, ir.estimated_people,
             ir.latitude AS report_latitude, ir.longitude AS report_longitude,
             NULLIF(TRIM(CONCAT_WS(' ', reporter.first_name, reporter.last_name)), '') AS reporter_name,
-            FLOOR(EXTRACT(EPOCH FROM (NOW() - br.created_at)) / 300)::integer AS reminder_sequence
+            reporter.contact_number AS reporter_contact
      FROM backup_requests br
-     LEFT JOIN incident_reports ir ON ir.id = br.report_id
+     JOIN incident_reports ir ON ir.id = br.report_id
      LEFT JOIN users reporter ON reporter.id = ir.reported_by
      WHERE br.arrived_at IS NULL
+       AND ir.report_type = 'rescue'
+       AND ir.status IN ('pending', 'accepted', 'in_progress')
        AND ($1::text IS NULL OR LOWER(br.barangay_name) = LOWER($1))
+       AND LOWER(br.barangay_name) = ANY($2::text[])
      ORDER BY br.created_at, br.id`,
-    [actor.role === 'admin' ? null : actor.barangay_name],
+    [actor.role === 'admin' ? null : actor.barangay_name, SUPPORTED_BARANGAY_KEYS],
   );
   res.set('Cache-Control', 'no-store');
   return res.json(rows);
@@ -48,13 +59,19 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ message: 'Select the incident that needs CDRRMD backup.' });
   }
   const reportResult = await pool.query(
-    `SELECT id, latitude, longitude FROM incident_reports
+    `SELECT id, report_type, status, latitude, longitude FROM incident_reports
      WHERE id = $1 AND LOWER(assigned_barangay) = LOWER($2)
      LIMIT 1`,
     [reportId, actor.barangay_name],
   );
   if (!reportResult.rows[0]) {
     return res.status(404).json({ message: 'The selected incident is not assigned to this barangay.' });
+  }
+  if (reportResult.rows[0].report_type !== 'rescue') {
+    return res.status(400).json({ message: 'CDRRMD backup can only be requested for rescue reports.' });
+  }
+  if (!['pending', 'accepted', 'in_progress'].includes(reportResult.rows[0].status)) {
+    return res.status(400).json({ message: 'This rescue request is no longer active.' });
   }
   if (reportResult.rows[0].latitude == null
     || reportResult.rows[0].longitude == null
@@ -87,22 +104,6 @@ router.patch('/:id/acknowledge', async (req, res) => {
     [id, actor.id],
   );
   if (!rows[0]) return res.status(404).json({ message: 'This backup request is no longer active.' });
-  return res.json(rows[0]);
-});
-
-router.patch('/:id/arrived', async (req, res) => {
-  const actor = req.backupActor;
-  if (actor.role !== 'barangay') return res.status(403).json({ message: 'Only the barangay can confirm arrival.' });
-  const id = Number(req.params.id);
-  if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ message: 'Invalid request ID.' });
-  const { rows } = await pool.query(
-    `UPDATE backup_requests
-     SET arrived_at = COALESCE(arrived_at, NOW()), confirmed_by = COALESCE(confirmed_by, $3)
-     WHERE id = $1 AND LOWER(barangay_name) = LOWER($2)
-     RETURNING id, arrived_at`,
-    [id, actor.barangay_name, actor.id],
-  );
-  if (!rows[0]) return res.status(404).json({ message: 'Backup request not found.' });
   return res.json(rows[0]);
 });
 

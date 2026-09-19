@@ -1,30 +1,7 @@
 const bcrypt = require('bcryptjs');
 const userModel = require('../models/userModel');
 const { httpError } = require('../utils/httpError');
-
-const SUPPORTED_BARANGAYS = new Set([
-  'palingon',
-  'lingga',
-  'sampiruhan',
-  'looc',
-  'uwisan',
-  'parian',
-]);
-
-function normalizeBarangayName(value) {
-  return String(value || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim()
-    .toLowerCase()
-    .replace(/^(brgy\.?|barangay)\s+/i, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-function isSupportedBarangayName(value) {
-  return SUPPORTED_BARANGAYS.has(normalizeBarangayName(value));
-}
+const { isSupportedBarangay: isSupportedBarangayName } = require('../services/supportedBarangays');
 
 function ensureAdmin(req, res) {
   if (req.user?.role !== 'admin') {

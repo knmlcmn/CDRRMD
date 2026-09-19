@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "prestart": "kill-port 8090",
     "start": "expo start --port 8090",
     "start:tunnel": "expo start --tunnel --port 8090",
     "android": "expo start --android",

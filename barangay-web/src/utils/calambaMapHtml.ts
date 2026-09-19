@@ -1956,6 +1956,13 @@ export function buildCalambaMapHtml(
         if (line.length > 1) {
           line.forEach(function(p) { fitBounds.extend(p); });
           L.polyline(line, { color: '#22c55e', weight: 6, opacity: 0.8 }).addTo(responderRouteLayer);
+          L.circleMarker(line[0], {
+            radius: 8,
+            color: '#ffffff',
+            weight: 2,
+            fillColor: '#0ea5e9',
+            fillOpacity: 1,
+          }).addTo(responderRouteLayer).bindPopup('<strong>Responder location</strong>');
         }
       }
 

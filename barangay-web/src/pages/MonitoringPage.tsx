@@ -15,6 +15,7 @@ type Props = {
 };
 
 type Coordinate = { latitude: number; longitude: number };
+type ApiError = { response?: { status?: number; data?: { message?: string } } };
 
 type ActionMode = 'accept' | 'decline' | null;
 
@@ -43,9 +44,6 @@ type RouteDestination = {
 };
 
 const ACTIVE_RESCUE_STATUSES = new Set(['pending', 'accepted', 'in_progress']);
-// How long a just-rescued case keeps showing its "route to evacuation center"
-// on the active board before it falls back to the Resolved history tab only.
-const RESOLVED_VISIBILITY_WINDOW_MS = 3 * 60 * 60 * 1000;
 const CDRRMD_LOCATION: Coordinate = { latitude: 14.194052, longitude: 121.159688 };
 
 function sameData(left: unknown, right: unknown) {
@@ -61,13 +59,6 @@ function isRescueAwaitingPickup(report?: IncidentReport | null) {
   if (!isRescueReport(report)) return false;
   const status = String(report?.status || '').toLowerCase();
   return status === 'pending' || status === 'accepted' || status === 'in_progress';
-}
-
-function isRecentlyResolvedRescue(report: IncidentReport) {
-  if (!report.resolved_at) return true;
-  const resolvedAt = new Date(report.resolved_at).getTime();
-  if (!Number.isFinite(resolvedAt)) return true;
-  return Date.now() - resolvedAt < RESOLVED_VISIBILITY_WINDOW_MS;
 }
 
 // "Rescued" phase: the resident has been confirmed rescued and the barangay
@@ -157,6 +148,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
   const [routeDistanceKm, setRouteDistanceKm] = useState<number | null>(null);
   const [routeEtaMinutes, setRouteEtaMinutes] = useState<number | null>(null);
   const [routeOriginLabel, setRouteOriginLabel] = useState<string | null>(null);
+  const [liveResponderLocation, setLiveResponderLocation] = useState<Coordinate | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -217,9 +209,10 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
       } else {
         setError(null);
       }
-    } catch (err: any) {
-      if (err?.response?.status === 401) { onAuthError(); return; }
-      setError(err?.response?.data?.message || 'Failed to load monitoring data.');
+    } catch (err: unknown) {
+      const apiError = err as ApiError;
+      if (apiError.response?.status === 401) { onAuthError(); return; }
+      setError(apiError.response?.data?.message || 'Failed to load monitoring data.');
     } finally {
       if (showLoading) setLoading(false);
     }
@@ -285,13 +278,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
   }
 
   const activeReports = useMemo(
-    () => reports.filter((r) => {
-      const status = String(r.status).toLowerCase();
-      if (ACTIVE_RESCUE_STATUSES.has(status)) return true;
-      // Keep a just-rescued case visible on the active board for a while so
-      // the barangay keeps seeing its route to the evacuation center.
-      return isRescueEnRouteToEvac(r) && isRecentlyResolvedRescue(r);
-    }),
+    () => reports.filter((report) => ACTIVE_RESCUE_STATUSES.has(String(report.status).toLowerCase())),
     [reports],
   );
 
@@ -304,6 +291,34 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
     () => filteredReports.find((r) => r.id === selectedReportId) ?? filteredReports[0] ?? null,
     [filteredReports, selectedReportId],
   );
+
+  const backupReportId = useMemo(() => {
+    if (isRescueAwaitingPickup(selectedReport)) return selectedReport?.id ?? null;
+    return activeReports.find((report) => isRescueAwaitingPickup(report))?.id ?? null;
+  }, [activeReports, selectedReport]);
+
+  const trackedReportId = selectedReport?.id ?? null;
+  const shouldTrackResponder = isRescueAwaitingPickup(selectedReport);
+
+  useEffect(() => {
+    if (!shouldTrackResponder || !navigator.geolocation) {
+      setLiveResponderLocation(null);
+      return undefined;
+    }
+
+    let lastUpdate = 0;
+    const watchId = navigator.geolocation.watchPosition(
+      ({ coords }) => {
+        const now = Date.now();
+        if (now - lastUpdate < 2000) return;
+        lastUpdate = now;
+        setLiveResponderLocation({ latitude: coords.latitude, longitude: coords.longitude });
+      },
+      () => setLiveResponderLocation(null),
+      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 },
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [shouldTrackResponder, trackedReportId]);
 
   useEffect(() => {
     if (backupRequest?.report_id && reports.some((report) => report.id === backupRequest.report_id)) {
@@ -339,8 +354,8 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
       .sort((x, y) => x.dist - y.dist)[0]?.a ?? null;
   }, [evacuationAreas, selectedReport]);
 
-  // Before pickup the route ends at the resident. After pickup it ends at the
-  // assigned evacuation center.
+  // Active response routes always end at the resident. Terminal incidents do
+  // not keep a route or marker on the live map.
   const routeDestination = useMemo<RouteDestination | null>(() => {
     if (!selectedReport || !isRescueReport(selectedReport)) return null;
 
@@ -350,27 +365,21 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
       return { location: selectedResidentLocation, type: 'resident', label: `Resident needs rescue — ${code}` };
     }
 
-    if (isRescueEnRouteToEvac(selectedReport)) {
-      if (!assignedEvacuationArea) return null;
-      return {
-        location: { latitude: assignedEvacuationArea.latitude, longitude: assignedEvacuationArea.longitude },
-        type: 'evacuation_center',
-        label: `Evacuation Center — ${assignedEvacuationArea.name}`,
-      };
-    }
-
     return null;
-  }, [assignedEvacuationArea, selectedReport, selectedResidentLocation]);
+  }, [selectedReport, selectedResidentLocation]);
 
   const backupRouteDestination = useMemo<RouteDestination | null>(() => {
     if (!backupRequest?.acknowledged_at) return null;
+    const linkedReport = backupRequest.report_id
+      ? reports.find((report) => report.id === backupRequest.report_id)
+      : null;
+    if (linkedReport && !isRescueAwaitingPickup(linkedReport)) return null;
     const storedLatitude = backupRequest.report_latitude === null ? Number.NaN : Number(backupRequest.report_latitude);
     const storedLongitude = backupRequest.report_longitude === null ? Number.NaN : Number(backupRequest.report_longitude);
     let location = Number.isFinite(storedLatitude) && Number.isFinite(storedLongitude)
       ? { latitude: storedLatitude, longitude: storedLongitude }
       : null;
     if (!location && backupRequest.report_id) {
-      const linkedReport = reports.find((report) => report.id === backupRequest.report_id);
       location = extractCoordinate(linkedReport?.location, linkedReport?.latitude, linkedReport?.longitude);
     }
     if (!location) return null;
@@ -409,6 +418,18 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
     }
 
     async function calculateRoute() {
+      if (liveResponderLocation && routeDestination) {
+        try {
+          applyRoute(
+            await fetchRoadRoute(liveResponderLocation, routeDestination.location),
+            `Barangay ${barangayName} rescuer live location`,
+          );
+        } catch {
+          applyFallback(liveResponderLocation, routeDestination.location, `Barangay ${barangayName} rescuer live location`);
+        }
+        return;
+      }
+
       if (backupRouteDestination) {
         try {
           applyRoute(
@@ -492,9 +513,12 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
     routeDestination,
     selectedResidentLocation,
     evacuationAreas,
+    liveResponderLocation,
+    barangayName,
   ]);
 
-  const mappedResidentLocation = backupRouteDestination?.location || selectedResidentLocation;
+  const mappedResidentLocation = backupRouteDestination?.location
+    || (isRescueAwaitingPickup(selectedReport) ? selectedResidentLocation : null);
 
   const mapHtml = useMemo(
     () => buildCalambaMapHtml(
@@ -572,12 +596,13 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
       setDeclineReason('');
       setDeclineExplanation('');
       await loadData(false);
-    } catch (err: any) {
-      if (err?.response?.status === 401) {
+    } catch (err: unknown) {
+      const apiError = err as ApiError;
+      if (apiError.response?.status === 401) {
         onAuthError();
         return;
       }
-      setError(err?.response?.data?.message || 'Failed to update report status.');
+      setError(apiError.response?.data?.message || 'Failed to update report status.');
     } finally {
       setBusy(false);
     }
@@ -599,12 +624,13 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
         status: 'resolved',
       });
       await loadData(false);
-    } catch (err: any) {
-      if (err?.response?.status === 401) {
+    } catch (err: unknown) {
+      const apiError = err as ApiError;
+      if (apiError.response?.status === 401) {
         onAuthError();
         return;
       }
-      setError(err?.response?.data?.message || 'Failed to confirm the rescue.');
+      setError(apiError.response?.data?.message || 'Failed to confirm the rescue.');
     } finally {
       setBusy(false);
     }
@@ -614,7 +640,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
     <BarangayShell
       activeView="monitoring"
       title="Incident Monitoring"
-      actions={<BackupRequest reportId={selectedReport?.id ?? null} onRequestChange={setBackupRequest} />}
+      actions={<BackupRequest reportId={backupReportId} onRequestChange={setBackupRequest} />}
       subtitle={`Showing incidents within Barangay ${barangayName}`}
       noMainScroll
       barangayName={barangayName}
@@ -718,7 +744,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
                     </div>
                   </div>
                 ) : null}
-                {isRescueReport(selectedReport) ? (
+                {isRescueAwaitingPickup(selectedReport) ? (
                   <>
                     <div
                       style={{

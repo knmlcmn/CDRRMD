@@ -29,6 +29,8 @@ type Props = {
   onAuthError: () => void;
 };
 
+const ACTIVE_INCIDENT_STATUSES = new Set(['pending', 'accepted', 'in_progress']);
+
 function titleCase(value: string) {
   if (!value) {
     return '-';
@@ -63,6 +65,7 @@ function buildMapHtml(
     null,
     null,
     incidents
+      .filter((item) => ACTIVE_INCIDENT_STATUSES.has(String(item.status || '').toLowerCase()))
       .map((item) => ({
         reportCode: item.caseId || 'Incident',
         latitude: Number(item.latitude),

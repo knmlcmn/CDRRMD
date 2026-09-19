@@ -24,6 +24,7 @@ export function buildCalambaMapHtml(
   rainImpactUrl: string,
   windDataUrl: string,
   layerVisibility: MonitoringLayerVisibility,
+  responderLabel = 'Closest responder base',
 ) {
   const payload = JSON.stringify({
     areas,
@@ -37,6 +38,7 @@ export function buildCalambaMapHtml(
     rainImpactUrl,
     windDataUrl,
     layerVisibility,
+    responderLabel,
     boundaryGeoJson: {
       type: 'FeatureCollection',
       features: [
@@ -1976,7 +1978,7 @@ export function buildCalambaMapHtml(
           weight: 2,
           fillColor: '#0ea5e9',
           fillOpacity: 1,
-        }).addTo(responderRouteLayer).bindPopup('<strong>Closest responder base</strong>');
+        }).addTo(responderRouteLayer).bindPopup('<strong>' + escapeHtml(payload.responderLabel || 'Closest responder base') + '</strong>');
       }
 
       if ((payload.routeCoordinates || []).length > 1) {

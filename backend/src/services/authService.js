@@ -10,8 +10,7 @@ const {
   verifyRefreshToken,
 } = require('../utils/authTokens');
 const { httpError } = require('../utils/httpError');
-
-const RESIDENT_BARANGAYS = ['Palingon', 'Sampiruhan', 'Lingga', 'Parian', 'Looc', 'Uwisan'];
+const { SUPPORTED_BARANGAYS: RESIDENT_BARANGAYS } = require('./supportedBarangays');
 
 function resolveResidentBarangay(value, address) {
   const requested = String(value || '').trim().toLowerCase();

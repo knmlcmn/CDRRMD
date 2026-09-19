@@ -4,8 +4,7 @@ const {
   resolveBarangayAtLocation,
   resolveNearbyBarangayAtLocation,
 } = require('../services/barangayJurisdictionService');
-
-const FLOOD_ALERT_BARANGAYS = ['Palingon', 'Sampiruhan', 'Lingga', 'Parian', 'Looc', 'Uwisan'];
+const { SUPPORTED_BARANGAYS: FLOOD_ALERT_BARANGAYS } = require('../services/supportedBarangays');
 const FLOOD_ALERT_NEARBY_KM = Number(process.env.FLOOD_ALERT_NEARBY_KM || 2.5);
 const { findShortestReachableDestination } = require('../services/roadRoutingService');
 
@@ -73,6 +72,16 @@ async function createNotification(client, userId, reportId, title, body) {
     `INSERT INTO user_notifications (user_id, report_id, title, body)
      VALUES ($1, $2, $3, $4)`,
     [userId, reportId, title, body],
+  );
+}
+
+async function completeBackupResponse(client, reportId, confirmedBy) {
+  await client.query(
+    `UPDATE backup_requests
+     SET arrived_at = COALESCE(arrived_at, NOW()),
+         confirmed_by = COALESCE(confirmed_by, $2)
+     WHERE report_id = $1 AND arrived_at IS NULL`,
+    [reportId, confirmedBy || null],
   );
 }
 
@@ -845,6 +854,8 @@ async function updateReportStatus(req, res) {
           console.error('Failed to create report notification:', notificationError.message);
         }
 
+        await completeBackupResponse(client, reportId, req.user.userId);
+
         await client.query('COMMIT');
         return res.json(updated);
       }
@@ -1076,6 +1087,10 @@ async function updateReportStatus(req, res) {
     } catch (notificationError) {
       // Keep status transition successful even if notification insert fails.
       console.error('Failed to create report notification:', notificationError.message);
+    }
+
+    if (nextStatus === 'resolved') {
+      await completeBackupResponse(client, reportId, req.user.userId);
     }
 
     await client.query('COMMIT');

@@ -34,6 +34,7 @@ function App() {
     () => localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token'),
   );
   const [view, setView] = useState<View>('dashboard');
+  const [backupReportId, setBackupReportId] = useState<number | null>(null);
   const [waterUpdateNotices, setWaterUpdateNotices] = useState<WaterUpdateNotice[]>([]);
   const waterNoticeIdRef = useRef(0);
   const lastNotifiedWaterBucketRef = useRef<Record<string, number>>({});
@@ -142,6 +143,7 @@ function App() {
     localStorage.removeItem('admin_token');
     sessionStorage.removeItem('admin_token');
     setWaterUpdateNotices([]);
+    setBackupReportId(null);
     lastNotifiedWaterBucketRef.current = {};
     setToken(null);
     setView('dashboard');
@@ -174,7 +176,7 @@ function App() {
   if (view === 'admin') currentPage = <AdminPage {...shellProps} />;
   if (view === 'users') currentPage = <UsersPage {...shellProps} />;
   if (view === 'barangay') currentPage = <BarangayAccountsPage {...shellProps} />;
-  if (view === 'monitoring') currentPage = <MonitoringPage {...shellProps} />;
+  if (view === 'monitoring') currentPage = <MonitoringPage key={backupReportId ?? 'monitoring'} {...shellProps} backupReportId={backupReportId} />;
   if (view === 'flood-monitoring') currentPage = <FloodMonitoringPage {...shellProps} />;
   if (view === 'post-updates') currentPage = <PostUpdatesPage {...shellProps} />;
 
@@ -190,7 +192,10 @@ function App() {
         />
       ) : null}
       {currentPage}
-      <BackupNotifications key={view} />
+      <BackupNotifications onConfirm={(reportId) => {
+        setBackupReportId(reportId);
+        openView('monitoring');
+      }} />
     </>
   );
 }
