@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminShell from '../components/AdminShell';
 import { d } from '../adminDesign';
 import { api } from '../services/apiClient';
+import { loadFloodReportHistory, type FloodSensorReport } from '../services/floodReportHistory';
 
 type Props = {
   onLogout: () => void;
@@ -41,21 +42,6 @@ type FirebaseHardwareReading = {
   humidityPercentage?: number;
   reportCode?: string;
   updatedAt?: string;
-};
-
-type FirebaseFloodReport = {
-  firebaseKey: string;
-  sensorId: string;
-  reportId: string;
-  location: string;
-  level: 'Moderate' | 'High';
-  hardwareNo: string;
-  status: 'Active' | 'Inactive';
-  waterLevelPercentage: number;
-  active: boolean;
-  createdAt: string;
-  updatedAt: string;
-  endedAt: string | null;
 };
 
 const HARDWARE_AREAS = [
@@ -272,66 +258,6 @@ async function putFirebaseSensorStatus(hardwareId: string, status: SensorStatus)
   }
 }
 
-function normalizeFloodReport(firebaseKey: string, value: unknown): FirebaseFloodReport | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const report = value as Record<string, unknown>;
-  const storedStatus = String(report.status || '').trim();
-  const storedLevel = String(report.level || '').trim();
-  const level = storedLevel === 'Moderate' || storedLevel === 'High'
-    ? storedLevel
-    : storedStatus;
-  const waterLevelPercentage = Number(report.waterLevelPercentage);
-  if (!report.reportId || (level !== 'Moderate' && level !== 'High')) {
-    return null;
-  }
-
-  const active = report.active !== false && storedStatus !== 'Inactive';
-
-  return {
-    firebaseKey,
-    sensorId: String(report.sensorId || firebaseKey),
-    reportId: String(report.reportId),
-    location: String(report.location || ''),
-    level,
-    hardwareNo: String(report.hardwareNo || report.sensorId || firebaseKey),
-    status: active ? 'Active' : 'Inactive',
-    waterLevelPercentage: Number.isFinite(waterLevelPercentage) ? waterLevelPercentage : 0,
-    active,
-    createdAt: String(report.createdAt || ''),
-    updatedAt: String(report.updatedAt || report.createdAt || ''),
-    endedAt: report.endedAt ? String(report.endedAt) : null,
-  };
-}
-
-async function loadFirebaseFloodReports(): Promise<FirebaseFloodReport[]> {
-  const baseUrl = FIREBASE_CONFIG.databaseURL.replace(/\/$/, '');
-  const encodedPath = encodeURIComponent(FIREBASE_FLOOD_REPORTS_PATH);
-  const response = await fetch(`${baseUrl}/${encodedPath}.json`);
-
-  if (!response.ok) {
-    throw new Error('Unable to read Firebase flood reports.');
-  }
-
-  const payload = (await response.json()) as unknown;
-  if (!payload || typeof payload !== 'object') {
-    return [];
-  }
-
-  return Object.entries(payload as Record<string, unknown>).reduce<FirebaseFloodReport[]>(
-    (result, [firebaseKey, value]) => {
-      const report = normalizeFloodReport(firebaseKey, value);
-      if (report) {
-        result.push(report);
-      }
-      return result;
-    },
-    [],
-  );
-}
-
 function createFloodReportId(hardwareNo: string, now: Date) {
   const date = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
     .map((part, index) => String(part).padStart(index === 0 ? 4 : 2, '0'))
@@ -343,7 +269,7 @@ function createFloodReportId(hardwareNo: string, now: Date) {
   return `FLD-${date}-${time}-${hardwareNo}`;
 }
 
-async function putFirebaseFloodReport(report: FirebaseFloodReport) {
+async function putFirebaseFloodReport(report: FloodSensorReport) {
   const baseUrl = FIREBASE_CONFIG.databaseURL.replace(/\/$/, '');
   const reportsPath = encodeURIComponent(FIREBASE_FLOOD_REPORTS_PATH);
   const reportPath = encodeURIComponent(report.firebaseKey);
@@ -358,7 +284,7 @@ async function putFirebaseFloodReport(report: FirebaseFloodReport) {
   }
 }
 
-async function publishResidentFloodAlert(report: FirebaseFloodReport) {
+async function publishResidentFloodAlert(report: FloodSensorReport) {
   if (!report.active || (report.level !== 'Moderate' && report.level !== 'High')) {
     return;
   }
@@ -374,8 +300,8 @@ async function publishResidentFloodAlert(report: FirebaseFloodReport) {
 
 async function syncFirebaseFloodReports(
   slots: HardwareSlot[],
-  savedReports: FirebaseFloodReport[],
-): Promise<FirebaseFloodReport[]> {
+  savedReports: FloodSensorReport[],
+): Promise<FloodSensorReport[]> {
   const now = new Date();
   const nowIso = now.toISOString();
   const nextReports = [...savedReports];
@@ -391,7 +317,7 @@ async function syncFirebaseFloodReports(
         return;
       }
 
-      const inactive: FirebaseFloodReport = {
+      const inactive: FloodSensorReport = {
         ...saved,
         status: 'Inactive',
         active: false,
@@ -415,10 +341,10 @@ async function syncFirebaseFloodReports(
     }
 
     if (slot.fillPct >= FLOOD_REPORT_THRESHOLD) {
-      const level: FirebaseFloodReport['level'] = slot.fillPct >= HIGH_WATER_THRESHOLD ? 'High' : 'Moderate';
+      const level: FloodSensorReport['level'] = slot.fillPct >= HIGH_WATER_THRESHOLD ? 'High' : 'Moderate';
       const shouldStartEvent = !saved?.active;
       const reportId = shouldStartEvent ? createFloodReportId(slot.hardwareNo, now) : saved.reportId;
-      const next: FirebaseFloodReport = {
+      const next: FloodSensorReport = {
         firebaseKey: shouldStartEvent ? reportId : saved.firebaseKey,
         sensorId: slot.hardwareId,
         reportId,
@@ -484,7 +410,7 @@ export default function FloodMonitoringPage({
 }: Props) {
   void onOpenFloodMonitoring;
 
-  const [reports, setReports] = useState<FirebaseFloodReport[]>([]);
+  const [reports, setReports] = useState<FloodSensorReport[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -503,7 +429,7 @@ export default function FloodMonitoringPage({
     try {
       const [firebaseReadings, savedFloodReports, savedSensorStatuses] = await Promise.all([
         loadFirebaseHardwareReadings(),
-        loadFirebaseFloodReports(),
+        loadFloodReportHistory(),
         loadFirebaseSensorStatuses(),
       ]);
 

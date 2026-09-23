@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api } from '../services/apiClient';
+import { api } from '../../services/apiClient';
 import BackupRequest, { type BackupRequestState } from '../components/BackupRequest';
 import BarangayShell from '../components/BarangayShell';
 import { d } from '../barangayDesign';
-import type { IncidentReport, EvacuationAreaItem } from '../types';
+import type { IncidentReport, EvacuationAreaItem } from '../../types';
 import { buildCalambaMapHtml } from '../utils/calambaMapHtml';
 
 type Props = {

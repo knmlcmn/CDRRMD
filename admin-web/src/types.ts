@@ -113,6 +113,7 @@ export type RescuerAccount = {
   last_login: string | null;
   is_online: boolean;
   is_available: boolean;
+  archived_at?: string | null;
 };
 
 export type BackupRequest = {
@@ -162,4 +163,18 @@ export type MonitoringReport = {
   last_name?: string | null;
   contact_number?: string | null;
   email?: string | null;
+};
+
+export type IncidentReport = MonitoringReport;
+
+export type BarangayUser = {
+  id: number;
+  username: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  address: string | null;
+  contactNumber: string | null;
+  role: string;
+  barangayName: string | null;
 };

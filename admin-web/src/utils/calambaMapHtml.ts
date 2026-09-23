@@ -11,6 +11,11 @@ export type MonitoringLayerVisibility = {
   windOverlay: boolean;
 };
 
+export type MapBehavior = {
+  focusOnIncident?: boolean;
+  allowLiveRouteUpdates?: boolean;
+};
+
 const MIN_ACTIVE_RAIN_MM_PER_HOUR = 0.1;
 export function buildCalambaMapHtml(
   areas: EvacuationAreaItem[],
@@ -25,6 +30,7 @@ export function buildCalambaMapHtml(
   windDataUrl: string,
   layerVisibility: MonitoringLayerVisibility,
   responderLabel = 'Closest responder base',
+  mapBehavior: MapBehavior = {},
 ) {
   const payload = JSON.stringify({
     areas,
@@ -39,6 +45,7 @@ export function buildCalambaMapHtml(
     windDataUrl,
     layerVisibility,
     responderLabel,
+    mapBehavior,
     boundaryGeoJson: {
       type: 'FeatureCollection',
       features: [
@@ -1959,37 +1966,51 @@ export function buildCalambaMapHtml(
           );
       });
 
-      if (payload.incidentLocation && inCalamba(Number(payload.incidentLocation.latitude), Number(payload.incidentLocation.longitude))) {
-        fitBounds.extend([payload.incidentLocation.latitude, payload.incidentLocation.longitude]);
-        L.circleMarker([payload.incidentLocation.latitude, payload.incidentLocation.longitude], {
-          radius: 9,
-          color: '#ffffff',
-          weight: 2,
-          fillColor: '#dc2626',
-          fillOpacity: 0.95,
-        }).addTo(responderRouteLayer).bindPopup('<strong>Selected incident</strong><br/>' + (payload.selectedReportCode || 'Rescue report'));
-      }
-
-      if (payload.responderLocation && inCalamba(Number(payload.responderLocation.latitude), Number(payload.responderLocation.longitude))) {
-        fitBounds.extend([payload.responderLocation.latitude, payload.responderLocation.longitude]);
-        L.circleMarker([payload.responderLocation.latitude, payload.responderLocation.longitude], {
-          radius: 8,
-          color: '#fff',
-          weight: 2,
-          fillColor: '#0ea5e9',
-          fillOpacity: 1,
-        }).addTo(responderRouteLayer).bindPopup('<strong>' + escapeHtml(payload.responderLabel || 'Closest responder base') + '</strong>');
-      }
-
-      if ((payload.routeCoordinates || []).length > 1) {
-        var line = payload.routeCoordinates
-          .map(function(point) { return [Number(point.latitude), Number(point.longitude)]; })
-          .filter(function(point) { return Number.isFinite(point[0]) && Number.isFinite(point[1]) && inCalamba(point[0], point[1]); });
-        if (line.length > 1) {
-          line.forEach(function(p) { fitBounds.extend(p); });
-          L.polyline(line, { color: '#22c55e', weight: 6, opacity: 0.8 }).addTo(responderRouteLayer);
+      function focusActiveRescue() {
+        if (!payload.incidentLocation) return;
+        var latitude = Number(payload.incidentLocation.latitude);
+        var longitude = Number(payload.incidentLocation.longitude);
+        if (Number.isFinite(latitude) && Number.isFinite(longitude) && inCalamba(latitude, longitude)) {
+          map.setView([latitude, longitude], 16, { animate: true });
         }
       }
+
+      function renderResponderRoute(extendInitialBounds) {
+        responderRouteLayer.clearLayers();
+        if (payload.incidentLocation && inCalamba(Number(payload.incidentLocation.latitude), Number(payload.incidentLocation.longitude))) {
+          if (extendInitialBounds) fitBounds.extend([payload.incidentLocation.latitude, payload.incidentLocation.longitude]);
+          L.circleMarker([payload.incidentLocation.latitude, payload.incidentLocation.longitude], {
+            radius: 9,
+            color: '#ffffff',
+            weight: 2,
+            fillColor: '#dc2626',
+            fillOpacity: 0.95,
+          }).addTo(responderRouteLayer).bindPopup('<strong>Selected incident</strong><br/>' + (payload.selectedReportCode || 'Rescue report'));
+        }
+
+        if (payload.responderLocation && inCalamba(Number(payload.responderLocation.latitude), Number(payload.responderLocation.longitude))) {
+          if (extendInitialBounds) fitBounds.extend([payload.responderLocation.latitude, payload.responderLocation.longitude]);
+          L.circleMarker([payload.responderLocation.latitude, payload.responderLocation.longitude], {
+            radius: 8,
+            color: '#fff',
+            weight: 2,
+            fillColor: '#0ea5e9',
+            fillOpacity: 1,
+          }).addTo(responderRouteLayer).bindPopup('<strong>' + escapeHtml(payload.responderLabel || 'Closest responder base') + '</strong>');
+        }
+
+        if ((payload.routeCoordinates || []).length > 1) {
+          var line = payload.routeCoordinates
+            .map(function(point) { return [Number(point.latitude), Number(point.longitude)]; })
+            .filter(function(point) { return Number.isFinite(point[0]) && Number.isFinite(point[1]) && inCalamba(point[0], point[1]); });
+          if (line.length > 1) {
+            if (extendInitialBounds) line.forEach(function(p) { fitBounds.extend(p); });
+            L.polyline(line, { color: '#22c55e', weight: 6, opacity: 0.8 }).addTo(responderRouteLayer);
+          }
+        }
+      }
+
+      renderResponderRoute(true);
 
       // In-map layer control (top-right)
       var layerPanelControl = null;
@@ -2158,6 +2179,18 @@ export function buildCalambaMapHtml(
 
       window.addEventListener('message', function(event) {
         var data = event && event.data ? event.data : null;
+        if (data && data.type === 'rescue-map-update' && payload.mapBehavior && payload.mapBehavior.allowLiveRouteUpdates) {
+          payload.responderLocation = data.responderLocation || null;
+          payload.routeCoordinates = Array.isArray(data.routeCoordinates) ? data.routeCoordinates : [];
+          payload.incidentLocation = data.incidentLocation || null;
+          payload.selectedReportCode = data.selectedReportCode || null;
+          payload.incidentPoints = Array.isArray(data.incidentPoints) ? data.incidentPoints : [];
+          renderIncidents();
+          renderResponderRoute(false);
+          applyLayerVisibility();
+          if (data.recenter === true) focusActiveRescue();
+          return;
+        }
         if (!data || data.type !== 'dashboard-focus-barangay') {
           return;
         }
@@ -2182,6 +2215,8 @@ export function buildCalambaMapHtml(
       }
       if (Boolean(visibility.weatherOverlay) || Boolean(visibility.windOverlay)) {
         map.setView(calambaCenter, 12, { animate: false });
+      } else if (payload.mapBehavior && payload.mapBehavior.focusOnIncident) {
+        focusActiveRescue();
       }
 
     </script>

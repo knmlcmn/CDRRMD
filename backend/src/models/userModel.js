@@ -32,7 +32,7 @@ async function findStaffByAccountId(accountId, role) {
 
 async function findPublicUserById(id) {
   const result = await pool.query(
-    `SELECT id, username, email, first_name, last_name, address, contact_number, role, barangay_name
+    `SELECT id, username, email, first_name, last_name, address, contact_number, role, barangay_name, created_at
      FROM users
      WHERE id = $1
        AND COALESCE(is_archived, FALSE) = FALSE
@@ -84,7 +84,7 @@ async function updateMyProfile(userId, profile) {
        contact_number = $5,
        barangay_name = $6
      WHERE id = $7
-     RETURNING id, username, role, email, first_name, last_name, address, contact_number, barangay_name`,
+     RETURNING id, username, role, email, first_name, last_name, address, contact_number, barangay_name, created_at`,
     [profile.firstName, profile.lastName, profile.email, profile.address, profile.contactNumber, profile.barangayName, userId],
   );
 

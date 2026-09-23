@@ -4,7 +4,6 @@ const {
 	createReport,
 	getMyReports,
 	getReports,
-	getMapReports,
 	updateReportStatus,
 	getReportLogs,
 	getMyNotifications,
@@ -17,7 +16,6 @@ const router = express.Router();
 // Incident reporting and workflow endpoints.
 router.post('/', auth, createReport);
 router.get('/mine', auth, getMyReports);
-router.get('/map', getMapReports);
 router.get('/notifications/mine', auth, getMyNotifications);
 router.patch('/notifications/read-all', auth, markAllNotificationsRead);
 router.patch('/notifications/:id/read', auth, markNotificationRead);

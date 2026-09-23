@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE_URL, setAuthToken, api } from './services/apiClient';
 import BackupNotifications from './components/BackupNotifications';
 import DashboardPage from './pages/DashboardPage';
@@ -12,6 +12,8 @@ import PostUpdatesPage from './pages/PostUpdatesPage';
 import BarangayAccountsPage from './pages/BarangayAccountsPage';
 import RescuerAccountsPage from './pages/RescuerAccountsPage';
 import RescuerDashboardPage from './pages/RescuerDashboardPage';
+import RescuerFloodMonitoringPage from './pages/RescuerFloodMonitoringPage';
+import RescuerAccountPage from './pages/RescuerAccountPage';
 import type { StaffPortal } from './services/authService';
 import WaterLevelUpdateToast, { type WaterLevelUpdateNoticeKind } from './components/WaterLevelUpdateToast';
 import { loadWaterLevelSensors, type WaterLevelSensor } from './services/waterLevelSensors';
@@ -27,6 +29,10 @@ type View =
   | 'evacuation-areas'
   | 'post-updates';
 
+type RescuerView = 'incidents' | 'flood-monitoring' | 'account';
+
+const BarangayPortal = lazy(() => import('./barangay/BarangayPortal'));
+
 type WaterUpdateNotice = {
   id: number;
   kind: WaterLevelUpdateNoticeKind;
@@ -38,7 +44,7 @@ function roleFromToken(token: string | null): StaffPortal | null {
     if (!token) return null;
     const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
     const role = JSON.parse(atob(payload)).role;
-    return role === 'admin' || role === 'rescuer' ? role : null;
+    return role === 'admin' || role === 'barangay' || role === 'rescuer' ? role : null;
   } catch {
     return null;
   }
@@ -52,6 +58,7 @@ function App() {
     localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token'),
   ));
   const [view, setView] = useState<View>('dashboard');
+  const [rescuerView, setRescuerView] = useState<RescuerView>('incidents');
   const [backupReportId, setBackupReportId] = useState<number | null>(null);
   const [waterUpdateNotices, setWaterUpdateNotices] = useState<WaterUpdateNotice[]>([]);
   const waterNoticeIdRef = useRef(0);
@@ -167,6 +174,7 @@ function App() {
     setToken(null);
     setRole(null);
     setView('dashboard');
+    setRescuerView('incidents');
   }
 
   function openView(nextView: View) {
@@ -179,7 +187,21 @@ function App() {
   }
 
   if (role === 'rescuer') {
-    return <RescuerDashboardPage onLogout={onLogout} onAuthError={onLogout} />;
+    const rescuerProps = {
+      onLogout,
+      onAuthError: onLogout,
+      onOpenIncidents: () => setRescuerView('incidents'),
+      onOpenFloodMonitoring: () => setRescuerView('flood-monitoring'),
+      onOpenAccount: () => setRescuerView('account'),
+    };
+    if (rescuerView === 'flood-monitoring') return <RescuerFloodMonitoringPage {...rescuerProps} />;
+    if (rescuerView === 'account') return <RescuerAccountPage {...rescuerProps} />;
+    return <RescuerDashboardPage {...rescuerProps} />;
+  }
+
+  if (role === 'barangay') {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { barangayName?: string };
+    return <Suspense fallback={<p className="p-6 text-sm text-slate-600">Loading Barangay Portal...</p>}><BarangayPortal token={token} barangayName={payload.barangayName || 'Unknown'} onLogout={onLogout} onAuthError={onLogout} /></Suspense>;
   }
 
   const shellProps = {

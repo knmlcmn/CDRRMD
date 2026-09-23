@@ -1,4 +1,4 @@
-import type { EvacuationAreaItem } from '../types';
+import type { EvacuationAreaItem } from '../../types';
 
 export type Coordinate = { latitude: number; longitude: number };
 export type MonitoringLayerVisibility = {

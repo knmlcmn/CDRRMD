@@ -20,21 +20,51 @@ function normalizeAccount(payload) {
   };
 }
 
+function distanceMeters(fromLatitude, fromLongitude, toLatitude, toLongitude) {
+  const earthRadiusMeters = 6371000;
+  const toRadians = (value) => value * Math.PI / 180;
+  const latitudeDelta = toRadians(toLatitude - fromLatitude);
+  const longitudeDelta = toRadians(toLongitude - fromLongitude);
+  const startLatitude = toRadians(fromLatitude);
+  const endLatitude = toRadians(toLatitude);
+  const haversine = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(startLatitude) * Math.cos(endLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
 async function listAccounts(req, res) {
-  requireRole(req, 'admin');
+  if (!['admin', 'rescuer'].includes(req.user?.role)) {
+    throw httpError(403, 'Admin or CDRRMD Rescuer access required.');
+  }
   const { rows } = await pool.query(
     `SELECT u.id,
             CONCAT('RSC-', EXTRACT(YEAR FROM u.created_at)::text, '-', LPAD(u.id::text, 5, '0')) AS rescuer_id,
             u.username, u.email, u.first_name, u.last_name, u.address, u.contact_number,
             u.created_at, u.last_login,
             (COALESCE(u.is_active, FALSE) AND u.last_seen_at >= NOW() - INTERVAL '45 seconds') AS is_online,
+            (u.id = $1) AS is_self,
             NOT EXISTS (
               SELECT 1 FROM backup_requests br
               WHERE br.assigned_rescuer_id = u.id AND br.arrived_at IS NULL
             ) AS is_available
      FROM users u
      WHERE u.role = 'rescuer' AND COALESCE(u.is_archived, FALSE) = FALSE
-     ORDER BY LOWER(u.last_name) NULLS LAST, LOWER(u.first_name) NULLS LAST, u.id`,
+     ORDER BY (u.id = $1) DESC, LOWER(u.last_name) NULLS LAST, LOWER(u.first_name) NULLS LAST, u.id`,
+    [req.user.userId],
+  );
+  return res.json(rows);
+}
+
+async function listArchivedAccounts(req, res) {
+  requireRole(req, 'admin');
+  const { rows } = await pool.query(
+    `SELECT u.id,
+            CONCAT('RSC-', EXTRACT(YEAR FROM u.created_at)::text, '-', LPAD(u.id::text, 5, '0')) AS rescuer_id,
+            u.username, u.email, u.first_name, u.last_name, u.address, u.contact_number,
+            u.created_at, u.last_login, u.archived_at
+     FROM users u
+     WHERE u.role = 'rescuer' AND COALESCE(u.is_archived, FALSE) = TRUE
+     ORDER BY u.archived_at DESC, u.id DESC`,
   );
   return res.json(rows);
 }
@@ -109,13 +139,49 @@ async function archiveAccount(req, res) {
   return res.status(204).send();
 }
 
+async function restoreAccount(req, res) {
+  requireRole(req, 'admin');
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) throw httpError(400, 'Invalid rescuer ID.');
+  const { rows } = await pool.query(
+    `UPDATE users SET is_archived = FALSE, archived_at = NULL, archived_by = NULL
+     WHERE id = $1 AND role = 'rescuer' AND COALESCE(is_archived, FALSE) = TRUE
+     RETURNING id`,
+    [id],
+  );
+  if (!rows[0]) throw httpError(404, 'Archived CDRRMD Rescuer account not found.');
+  return res.json(rows[0]);
+}
+
+async function permanentlyDeleteAccount(req, res) {
+  requireRole(req, 'admin');
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) throw httpError(400, 'Invalid rescuer ID.');
+  const { rows } = await pool.query(
+    `DELETE FROM users
+     WHERE id = $1 AND role = 'rescuer' AND COALESCE(is_archived, FALSE) = TRUE
+     RETURNING id`,
+    [id],
+  );
+  if (!rows[0]) throw httpError(404, 'Archived CDRRMD Rescuer account not found.');
+  return res.status(204).send();
+}
+
 async function listMyIncidents(req, res) {
   requireRole(req, 'rescuer');
   const { rows } = await pool.query(
     `SELECT br.id AS backup_request_id, br.created_at AS backup_requested_at,
             br.acknowledged_at, br.assigned_at, br.picked_up_at,
             ir.id, ir.report_code, ir.report_type, ir.incident_type, ir.status,
-            ir.location, ir.latitude, ir.longitude, ir.notes,
+            ir.location,
+            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
+                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
+              THEN reporter.current_latitude ELSE ir.latitude END AS latitude,
+            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
+                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
+              THEN reporter.current_longitude ELSE ir.longitude END AS longitude,
+            reporter.location_updated_at AS resident_location_updated_at,
+            ir.notes,
             ir.assigned_barangay, ir.evacuation_area_id, ir.evacuation_area_name,
             ea.latitude AS evacuation_latitude, ea.longitude AS evacuation_longitude,
             NULLIF(TRIM(CONCAT_WS(' ', reporter.first_name, reporter.last_name)), '') AS reporter_name,
@@ -133,6 +199,42 @@ async function listMyIncidents(req, res) {
   return res.json(rows);
 }
 
+async function listMyIncidentHistory(req, res) {
+  requireRole(req, 'rescuer');
+  const { rows } = await pool.query(
+    `SELECT br.id AS backup_request_id, br.created_at AS backup_requested_at,
+            br.assigned_at, br.picked_up_at, br.arrived_at,
+            ir.id, ir.report_code, ir.incident_type, ir.status, ir.location,
+            ir.assigned_barangay, ir.evacuation_area_name,
+            NULLIF(TRIM(CONCAT_WS(' ', reporter.first_name, reporter.last_name)), '') AS reporter_name
+     FROM backup_requests br
+     JOIN incident_reports ir ON ir.id = br.report_id
+     LEFT JOIN users reporter ON reporter.id = ir.reported_by
+     WHERE br.assigned_rescuer_id = $1
+       AND br.arrived_at IS NOT NULL
+     ORDER BY br.arrived_at DESC, br.id DESC
+     LIMIT 100`,
+    [req.user.userId],
+  );
+  return res.json(rows);
+}
+
+async function listFloodReports(req, res) {
+  requireRole(req, 'rescuer');
+  const { rows } = await pool.query(
+    `SELECT ir.id, ir.report_code, ir.location, ir.water_level, ir.status,
+            ir.assigned_barangay, ir.created_at, ir.updated_at,
+            NULLIF(TRIM(CONCAT_WS(' ', reporter.first_name, reporter.last_name)), '') AS reporter_name,
+            reporter.contact_number
+     FROM incident_reports ir
+     LEFT JOIN users reporter ON reporter.id = ir.reported_by
+     WHERE ir.report_type = 'flood'
+     ORDER BY ir.created_at DESC
+     LIMIT 200`,
+  );
+  return res.json(rows);
+}
+
 async function updateMyLocation(req, res) {
   requireRole(req, 'rescuer');
   const latitude = Number(req.body?.latitude);
@@ -141,6 +243,7 @@ async function updateMyLocation(req, res) {
     || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
     throw httpError(400, 'Valid latitude and longitude are required.');
   }
+  const accuracy = Number(req.body?.accuracy);
   const { rows } = await pool.query(
     `UPDATE users SET current_latitude = $1, current_longitude = $2,
        location_updated_at = NOW(), last_seen_at = NOW(), is_active = TRUE
@@ -149,14 +252,65 @@ async function updateMyLocation(req, res) {
     [latitude, longitude, req.user.userId],
   );
   if (!rows[0]) throw httpError(404, 'CDRRMD Rescuer account not found.');
-  return res.json(rows[0]);
+
+  const assignmentResult = await pool.query(
+    `SELECT br.id AS backup_request_id, br.picked_up_at,
+            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
+                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
+              THEN reporter.current_latitude ELSE ir.latitude END AS incident_latitude,
+            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
+                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
+              THEN reporter.current_longitude ELSE ir.longitude END AS incident_longitude,
+            ea.latitude AS evacuation_latitude, ea.longitude AS evacuation_longitude
+     FROM backup_requests br
+     JOIN incident_reports ir ON ir.id = br.report_id
+     LEFT JOIN users reporter ON reporter.id = ir.reported_by
+     LEFT JOIN evacuation_areas ea ON ea.id = ir.evacuation_area_id
+     WHERE br.assigned_rescuer_id = $1
+       AND br.arrived_at IS NULL
+       AND ir.status IN ('pending', 'accepted', 'in_progress')
+     ORDER BY br.assigned_at, br.id
+     LIMIT 1`,
+    [req.user.userId],
+  );
+  const assignment = assignmentResult.rows[0];
+  if (!assignment) return res.json({ ...rows[0], proximityAction: null });
+
+  const destinationLatitude = Number(assignment.picked_up_at
+    ? assignment.evacuation_latitude
+    : assignment.incident_latitude);
+  const destinationLongitude = Number(assignment.picked_up_at
+    ? assignment.evacuation_longitude
+    : assignment.incident_longitude);
+  if (!Number.isFinite(destinationLatitude) || !Number.isFinite(destinationLongitude)) {
+    return res.json({ ...rows[0], proximityAction: null });
+  }
+
+  const currentDistanceMeters = distanceMeters(latitude, longitude, destinationLatitude, destinationLongitude);
+  const hasUsableAccuracy = !Number.isFinite(accuracy) || accuracy <= 50;
+  const arrivalRadiusMeters = assignment.picked_up_at ? 40 : 30;
+  const proximityAction = hasUsableAccuracy && currentDistanceMeters <= arrivalRadiusMeters
+    ? (assignment.picked_up_at ? 'complete' : 'pickup')
+    : null;
+
+  return res.json({
+    ...rows[0],
+    backupRequestId: assignment.backup_request_id,
+    distanceMeters: Math.round(currentDistanceMeters),
+    proximityAction,
+  });
 }
 
 module.exports = {
   listAccounts,
+  listArchivedAccounts,
   createAccount,
   updateAccount,
   archiveAccount,
+  restoreAccount,
+  permanentlyDeleteAccount,
   listMyIncidents,
+  listMyIncidentHistory,
+  listFloodReports,
   updateMyLocation,
 };

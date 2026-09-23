@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import cdrrmdLogo from '../assets/cdrrmd-logo.png';
+import cdrrmdLogo from '../../assets/cdrrmd-logo.png';
 import { d } from '../barangayDesign';
 
 type ActiveView = 'monitoring' | 'flood-monitoring' | 'account';

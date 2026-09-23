@@ -710,14 +710,13 @@ async function updateReportStatus(req, res) {
   }
 
   const oldStatus = String(current.status || '').toLowerCase();
-  // Barangay rescuers drive the resident's rescue lifecycle themselves:
-  // Rescue Requested (pending/accepted) -> Rescued (resolved), which is what
-  // flips the routing destination from the resident to the evacuation center.
+  // Barangay acceptance starts the response immediately. Pickup then keeps
+  // the incident in progress until transport to the evacuation center ends.
   const allowedTransitions = isBarangayWorkflow
     ? {
         pending: ['accepted', 'declined'],
         accepted: current.report_type === 'rescue' ? ['resolved'] : [],
-        in_progress: [],
+        in_progress: current.report_type === 'rescue' ? ['resolved'] : [],
         resolved: [],
         declined: [],
       }
@@ -860,6 +859,7 @@ async function updateReportStatus(req, res) {
         return res.json(updated);
       }
 
+      const effectiveBarangayStatus = nextStatus === 'accepted' ? 'in_progress' : nextStatus;
       const nextAdminNotes = nextStatus === 'accepted' ? notes : null;
       const nextDeclineReason = nextStatus === 'declined' ? declineReason : null;
       const nextDeclineExplanation = nextStatus === 'declined' ? declineExplanation : null;
@@ -876,7 +876,7 @@ async function updateReportStatus(req, res) {
          WHERE id = $6
          RETURNING *`,
         [
-          nextStatus,
+          effectiveBarangayStatus,
           nextAdminNotes,
           nextDeclineReason,
           nextDeclineExplanation,
@@ -895,7 +895,7 @@ async function updateReportStatus(req, res) {
           client,
           reportId,
           oldStatus,
-          nextStatus,
+          effectiveBarangayStatus,
           req.user.userId,
           actionNote,
           {
@@ -1104,20 +1104,6 @@ async function updateReportStatus(req, res) {
   }
 }
 
-async function getMapReports(req, res) {
-  const result = await pool.query(
-    `SELECT report_code, report_type, status, latitude, longitude
-     FROM incident_reports
-     WHERE latitude IS NOT NULL
-       AND longitude IS NOT NULL
-       AND status NOT IN ('declined')
-     ORDER BY created_at DESC
-     LIMIT 200`,
-  );
-
-  return res.json(result.rows);
-}
-
 async function getReportLogs(req, res) {
   const reportId = Number(req.params.id);
   if (!Number.isFinite(reportId)) {
@@ -1282,7 +1268,6 @@ module.exports = {
   createReport,
   getMyReports,
   getReports,
-  getMapReports,
   updateReportStatus,
   getReportLogs,
   getMyNotifications,

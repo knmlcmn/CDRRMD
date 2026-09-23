@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import BarangayShell from '../components/BarangayShell';
 import { d } from '../barangayDesign';
-import { api } from '../services/apiClient';
+import { loadFloodReportHistory, type FloodSensorReport } from '../../services/floodReportHistory';
 import { loadWaterLevelSensorStatuses, type WaterLevelSensorStatus } from '../services/waterLevelSensors';
-import type { IncidentReport } from '../types';
 
 type Props = {
   barangayName: string;
@@ -42,51 +41,20 @@ function sameData(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-const HARDWARE_AREAS = [
-  'Brgy Palingon',
-  'Brgy. Sampiruhan',
-  'Brgy. Lingga',
-  'Brgy. Parian',
-  'Brgy. Looc',
-  'Brgy. Uwisan',
+const SENSOR_ASSIGNMENTS = [
+  { hardwareId: 'waterSensor1', barangayName: 'Palingon' },
+  { hardwareId: 'waterSensor2', barangayName: 'Sampiruhan' },
+  { hardwareId: 'waterSensor3', barangayName: 'Lingga' },
+  { hardwareId: 'waterSensor4', barangayName: 'Parian' },
+  { hardwareId: 'waterSensor5', barangayName: 'Looc' },
+  { hardwareId: 'waterSensor6', barangayName: 'Uwisan' },
 ] as const;
 
 const FIREBASE_DATABASE_URL =
   'https://capstone-4de76-default-rtdb.asia-southeast1.firebasedatabase.app';
 
-const FIREBASE_SENSOR_PATHS = [
-  'waterSensor1',
-  'waterSensor2',
-  'waterSensor3',
-  'waterSensor4',
-  'waterSensor5',
-  'waterSensor6',
-] as const;
-
-const ACTIVE_FLOOD_STATUSES = new Set(['pending', 'accepted', 'in_progress']);
 const FLOOD_REPORT_THRESHOLD = 40;
 const HIGH_WATER_THRESHOLD = 61;
-
-function isActiveFloodStatus(value?: string | null) {
-  return ACTIVE_FLOOD_STATUSES.has(String(value || '').toLowerCase());
-}
-
-function formatStatus(status?: string | null) {
-  return String(status || 'pending')
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function formatWaterLevelLabel(value?: string | null) {
-  const normalized = String(value || '').trim();
-  if (!normalized) return 'No Reading';
-
-  return normalized
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
 
 function distanceToFillPct(distanceCm?: number | null) {
   if (typeof distanceCm !== 'number' || !Number.isFinite(distanceCm)) return 0;
@@ -186,11 +154,11 @@ function normalizeFirebaseReading(value: unknown): FirebaseHardwareReading | nul
   };
 }
 
-async function loadFirebaseHardwareReadings(): Promise<Array<FirebaseHardwareReading | null>> {
+async function loadFirebaseHardwareReadings(sensorPaths: readonly string[]): Promise<Array<FirebaseHardwareReading | null>> {
   const baseUrl = FIREBASE_DATABASE_URL.replace(/\/$/, '');
 
   return Promise.all(
-    FIREBASE_SENSOR_PATHS.map(async (sensorPath) => {
+    sensorPaths.map(async (sensorPath) => {
       try {
         const response = await fetch(`${baseUrl}/${sensorPath}.json`);
         if (!response.ok) return null;
@@ -210,8 +178,12 @@ export default function FloodMonitoringPage({
   onOpenAccount,
   onAuthError,
 }: Props) {
-  const [reports, setReports] = useState<IncidentReport[]>([]);
-  const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
+  const sensorAssignment = useMemo(() => {
+    const normalizedBarangay = barangayName.trim().toLowerCase();
+    return SENSOR_ASSIGNMENTS.find((item) => item.barangayName.toLowerCase() === normalizedBarangay) || null;
+  }, [barangayName]);
+  const [reports, setReports] = useState<FloodSensorReport[]>([]);
+  const [showReportHistory, setShowReportHistory] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hardwareSlots, setHardwareSlots] = useState<HardwareSlot[]>([]);
@@ -220,35 +192,31 @@ export default function FloodMonitoringPage({
     if (showLoading) setLoading(true);
 
     try {
-      const [reportsResponse, firebaseReadings, sensorStatuses] = await Promise.all([
-        api.get('/barangay/reports/mine'),
-        loadFirebaseHardwareReadings(),
+      const [allReports, firebaseReadings, sensorStatuses] = await Promise.all([
+        loadFloodReportHistory(),
+        loadFirebaseHardwareReadings(sensorAssignment ? [sensorAssignment.hardwareId] : []),
         loadWaterLevelSensorStatuses(),
       ]);
 
-      const nextReports = (Array.isArray(reportsResponse.data) ? reportsResponse.data : [])
-        .filter((item: IncidentReport) => String(item.report_type).toLowerCase() === 'flood');
+      const nextReports = allReports
+        .filter((item) => item.sensorId === sensorAssignment?.hardwareId)
+        .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());
 
       setReports((current) => sameData(current, nextReports) ? current : nextReports);
 
-      const latestReports = [...nextReports]
-        .sort((first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime())
-        .slice(0, 6);
+      const latestReport = ([...nextReports]
+        .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime()))[0] ?? null;
 
-      const nextHardwareSlots: HardwareSlot[] = Array.from({ length: 6 }, (_, index) => {
-        const source = latestReports[index] ?? null;
-        const hardwareId = `waterSensor${index + 1}`;
-        return {
-          hardwareId,
-          assignedArea: HARDWARE_AREAS[index],
-          waterLevelLabel: source ? formatWaterLevelLabel(source.water_level) : 'No Reading',
+      const nextHardwareSlots: HardwareSlot[] = sensorAssignment ? [{
+          hardwareId: sensorAssignment.hardwareId,
+          assignedArea: `Brgy. ${sensorAssignment.barangayName}`,
+          waterLevelLabel: latestReport?.level || 'No Reading',
           fillPct: 0,
           hasReading: false,
-          sensorStatus: sensorStatuses[hardwareId] || 'Active',
-          reportCode: source?.report_code || null,
-          updatedAt: source?.updated_at || source?.created_at || null,
-        };
-      });
+          sensorStatus: sensorStatuses[sensorAssignment.hardwareId] || 'Active',
+          reportCode: latestReport?.reportId || null,
+          updatedAt: latestReport?.updatedAt || latestReport?.createdAt || null,
+        }] : [];
 
       firebaseReadings.forEach((firebaseReading, index) => {
         const hardwareSlot = nextHardwareSlots[index];
@@ -256,7 +224,7 @@ export default function FloodMonitoringPage({
 
         nextHardwareSlots[index] = {
           ...hardwareSlot,
-          assignedArea: firebaseReading.barangayName || HARDWARE_AREAS[index],
+          assignedArea: `Brgy. ${sensorAssignment?.barangayName || barangayName}`,
           waterLevelLabel: typeof firebaseReading.distanceCm === 'number'
             ? `Distance: ${firebaseReading.distanceCm.toFixed(1)} cm`
             : firebaseReading.waterLevelLabel || firebaseReading.waterLevel || hardwareSlot.waterLevelLabel,
@@ -273,13 +241,6 @@ export default function FloodMonitoringPage({
 
       setHardwareSlots((current) => sameData(current, nextHardwareSlots) ? current : nextHardwareSlots);
 
-      setSelectedReportId((currentId) => {
-        if (nextReports.length === 0) return null;
-        return nextReports.some((item: IncidentReport) => item.id === currentId)
-          ? currentId
-          : nextReports[0].id;
-      });
-
       setError(null);
     } catch (caughtError: unknown) {
       const apiError = caughtError as { response?: { status?: number; data?: { message?: string } } };
@@ -291,7 +252,7 @@ export default function FloodMonitoringPage({
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [onAuthError]);
+  }, [barangayName, onAuthError, sensorAssignment]);
 
   useEffect(() => {
     loadData(true).catch(() => {});
@@ -299,15 +260,17 @@ export default function FloodMonitoringPage({
     return () => clearInterval(refreshTimer);
   }, [loadData]);
 
-  const floodReports = useMemo(() => reports, [reports]);
-  const selectedReport = useMemo(
-    () => floodReports.find((item) => item.id === selectedReportId) ?? floodReports[0] ?? null,
-    [floodReports, selectedReportId],
-  );
   const activeFloodReports = useMemo(
-    () => floodReports.filter((item) => isActiveFloodStatus(item.status)),
-    [floodReports],
+    () => reports.filter((item) => item.active),
+    [reports],
   );
+  const historicalFloodReports = useMemo(
+    () => reports
+      .filter((item) => !item.active)
+      .sort((first, second) => new Date(second.endedAt || second.createdAt).getTime() - new Date(first.endedAt || first.createdAt).getTime()),
+    [reports],
+  );
+  const displayedReports = showReportHistory ? historicalFloodReports : activeFloodReports;
   return (
     <BarangayShell
       activeView="flood-monitoring"
@@ -392,26 +355,27 @@ export default function FloodMonitoringPage({
         <section className={d.monitoring.lowerGrid}>
           <article className={d.monitoring.incidentsCard}>
             <div className={d.monitoring.incidentsHead}>
-              <h3 className={d.monitoring.incidentsTitle}>Flood Reports</h3>
-              <p className={d.monitoring.rainRankUpdated}>{activeFloodReports.length} active</p>
+              <h3 className={d.monitoring.incidentsTitle}>{showReportHistory ? 'Flood Report History' : 'Flood Reports'}</h3>
+              <div className="flex items-center gap-3">
+                <p className={d.monitoring.rainRankUpdated}>{showReportHistory ? `${historicalFloodReports.length} historical` : `${activeFloodReports.length} active`}</p>
+                <button type="button" onClick={() => setShowReportHistory((current) => !current)} className="text-xs font-extrabold text-sky-300 underline">
+                  {showReportHistory ? 'Active reports' : 'History'}
+                </button>
+              </div>
             </div>
             <div className={d.monitoring.incidentsTableWrap}>
               <table className={d.monitoring.floodReportsTable}>
-                <thead><tr><th>Report ID</th><th>Location</th><th>Status</th><th>Reporter</th><th>Contact</th></tr></thead>
+                <thead><tr><th>Report ID</th><th>Level</th><th>Hardware no.</th><th>Water level</th><th>Status</th></tr></thead>
                 <tbody>
-                  {floodReports.length === 0 ? (
-                    <tr><td colSpan={5} className={d.table.empty}>No flood reports yet.</td></tr>
-                  ) : floodReports.map((item) => (
-                    <tr
-                      key={item.id}
-                      onClick={() => setSelectedReportId(item.id)}
-                      className={[d.monitoring.rowBase, selectedReport?.id === item.id ? d.monitoring.rowSelected : null].filter(Boolean).join(' ')}
-                    >
-                      <td>{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td>
-                      <td className={d.monitoring.rowLocation}>{item.location}</td>
-                      <td><span className={d.monitoring.statusChip}>{formatStatus(item.status)}</span></td>
-                      <td>{`${item.first_name || ''} ${item.last_name || ''}`.trim() || item.email || '-'}</td>
-                      <td>{item.contact_number || '-'}</td>
+                  {displayedReports.length === 0 ? (
+                    <tr><td colSpan={5} className={d.table.empty}>{showReportHistory ? 'No flood report history yet.' : 'No active moderate or high flood reports.'}</td></tr>
+                  ) : displayedReports.map((item) => (
+                    <tr key={item.firebaseKey} className={d.monitoring.rowBase}>
+                      <td>{item.reportId}</td>
+                      <td><span className={[d.monitoring.statusChip, item.level === 'High' ? d.monitoring.floodLevelHigh : d.monitoring.floodLevelModerate].join(' ')}>{item.level}</span></td>
+                      <td>{item.hardwareNo}</td>
+                      <td>{item.waterLevelPercentage.toFixed(0)}%</td>
+                      <td><span className={[d.monitoring.statusChip, item.active ? d.monitoring.floodStatusActive : d.monitoring.floodStatusUnavailable].join(' ')}>{item.status}</span></td>
                     </tr>
                   ))}
                 </tbody>
@@ -425,7 +389,7 @@ export default function FloodMonitoringPage({
               <div className={d.monitoring.validationStack}>
                 <p className={d.monitoring.validationCurrent}>Active flood reports: {activeFloodReports.length}</p>
                 <p className={d.monitoring.assignNote}>Each rectangle represents one assigned hardware sensor and fills according to its detected water level.</p>
-                <p className={d.monitoring.assignNote}>All six Firebase sensors refresh automatically every 10 seconds.</p>
+                <p className={d.monitoring.assignNote}>The designated barangay sensor refreshes automatically every 10 seconds.</p>
               </div>
             </div>
           </article>

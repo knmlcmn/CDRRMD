@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/apiClient';
 import AdminShell from '../components/AdminShell';
 import { d } from '../adminDesign';
@@ -110,7 +110,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [topRainBarangays, setTopRainBarangays] = useState<RainRankingItem[]>([]);
-  const [showRainRanking, setShowRainRanking] = useState(false);
   const [rainLegendUpdatedAt, setRainLegendUpdatedAt] = useState<string | null>(null);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const mapWrapRef = useRef<HTMLDivElement | null>(null);
@@ -118,7 +117,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const mapFrameRef = useRef<HTMLIFrameElement | null>(null);
 
-  async function loadFeed(showLoading = true) {
+  const loadFeed = useCallback(async (showLoading = true) => {
     if (showLoading) {
       setLoading(true);
     }
@@ -145,7 +144,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
         setLoading(false);
       }
     }
-  }
+  }, [onAuthError]);
 
   async function loadRainRanking() {
     try {
@@ -272,7 +271,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       if (postUpdateTimerRef.current !== null) window.clearTimeout(postUpdateTimerRef.current);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, []);
+  }, [loadFeed]);
 
   useEffect(() => {
     const onFsChange = () => {
@@ -539,32 +538,24 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
             <div className={d.dashboard.rainRankCard}>
               <div className={d.dashboard.rainRankHead}>
                 <h3 className={d.dashboard.rainRankTitle}>Barangays with Moderate–Severe Rainfall</h3>
-                <div className="flex items-center gap-2">
-                  <p className={d.dashboard.rainRankUpdated}>
-                    Updated: {rainLegendUpdatedAt ? new Date(rainLegendUpdatedAt).toLocaleTimeString() : '-'}
-                  </p>
-                  <button type="button" onClick={() => setShowRainRanking((current) => !current)} className={d.btn.secondaryXs}>
-                    {showRainRanking ? 'Hide' : 'Show'}
-                  </button>
-                </div>
+                <p className={d.dashboard.rainRankUpdated}>Updated: {rainLegendUpdatedAt ? new Date(rainLegendUpdatedAt).toLocaleTimeString() : '-'}</p>
               </div>
-              {showRainRanking ? (
-                <div className={d.dashboard.rainRankPopover}>
-                  {topRainBarangays.length === 0 ? (
-                    <p className={d.dashboard.rainRankEmpty}>No moderate or severe rainfall detected right now.</p>
-                  ) : (
-                    <div className={d.dashboard.rainRankList}>
-                      {topRainBarangays.map((item, index) => (
-                        <article key={`${item.barangayName}-${index}`} className={d.dashboard.rainRankRow}>
-                          <p className={d.dashboard.rainRankName}>{`${index + 1}. ${item.barangayName}`}</p>
-                          <p className={d.dashboard.rainRankMeta}>Intensity: {item.rainIntensityMmPerHour.toFixed(2)} mm/hr</p>
-                          <p className={d.dashboard.rainRankMeta}>Risk: {item.rainLevel}</p>
-                        </article>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : null}
+              <div className={d.table.wrap}>
+                <table className={d.table.main}>
+                  <thead><tr><th>#</th><th>Barangay</th><th>Intensity</th><th>Risk</th></tr></thead>
+                  <tbody>
+                    {topRainBarangays.map((item, index) => (
+                      <tr key={`${item.barangayName}-${index}`}>
+                        <td>{index + 1}</td>
+                        <td className={d.dashboard.rainRankName}>{item.barangayName}</td>
+                        <td>{item.rainIntensityMmPerHour.toFixed(2)} mm/hr</td>
+                        <td><span className={d.dashboard.statusChip}>{item.rainLevel}</span></td>
+                      </tr>
+                    ))}
+                    {!topRainBarangays.length ? <tr><td colSpan={4} className={d.table.empty}>No moderate or severe rainfall detected right now.</td></tr> : null}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </section>
 

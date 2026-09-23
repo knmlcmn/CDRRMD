@@ -2,9 +2,8 @@
 
 Monorepo structure:
 
-- `admin-web/` — React + Tailwind admin dashboard for posting alerts/news
+- `admin-web/` — unified React + Tailwind staff portal for Admin, Barangay, and CDRRMD Rescuer access
 - `user-app/` — Expo React Native mobile app (UI based on your screenshot)
-- `barangay-web/` — React + Tailwind barangay operations portal
 - `backend/` — Node.js/Express API with JWT auth + PostgreSQL
 
 ## Quick Start
@@ -70,30 +69,29 @@ the backend rain-impact weather feed and can be toggled from the map layers.
 
 ## Deploying on Vercel
 
-Create three Vercel projects from this same repository and set each project's
+Create the Vercel projects from this same repository and set each project's
 **Root Directory** as follows:
 
 | Vercel project | Root Directory | Required environment variables |
 | --- | --- | --- |
 | API | `backend` | `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `CORS_ORIGINS`, `NODE_ENV=production` |
-| Admin portal | `admin-web` | `VITE_API_BASE_URL=https://<api-project>.vercel.app/api` |
-| Barangay portal | `barangay-web` | `VITE_API_BASE_URL=https://<api-project>.vercel.app/api` |
+| Unified staff portal | `admin-web` | `VITE_API_BASE_URL=https://<api-project>.vercel.app/api` |
 
 `DATABASE_URL` must be a hosted PostgreSQL connection string (for example from
 Neon or Supabase). `localhost` on Vercel refers to the Vercel function itself,
 not the PostgreSQL server on your computer. If the provider requires SSL and
 the URL does not already include `sslmode=require`, also set `DB_SSL=true`.
 
-Set `CORS_ORIGINS` to the two deployed frontend origins, separated by a comma,
+Set `CORS_ORIGINS` to the deployed frontend origins, separated by a comma,
 for example:
 
 ```text
-https://cdrrmd-admin.vercel.app,https://cdrrmd-barangay.vercel.app,https://cdrrmd-user.vercel.app
+https://cdrrmd-staff.vercel.app,https://cdrrmd-user.vercel.app
 ```
 
 After saving environment variables, redeploy all three projects. Confirm the
 API first by opening `https://<api-project>.vercel.app/api/health`; it should
-return `{"status":"ok"}`. Then open the two portal deployments.
+return `{"status":"ok"}`. Then open the staff portal deployment.
 
 Never commit `backend/.env`. Copy `backend/.env.example` for local setup and
 store production secrets only in Vercel's Environment Variables settings.

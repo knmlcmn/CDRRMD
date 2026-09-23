@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import cdrrmdLogo from '../assets/cdrrmd-logo.png';
+import RescuerShell from '../components/RescuerShell';
 import { api } from '../services/apiClient';
 import type { EvacuationAreaItem } from '../types';
 import { buildCalambaMapHtml, type Coordinate } from '../utils/calambaMapHtml';
 
-type Props = { onLogout: () => void; onAuthError: () => void };
+type Props = {
+  onLogout: () => void;
+  onAuthError: () => void;
+  onOpenIncidents: () => void;
+  onOpenFloodMonitoring: () => void;
+  onOpenAccount: () => void;
+};
 
 type Assignment = {
   backup_request_id: number;
@@ -15,6 +21,7 @@ type Assignment = {
   location: string;
   latitude: number;
   longitude: number;
+  resident_location_updated_at?: string | null;
   notes: string | null;
   assigned_barangay: string;
   evacuation_area_id: number | null;
@@ -27,7 +34,34 @@ type Assignment = {
   picked_up_at: string | null;
 };
 
+type BackupHistory = {
+  backup_request_id: number;
+  report_code: string;
+  incident_type: string;
+  status: string;
+  location: string;
+  assigned_barangay: string;
+  evacuation_area_name: string | null;
+  reporter_name: string | null;
+  assigned_at: string;
+  picked_up_at: string | null;
+  arrived_at: string;
+};
+
 type ApiError = { response?: { status?: number; data?: { message?: string } } };
+type ProximityAction = 'pickup' | 'complete';
+type LocationUpdate = {
+  backupRequestId?: number;
+  proximityAction?: ProximityAction | null;
+};
+
+function sameData(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function updateBackupPhase(backupRequestId: number, action: ProximityAction) {
+  return api.patch(`/backup-requests/${backupRequestId}/${action}`);
+}
 
 async function fetchShortestRoute(from: Coordinate, to: Coordinate) {
   const response = await fetch(
@@ -44,9 +78,11 @@ async function fetchShortestRoute(from: Coordinate, to: Coordinate) {
   };
 }
 
-export default function RescuerDashboardPage({ onLogout, onAuthError }: Props) {
+export default function RescuerDashboardPage({ onLogout, onAuthError, onOpenIncidents, onOpenFloodMonitoring, onOpenAccount }: Props) {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [history, setHistory] = useState<BackupHistory[]>([]);
   const [areas, setAreas] = useState<EvacuationAreaItem[]>([]);
+  const [areasLoaded, setAreasLoaded] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [location, setLocation] = useState<Coordinate | null>(null);
   const [route, setRoute] = useState<Coordinate[]>([]);
@@ -55,16 +91,21 @@ export default function RescuerDashboardPage({ onLogout, onAuthError }: Props) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const lastLocationPush = useRef(0);
+  const proximityMutation = useRef(false);
+  const mapFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const lastFocusedRescue = useRef('');
+  const [mapReady, setMapReady] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
-      const [incidentResponse, areaResponse] = await Promise.all([
+      const [incidentResponse, historyResponse] = await Promise.all([
         api.get<Assignment[]>('/rescuers/incidents/mine'),
-        api.get<EvacuationAreaItem[]>('/content/evacuation-areas'),
+        api.get<BackupHistory[]>('/rescuers/incidents/history'),
       ]);
       const next = Array.isArray(incidentResponse.data) ? incidentResponse.data : [];
-      setAssignments(next);
-      setAreas(Array.isArray(areaResponse.data) ? areaResponse.data : []);
+      const nextHistory = Array.isArray(historyResponse.data) ? historyResponse.data : [];
+      setAssignments((current) => sameData(current, next) ? current : next);
+      setHistory((current) => sameData(current, nextHistory) ? current : nextHistory);
       setSelectedId((current) => next.some((item) => item.backup_request_id === current) ? current : next[0]?.backup_request_id ?? null);
     } catch (error: unknown) {
       const err = error as ApiError;
@@ -80,25 +121,54 @@ export default function RescuerDashboardPage({ onLogout, onAuthError }: Props) {
   }, [loadData]);
 
   useEffect(() => {
+    let stopped = false;
+    api.get<EvacuationAreaItem[]>('/content/evacuation-areas')
+      .then(({ data }) => {
+        if (!stopped) setAreas(Array.isArray(data) ? data : []);
+      })
+      .catch((error: unknown) => {
+        const err = error as ApiError;
+        if (err.response?.status === 401) onAuthError();
+        else if (!stopped) setError(err.response?.data?.message || 'Failed to load evacuation areas.');
+      })
+      .finally(() => { if (!stopped) setAreasLoaded(true); });
+    return () => { stopped = true; };
+  }, [onAuthError]);
+
+  useEffect(() => {
     if (!navigator.geolocation) {
       setError('This device does not support location services.');
       return undefined;
     }
     const watchId = navigator.geolocation.watchPosition(
       ({ coords }) => {
+        const now = Date.now();
+        if (now - lastLocationPush.current < 2_000) return;
+        lastLocationPush.current = now;
         const point = { latitude: coords.latitude, longitude: coords.longitude };
         setLocation(point);
-        const now = Date.now();
-        if (now - lastLocationPush.current >= 2_000) {
-          lastLocationPush.current = now;
-          api.patch('/rescuers/location', point).catch(() => {});
-        }
+        api.patch<LocationUpdate>('/rescuers/location', { ...point, accuracy: coords.accuracy })
+          .then(async ({ data }) => {
+            if (!data.proximityAction || !data.backupRequestId || proximityMutation.current) return;
+            proximityMutation.current = true;
+            try {
+              await updateBackupPhase(data.backupRequestId, data.proximityAction);
+              await loadData();
+            } catch (error: unknown) {
+              const err = error as ApiError;
+              if (err.response?.status === 401) onAuthError();
+              else setError(err.response?.data?.message || 'Failed to update the incident status automatically.');
+            } finally {
+              proximityMutation.current = false;
+            }
+          })
+          .catch(() => {});
       },
       () => setError('Allow device location so the live rescue route can be displayed.'),
       { enableHighAccuracy: true, maximumAge: 1_000, timeout: 12_000 },
     );
     return () => navigator.geolocation.clearWatch(watchId);
-  }, []);
+  }, [loadData, onAuthError]);
 
   const selected = useMemo(
     () => assignments.find((item) => item.backup_request_id === selectedId) || assignments[0] || null,
@@ -141,34 +211,58 @@ export default function RescuerDashboardPage({ onLogout, onAuthError }: Props) {
     return () => { cancelled = true; };
   }, [location, destination]);
 
-  const mapHtml = useMemo(() => buildCalambaMapHtml(
-    areas,
-    location,
-    route,
-    destination,
-    selected?.report_code || null,
-    assignments.map((item) => ({
+  const incidentPoints = useMemo(() => assignments.map((item) => ({
       reportCode: item.report_code,
       latitude: Number(item.latitude),
       longitude: Number(item.longitude),
       status: item.status,
       reportType: 'rescue',
-    })).filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude)),
+    })).filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude)), [assignments]);
+
+  const mapHtml = useMemo(() => areasLoaded ? buildCalambaMapHtml(
+    areas,
+    null,
+    [],
+    null,
+    null,
+    [],
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/flood-risk/calamba/barangays`,
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/flood-risk/calamba/raster`,
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/flood-risk/calamba/rain-impact`,
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/weather/wind-field`,
     { boundary: true, floodHazard: false, evacuationAreas: true, incidentMarkers: true, responderRoute: true, weatherOverlay: false, windOverlay: false },
     'Your live CDRRMD Rescuer location',
-  ), [areas, assignments, destination, location, route, selected]);
+    { focusOnIncident: true, allowLiveRouteUpdates: true },
+  ) : '', [areas, areasLoaded]);
+
+  const postMapUpdate = useCallback((recenter = false) => {
+    if (!mapReady) return;
+    mapFrameRef.current?.contentWindow?.postMessage({
+      type: 'rescue-map-update',
+      responderLocation: location,
+      routeCoordinates: route,
+      incidentLocation: destination,
+      selectedReportCode: selected?.report_code || null,
+      incidentPoints,
+      recenter,
+    }, '*');
+  }, [destination, incidentPoints, location, mapReady, route, selected?.report_code]);
+
+  const focusKey = selected ? `${selected.backup_request_id}:${Boolean(selected.picked_up_at)}` : '';
+  useEffect(() => {
+    if (!mapReady) return;
+    const shouldRecenter = Boolean(focusKey) && lastFocusedRescue.current !== focusKey;
+    postMapUpdate(shouldRecenter);
+    if (shouldRecenter) lastFocusedRescue.current = focusKey;
+    if (!focusKey) lastFocusedRescue.current = '';
+  }, [focusKey, mapReady, postMapUpdate]);
 
   async function advanceRescue() {
     if (!selected || busy) return;
     setBusy(true);
     setError('');
     try {
-      if (selected.picked_up_at) await api.patch(`/backup-requests/${selected.backup_request_id}/complete`);
-      else await api.patch(`/backup-requests/${selected.backup_request_id}/pickup`);
+      await updateBackupPhase(selected.backup_request_id, selected.picked_up_at ? 'complete' : 'pickup');
       await loadData();
     } catch (error: unknown) {
       const err = error as ApiError;
@@ -180,39 +274,55 @@ export default function RescuerDashboardPage({ onLogout, onAuthError }: Props) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-800">
-      <header className="flex flex-wrap items-center justify-between gap-3 bg-[#12314b] px-4 py-3 text-white shadow-lg sm:px-6">
-        <div className="flex items-center gap-3"><img src={cdrrmdLogo} alt="CDRRMD" className="h-12 w-12 rounded-full bg-white p-1" /><div><h1 className="text-lg font-black">CDRRMD Rescuer</h1><p className="text-xs text-blue-100">Assigned Incident Reports and Live Routing</p></div></div>
-        <button onClick={onLogout} className="rounded-lg border border-white/40 px-4 py-2 text-sm font-bold hover:bg-white/10">Logout</button>
-      </header>
-      <main className="mx-auto grid max-w-[1600px] gap-4 p-4 lg:grid-cols-[340px_minmax(0,1fr)]">
+    <RescuerShell activeView="incidents" title="Incident Reports" subtitle="Assigned incidents and live routing" onLogout={onLogout} onOpenIncidents={onOpenIncidents} onOpenFloodMonitoring={onOpenFloodMonitoring} onOpenAccount={onOpenAccount}>
+      {error ? <p className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+      <section className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_400px]">
+        <div className="relative min-h-[34rem] overflow-hidden rounded-xl border border-slate-300 bg-slate-800 shadow-lg">
+          {areasLoaded ? <iframe ref={mapFrameRef} onLoad={() => setMapReady(true)} title="CDRRMD Rescuer live route" srcDoc={mapHtml} className="absolute inset-0 h-full w-full border-0" /> : <p className="p-4 text-sm text-white">Loading rescue map...</p>}
+          <button type="button" onClick={() => postMapUpdate(true)} disabled={!selected || !mapReady} className="absolute bottom-4 right-4 z-10 rounded-lg border border-white/40 bg-[#12314b]/95 px-4 py-2 text-sm font-black text-white shadow-lg backdrop-blur hover:bg-[#1f4e79] disabled:cursor-not-allowed disabled:opacity-50">Re-center</button>
+        </div>
+
         <aside className="space-y-3">
-          <section className="rounded-xl bg-white p-4 shadow">
-            <h2 className="font-black text-[#19374f]">Assigned Incidents</h2>
-            <p className="mt-1 text-xs text-slate-500">Barangay responders remain active and cooperate with your team.</p>
-            <div className="mt-3 space-y-2">
-              {assignments.map((item) => (
-                <button key={item.backup_request_id} onClick={() => setSelectedId(item.backup_request_id)} className={`w-full rounded-lg border p-3 text-left ${selected?.backup_request_id === item.backup_request_id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:bg-slate-50'}`}>
-                  <strong className="block">{item.report_code}</strong>
-                  <span className="block text-xs text-slate-600">Barangay {item.assigned_barangay}</span>
-                  <span className="mt-1 block text-xs font-bold text-blue-700">{item.picked_up_at ? 'To evacuation center' : 'To resident'}</span>
-                </button>
-              ))}
-              {!assignments.length ? <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">No active incident assigned. You are available for dispatch.</p> : null}
+          <section className="rounded-xl bg-white p-3 shadow">
+            <div className="mb-2"><h2 className="font-black text-[#19374f]">Assigned Incidents</h2><p className="text-xs text-slate-500">Barangay responders continue working with your team.</p></div>
+            <div className="max-h-64 overflow-auto rounded-lg border border-slate-200">
+              <table className="w-full text-left text-sm">
+                <thead className="sticky top-0 bg-[#12314b] text-white"><tr><th className="px-3 py-2">Incident</th><th className="px-3 py-2">Barangay</th><th className="px-3 py-2">Phase</th></tr></thead>
+                <tbody>
+                  {assignments.map((item) => (
+                    <tr key={item.backup_request_id} onClick={() => setSelectedId(item.backup_request_id)} className={`cursor-pointer border-t border-slate-200 ${selected?.backup_request_id === item.backup_request_id ? 'bg-blue-100' : 'hover:bg-slate-50'}`}>
+                      <td className="px-3 py-2 font-bold">{item.report_code}</td><td className="px-3 py-2">{item.assigned_barangay}</td><td className="px-3 py-2 text-xs font-bold text-blue-700">{item.picked_up_at ? 'Evacuation' : 'Response'}</td>
+                    </tr>
+                  ))}
+                  {!assignments.length ? <tr><td colSpan={3} className="px-3 py-6 text-center text-sm text-emerald-700">No active incident assigned.</td></tr> : null}
+                </tbody>
+              </table>
             </div>
           </section>
+
           {selected ? (
             <section className="rounded-xl bg-white p-4 text-sm shadow">
               <h2 className="font-black text-[#19374f]">{selected.report_code}</h2>
-              <div className="mt-3 space-y-1.5"><p><strong>Resident:</strong> {selected.reporter_name || '-'}</p><p><strong>Contact:</strong> {selected.reporter_contact || '-'}</p><p><strong>Incident:</strong> {selected.incident_type.replace(/_/g, ' ')}</p><p><strong>Location:</strong> {selected.location}</p><p><strong>Barangay team:</strong> Barangay {selected.assigned_barangay}</p><p><strong>Evacuation center:</strong> {selected.evacuation_area_name || '-'}</p><p><strong>Distance:</strong> {distanceKm ? `${distanceKm.toFixed(2)} km` : 'Calculating...'}</p><p><strong>ETA:</strong> {etaMinutes ? `${etaMinutes} minutes` : 'Calculating...'}</p></div>
+              <div className="mt-3 space-y-1.5"><p><strong>Status:</strong> {selected.status.replace(/_/g, ' ')}</p><p><strong>Resident:</strong> {selected.reporter_name || '-'}</p><p><strong>Contact:</strong> {selected.reporter_contact || '-'}</p><p><strong>Incident:</strong> {selected.incident_type.replace(/_/g, ' ')}</p><p><strong>Location:</strong> {selected.location}</p><p><strong>Barangay team:</strong> Barangay {selected.assigned_barangay}</p><p><strong>Evacuation center:</strong> {selected.evacuation_area_name || '-'}</p><p><strong>Distance:</strong> {distanceKm ? `${distanceKm.toFixed(2)} km` : 'Calculating...'}</p><p><strong>ETA:</strong> {etaMinutes ? `${etaMinutes} minutes` : 'Calculating...'}</p></div>
               <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">{selected.picked_up_at ? `Navigate the resident to ${selected.evacuation_area_name}. Complete only after safe arrival.` : 'Follow the shortest road route to the resident. The Barangay team continues responding with you.'}</div>
               <button disabled={busy || !location} onClick={() => void advanceRescue()} className="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-3 font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Updating...' : selected.picked_up_at ? 'Confirm Safe Arrival' : 'Confirm Resident Pickup'}</button>
             </section>
           ) : null}
-          {error ? <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
         </aside>
-        <section className="relative min-h-[70vh] overflow-hidden rounded-xl border border-slate-300 bg-slate-800 shadow-lg"><iframe title="CDRRMD Rescuer live route" srcDoc={mapHtml} className="absolute inset-0 h-full w-full border-0" /></section>
-      </main>
-    </div>
+      </section>
+
+      <section className="mt-3 rounded-xl bg-white p-3 shadow">
+        <div className="mb-2 flex items-center justify-between gap-3"><div><h2 className="font-black text-[#19374f]">Backup History</h2><p className="text-xs text-slate-500">Completed CDRRMD backup assignments</p></div><span className="text-xs font-bold text-slate-500">{history.length} completed</span></div>
+        <div className="max-h-72 overflow-auto rounded-lg border border-slate-200">
+          <table className="min-w-[900px] w-full text-left text-sm">
+            <thead className="sticky top-0 bg-[#12314b] text-white"><tr><th className="px-3 py-2">Incident</th><th className="px-3 py-2">Resident</th><th className="px-3 py-2">Barangay</th><th className="px-3 py-2">Location</th><th className="px-3 py-2">Evacuation Area</th><th className="px-3 py-2">Completed</th></tr></thead>
+            <tbody>
+              {history.map((item) => <tr key={item.backup_request_id} className="border-t border-slate-200"><td className="px-3 py-2 font-bold">{item.report_code}</td><td className="px-3 py-2">{item.reporter_name || '-'}</td><td className="px-3 py-2">{item.assigned_barangay}</td><td className="px-3 py-2">{item.location}</td><td className="px-3 py-2">{item.evacuation_area_name || '-'}</td><td className="whitespace-nowrap px-3 py-2">{new Date(item.arrived_at).toLocaleString()}</td></tr>)}
+              {!history.length ? <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">No completed backup assignments yet.</td></tr> : null}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </RescuerShell>
   );
 }

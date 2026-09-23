@@ -33,15 +33,22 @@ const EMPTY_FORM: AccountForm = {
   id: null, username: '', email: '', password: '', firstName: '', lastName: '', address: '', contactNumber: '',
 };
 
+const ARCHIVE_ICON = 'https://cdn-icons-png.flaticon.com/512/3143/3143462.png';
+
 type ApiError = { response?: { status?: number; data?: { message?: string } } };
 
 export default function RescuerAccountsPage(props: Props) {
   const { onAuthError } = props;
   const [accounts, setAccounts] = useState<RescuerAccount[]>([]);
+  const [archivedAccounts, setArchivedAccounts] = useState<RescuerAccount[]>([]);
   const [form, setForm] = useState<AccountForm>(EMPTY_FORM);
   const [showForm, setShowForm] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
   const [search, setSearch] = useState('');
+  const [availabilityFilter, setAvailabilityFilter] = useState('all');
   const [busy, setBusy] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const loadAccounts = useCallback(async () => {
@@ -53,6 +60,8 @@ export default function RescuerAccountsPage(props: Props) {
       const err = error as ApiError;
       if (err.response?.status === 401) return onAuthError();
       setError(err.response?.data?.message || 'Failed to load CDRRMD Rescuer accounts.');
+    } finally {
+      setLoading(false);
     }
   }, [onAuthError]);
 
@@ -64,11 +73,12 @@ export default function RescuerAccountsPage(props: Props) {
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    if (!needle) return accounts;
-    return accounts.filter((account) => [
-      account.rescuer_id, account.username, account.email, account.first_name, account.last_name, account.contact_number,
-    ].some((value) => String(value || '').toLowerCase().includes(needle)));
-  }, [accounts, search]);
+    return accounts
+      .filter((account) => availabilityFilter === 'all' || (availabilityFilter === 'available' ? account.is_available : !account.is_available))
+      .filter((account) => !needle || [
+        account.rescuer_id, account.username, account.email, account.first_name, account.last_name, account.contact_number,
+      ].some((value) => String(value || '').toLowerCase().includes(needle)));
+  }, [accounts, availabilityFilter, search]);
 
   function editAccount(account: RescuerAccount) {
     setForm({
@@ -122,63 +132,108 @@ export default function RescuerAccountsPage(props: Props) {
     }
   }
 
+  async function loadArchivedAccounts() {
+    setArchiveBusy(true);
+    try {
+      const { data } = await api.get<RescuerAccount[]>('/rescuers/accounts/archived');
+      setArchivedAccounts(Array.isArray(data) ? data : []);
+    } catch (error: unknown) {
+      const err = error as ApiError;
+      if (err.response?.status === 401) return onAuthError();
+      setError(err.response?.data?.message || 'Failed to load archived CDRRMD Rescuer accounts.');
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
+
+  async function restoreAccount(account: RescuerAccount) {
+    setArchiveBusy(true);
+    try {
+      await api.patch(`/rescuers/accounts/${account.id}/restore`);
+      await Promise.all([loadAccounts(), loadArchivedAccounts()]);
+    } catch (error: unknown) {
+      const err = error as ApiError;
+      setError(err.response?.data?.message || 'Failed to restore CDRRMD Rescuer account.');
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
+
+  async function permanentlyDeleteAccount(account: RescuerAccount) {
+    if (!window.confirm(`Permanently delete archived account ${account.rescuer_id}? This cannot be undone.`)) return;
+    setArchiveBusy(true);
+    try {
+      await api.delete(`/rescuers/accounts/${account.id}/permanent`);
+      await loadArchivedAccounts();
+    } catch (error: unknown) {
+      const err = error as ApiError;
+      setError(err.response?.data?.message || 'Failed to permanently delete CDRRMD Rescuer account.');
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
+
+  function formatDate(value?: string | null) {
+    return value ? new Date(value).toLocaleString() : '—';
+  }
+
   return (
     <AdminShell
       {...props}
       activeView="rescuers"
       title="CDRRMD Rescuer Account Management"
       noMainScroll
-      actions={<button className={d.admin.actionAdd} onClick={() => { setForm(EMPTY_FORM); setShowForm(true); }}>Add Rescuer Team</button>}
+      actions={<button className={d.admin.actionAdd} onClick={() => { setForm(EMPTY_FORM); setShowForm(true); }}>Add Rescuer Account</button>}
     >
       <div className={d.admin.root}>
         <div className={d.admin.headerRow}>
-          <div>
-            <h2 className={d.admin.title}>CDRRMD Rescuer Teams</h2>
-            <p className="text-xs text-slate-500">Only available teams can be assigned to a confirmed backup request.</p>
+          <h2 className={d.admin.title}>CDRRMD Rescuer Accounts</h2>
+          <div className={d.admin.searchRow}>
+            <button type="button" onClick={() => { setShowArchive(true); void loadArchivedAccounts(); }} className={d.admin.archiveButton}><img src={ARCHIVE_ICON} alt="Archive" className={d.admin.archiveIcon} /> Archive</button>
+            <select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)} className={d.admin.search} aria-label="Filter rescuer accounts by availability"><option value="all">All Rescuers</option><option value="available">Available</option><option value="assigned">Assigned</option></select>
+            <input className={d.admin.search} placeholder="Search by ID, name, email, username, or contact" value={search} onChange={(event) => setSearch(event.target.value)} />
           </div>
-          <input className={d.admin.search} placeholder="Search rescuer ID, name, or email" value={search} onChange={(event) => setSearch(event.target.value)} />
         </div>
         {error ? <p className={d.page.error}>{error}</p> : null}
-        <div className={d.table.wrap}>
+
+        {showForm ? (
+          <form className={d.admin.form} onSubmit={saveAccount}>
+            <div className={d.admin.idBox}>ID: {form.id ? accounts.find((account) => account.id === form.id)?.rescuer_id || `RSC-${form.id}` : 'Auto-generated after create'}</div>
+            <input className={d.form.inputSm} required placeholder="Username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} />
+            <input className={d.form.inputSm} required type="email" placeholder="Email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+            <input className={d.form.inputSm} required={!form.id} type="password" placeholder={form.id ? 'Password (optional)' : 'Password'} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+            <input className={d.form.inputSm} placeholder="First Name" value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} />
+            <input className={d.form.inputSm} placeholder="Last Name" value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} />
+            <input className={d.form.inputSm} placeholder="Contact Number" value={form.contactNumber} onChange={(event) => setForm({ ...form, contactNumber: event.target.value })} />
+            <input className={d.form.inputSm} placeholder="Address / Team Base" value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} />
+            <div className={d.admin.formActions}><button className={d.btn.primary} disabled={busy}>{busy ? 'Saving…' : form.id ? 'Update Account' : 'Create Account'}</button><button type="button" className={d.btn.secondary} onClick={() => setShowForm(false)}>Cancel</button></div>
+          </form>
+        ) : null}
+
+        {loading ? <p className={d.page.loading}>Loading…</p> : null}
+        <div className={d.table.wrap} style={{ flex: 1 }}>
           <table className={d.table.main}>
-            <thead><tr><th>Rescuer ID</th><th>Team Member</th><th>Contact</th><th>Availability</th><th>Last Login</th><th>Actions</th></tr></thead>
+            <thead className={d.admin.tableHead}><tr><th>ID</th><th>Name</th><th className={d.admin.thHiddenMd}>Email</th><th className={d.admin.thHiddenLg}>Username</th><th className={d.admin.thHiddenLg}>Contact</th><th className={d.admin.thHiddenMd}>Status</th><th className={d.admin.thHiddenXl}>Last Login</th><th>Actions</th></tr></thead>
             <tbody>
               {filtered.map((account) => (
-                <tr key={account.id}>
-                  <td>{account.rescuer_id}</td>
-                  <td><strong>{[account.first_name, account.last_name].filter(Boolean).join(' ') || account.username}</strong><br /><span className="text-xs text-slate-500">{account.email}</span></td>
-                  <td>{account.contact_number || '-'}</td>
-                  <td><span className={account.is_available ? 'status-chip bg-emerald-100 text-emerald-800' : 'status-chip bg-amber-100 text-amber-800'}>{account.is_available ? 'Available' : 'Assigned'}</span></td>
-                  <td>{account.last_login ? new Date(account.last_login).toLocaleString() : 'Never'}</td>
-                  <td><div className="flex gap-2"><button className={d.btn.secondaryXs} onClick={() => editAccount(account)}>Edit</button><button className={d.btn.declineDisabled} disabled={busy || !account.is_available} onClick={() => void archiveAccount(account)}>Archive</button></div></td>
+                <tr key={account.id} className={[d.admin.row, form.id === account.id ? 'bg-sky-50' : ''].join(' ')}>
+                  <td className="font-mono text-xs text-slate-500">{account.rescuer_id}</td>
+                  <td className={d.admin.truncate}>{[account.first_name, account.last_name].filter(Boolean).join(' ') || '—'}</td>
+                  <td className={d.admin.tdHiddenTruncateMd}>{account.email}</td>
+                  <td className={d.admin.tdHiddenLg}>{account.username}</td>
+                  <td className={d.admin.tdHiddenLg}>{account.contact_number || '—'}</td>
+                  <td className={d.admin.tdHiddenTruncateMd}><span className={['status-chip', account.is_online ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'].join(' ')}>{account.is_online ? 'Online' : 'Offline'}</span></td>
+                  <td className={d.admin.tdHiddenTruncateXl}>{formatDate(account.last_login)}</td>
+                  <td><div className={d.admin.actions}><button className={d.btn.secondaryXs} onClick={() => editAccount(account)}>Edit</button><button className={d.btn.dangerXs} disabled={busy || !account.is_available} onClick={() => void archiveAccount(account)}>Archive</button></div></td>
                 </tr>
               ))}
-              {!filtered.length ? <tr><td colSpan={6} className={d.table.empty}>No CDRRMD Rescuer accounts found.</td></tr> : null}
+              {!filtered.length && !loading ? <tr><td colSpan={8} className={d.table.empty}>{search ? 'No accounts match your search.' : 'No CDRRMD Rescuer accounts yet.'}</td></tr> : null}
             </tbody>
           </table>
         </div>
-      </div>
 
-      {showForm ? (
-        <div className={d.modal.overlay}>
-          <form className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-2xl" onSubmit={saveAccount}>
-            <h3 className={`${d.modal.title} mb-4`}>{form.id ? 'Edit Rescuer Team' : 'Add Rescuer Team'}</h3>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <input className={d.form.input} required placeholder="Username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} />
-              <input className={d.form.input} required type="email" placeholder="Email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-              <input className={d.form.input} required={!form.id} type="password" placeholder={form.id ? 'New password (optional)' : 'Password'} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
-              <input className={d.form.input} placeholder="Contact number" value={form.contactNumber} onChange={(event) => setForm({ ...form, contactNumber: event.target.value })} />
-              <input className={d.form.input} placeholder="First name" value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} />
-              <input className={d.form.input} placeholder="Last name" value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} />
-              <input className={`${d.form.input} sm:col-span-2`} placeholder="Team address/base" value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} />
-            </div>
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" className={d.btn.secondary} disabled={busy} onClick={() => setShowForm(false)}>Cancel</button>
-              <button className={d.btn.primary} disabled={busy}>{busy ? 'Saving...' : 'Save Rescuer'}</button>
-            </div>
-          </form>
-        </div>
-      ) : null}
+        {showArchive ? <div className={d.modal.overlay}><div className={d.admin.archiveModalCard}><div className={d.modal.header}><h4 className={d.modal.title}>Archived CDRRMD Rescuer Accounts</h4><button type="button" onClick={() => setShowArchive(false)} className={d.modal.close}>Close</button></div><div className={d.admin.archiveModalBody}>{archiveBusy ? <p className={d.page.loading}>Loading archive...</p> : null}{!archiveBusy && !archivedAccounts.length ? <p className={d.admin.archiveEmpty}>No archived CDRRMD Rescuer accounts.</p> : null}{!archiveBusy && archivedAccounts.length ? <div className={d.admin.archiveList}>{archivedAccounts.map((account) => <article key={account.id} className={d.admin.archiveItem}><div><p className={d.admin.archiveName}>{[account.first_name, account.last_name].filter(Boolean).join(' ') || account.username}</p><p className={d.admin.archiveMeta}>{account.rescuer_id} · Archived: {formatDate(account.archived_at)}</p></div><div className={d.admin.archiveActions}><button type="button" onClick={() => void restoreAccount(account)} className={[d.btn.secondaryXs, d.admin.archiveActionButton].join(' ')} disabled={archiveBusy}>Restore</button><button type="button" onClick={() => void permanentlyDeleteAccount(account)} className={[d.btn.dangerXs, d.admin.archiveActionButton].join(' ')} disabled={archiveBusy}>Permanent Delete</button></div></article>)}</div> : null}</div></div></div> : null}
+      </div>
     </AdminShell>
   );
 }

@@ -321,6 +321,10 @@ export const d = {
     rowSelected: '!bg-blue-50',
     rowLocation: 'truncate',
     statusChip: 'status-chip bg-slate-200 text-slate-700',
+    floodLevelModerate: '!border !border-amber-300 !bg-amber-100 !text-amber-800',
+    floodLevelHigh: '!border !border-red-300 !bg-red-100 !text-red-700',
+    floodStatusActive: '!border !border-emerald-300 !bg-emerald-100 !text-emerald-800',
+    floodStatusUnavailable: '!border !border-slate-300 !bg-slate-200 !text-slate-700',
     muted: 'text-slate-400',
     validationCard:
       'panel flex min-h-0 min-w-0 max-w-full flex-col overflow-hidden p-3 text-sm',

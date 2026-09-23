@@ -5,10 +5,9 @@
   "main": "user-app/index.js",
   "scripts": {
     "start": "npm --workspace backend start",
-    "dev": "concurrently -k -n backend,admin,barangay,user -c green,cyan,magenta,yellow \"npm run dev:backend\" \"npm run dev:admin\" \"npm run dev:barangay\" \"npm run dev:user\"",
+    "dev": "concurrently -k -n backend,web,user -c green,cyan,yellow \"npm run dev:backend\" \"npm run dev:admin\" \"npm run dev:user\"",
     "dev:backend": "npm --workspace backend run dev",
     "dev:admin": "npm --workspace admin-web run dev",
-    "dev:barangay": "npm --workspace barangay-web run dev",
     "dev:user": "npm --workspace user-app run start",
     "web": "npm --workspace user-app run web",
     "dev:user:mobile": "npm --workspace user-app run start:tunnel -- --clear",
@@ -21,7 +20,6 @@
   "private": true,
   "workspaces": [
     "admin-web",
-    "barangay-web",
     "user-app",
     "backend"
   ],

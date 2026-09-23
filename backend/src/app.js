@@ -23,7 +23,6 @@ const configuredOrigins = String(process.env.CORS_ORIGINS || '')
 
 const allowedOrigins = new Set([
   'http://localhost:5173',
-  'http://localhost:5174',
   ...configuredOrigins,
 ]);
 

@@ -58,7 +58,6 @@ type UserMapLayerVisibility = {
   boundary: boolean;
   floodHazard: boolean;
   evacuationAreas: boolean;
-  incidentMarkers: boolean;
   userMarker: boolean;
   route: boolean;
   rainOverlay: boolean;
@@ -190,7 +189,6 @@ function buildLeafletHtml(
     windDataUrl: `${apiBaseUrl}/weather/wind-field`,
     rainImpactUrl: `${apiBaseUrl}/flood-risk/calamba/rain-impact`,
     floodHazardUrl: `${apiBaseUrl}/flood-risk/calamba/barangays`,
-    incidentUrl: `${apiBaseUrl}/reports/map`,
     layerVisibility,
     boundaryGeoJson: CALAMBA_BOUNDARY_GEOJSON,
   });
@@ -256,7 +254,6 @@ function buildLeafletHtml(
         userMarker: true,
         route: true,
         floodHazard: false,
-        incidentMarkers: true,
         rainOverlay: true,
         windOverlay: true
       }, data.layerVisibility || {});
@@ -439,7 +436,6 @@ function buildLeafletHtml(
 
       var boundaryLayer = L.layerGroup();
       var floodHazardLayer = L.layerGroup();
-      var incidentLayer = L.layerGroup();
       var areaLayer = L.layerGroup();
       var userLayer = L.layerGroup();
       var routeLayer = L.layerGroup();
@@ -598,11 +594,6 @@ function buildLeafletHtml(
         if(!data.rainImpactUrl)return;
         fetch(data.rainImpactUrl).then(function(response){return response.ok?response.json():null;}).then(function(payload){var weather=payload&&payload.cityWeather?payload.cityWeather:{};var amount=Number(weather.rainIntensityMmPerHour);if(Number.isFinite(amount)&&!weatherTimelineData){rainAmountMm=amount;updateRainEffectVisibility();}}).catch(function(){});
       }
-      function loadIncidentMarkers(){
-        if(!data.incidentUrl)return;
-        fetch(data.incidentUrl).then(function(response){return response.ok?response.json():[];}).then(function(rows){incidentLayer.clearLayers();(Array.isArray(rows)?rows:[]).forEach(function(item){var latitude=Number(item.latitude),longitude=Number(item.longitude);if(!Number.isFinite(latitude)||!Number.isFinite(longitude))return;L.circleMarker([latitude,longitude],{radius:6,color:'#e11d48',fillColor:'#e11d48',fillOpacity:.9,weight:2}).bindPopup('<strong>'+String(item.report_code||'Incident')+'</strong><br>'+String(item.report_type||'incident')+'<br>Status: '+String(item.status||'pending')).addTo(incidentLayer);});applyLayerVisibility();}).catch(function(){});
-      }
-
       var windColorStops = [
         { value: 0, color: [82, 111, 208, 218] }, { value: 5, color: [45, 174, 224, 224] },
         { value: 10, color: [41, 210, 135, 228] }, { value: 20, color: [155, 209, 79, 232] },
@@ -1044,7 +1035,6 @@ function buildLeafletHtml(
         setLayerVisible(userLayer, Boolean(visibility.userMarker));
         setLayerVisible(routeLayer, Boolean(visibility.route));
         setLayerVisible(floodHazardLayer, Boolean(visibility.floodHazard));
-        setLayerVisible(incidentLayer, Boolean(visibility.incidentMarkers));
         updateRainEffectVisibility();
         updateWindEffectVisibility();
         applyIronMapTint();
@@ -1067,7 +1057,6 @@ function buildLeafletHtml(
             ['userMarker', 'Your Location'],
             ['route', 'Responder Route'],
             ['floodHazard', 'Flood Hazard'],
-            ['incidentMarkers', 'Incidents'],
             ['rainOverlay', 'Rain Accumulation'],
             ['windOverlay', 'Wind Layer'],
           ];
@@ -1195,7 +1184,6 @@ function buildLeafletHtml(
       loadOsmWaterways();
       loadWeatherTimeline();
       loadRainImpact();
-      loadIncidentMarkers();
       renderBoundary();
       renderLayerControl();
       applyLayerVisibility();
@@ -1240,7 +1228,6 @@ export default function RescueMapScreen() {
     userMarker: true,
     route: true,
     floodHazard: false,
-    incidentMarkers: true,
     rainOverlay: true,
     windOverlay: true,
   });

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
-import { api } from '../services/apiClient';
+import { api } from '../../services/apiClient';
 import BarangayShell from '../components/BarangayShell';
 import { d } from '../barangayDesign';
-import type { BarangayUser } from '../types';
+import type { BarangayUser } from '../../types';
 
 type Props = {
   barangayName: string;

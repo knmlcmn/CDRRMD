@@ -22,6 +22,8 @@ function resolveResidentBarangay(value, address) {
 
 // Keeps API response shape stable even if DB column names differ.
 function toUserResponse(user) {
+  const accountPrefix = user.role === 'admin' ? 'ADM' : user.role === 'barangay' ? 'BRG' : user.role === 'rescuer' ? 'RSC' : null;
+  const createdYear = user.created_at ? new Date(user.created_at).getFullYear() : null;
   return {
     id: user.id,
     username: user.username,
@@ -32,6 +34,7 @@ function toUserResponse(user) {
     address: user.address,
     contactNumber: user.contact_number,
     barangayName: user.barangay_name || null,
+    accountId: accountPrefix && createdYear ? `${accountPrefix}-${createdYear}-${String(user.id).padStart(5, '0')}` : null,
   };
 }
 
@@ -263,8 +266,14 @@ async function updateMe(userId, payload) {
   }
 
   const currentUser = await userModel.findPublicUserById(userId);
-  const residentBarangay = resolveResidentBarangay(barangayName || currentUser?.barangay_name, address);
-  if (!residentBarangay) {
+  if (!currentUser) {
+    throw httpError(404, 'User not found.');
+  }
+  const isResident = currentUser.role === 'user';
+  const residentBarangay = isResident
+    ? resolveResidentBarangay(barangayName || currentUser.barangay_name, address)
+    : currentUser.barangay_name;
+  if (isResident && !residentBarangay) {
     throw httpError(400, 'Please select one of the six supported barangays.');
   }
   const user = await userModel.updateMyProfile(userId, {

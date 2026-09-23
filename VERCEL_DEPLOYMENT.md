@@ -1,10 +1,9 @@
 # CDRRMD Vercel deployment
 
-The repository contains four independently deployable targets:
+The repository contains three independently deployable targets:
 
 - `backend` — Express API/serverless function
-- `admin-web` — CDRRMD admin dashboard
-- `barangay-web` — barangay dashboard
+- `admin-web` — unified Admin, Barangay, and CDRRMD Rescuer staff portal
 - `user-app` — Expo React Native app; Vercel hosts its web build only
 
 ## 1. Deploy the backend
@@ -14,7 +13,7 @@ Set these environment variables in Vercel:
 - `DATABASE_URL` — hosted PostgreSQL connection string (Neon, Supabase, etc.)
 - `JWT_SECRET`
 - `JWT_REFRESH_SECRET`
-- `CORS_ORIGINS` — comma-separated URLs for the deployed admin, barangay, and user-web apps
+- `CORS_ORIGINS` — comma-separated URLs for the deployed staff and user-web apps
 - `NODE_ENV=production`
 - `SEED_DEFAULT_ACCOUNTS` should remain unset/false in production
 - `DB_SSL=true` when required by the provider
@@ -29,13 +28,7 @@ Set:
 
 The included `vercel.json` builds the Vite app.
 
-## 3. Deploy `barangay-web`
-Create a Vercel project with **Root Directory = `barangay-web`**.
-Set the same API variable:
-
-`VITE_API_BASE_URL=https://YOUR-BACKEND.vercel.app/api`
-
-## 4. Expo / React Native app
+## 3. Expo / React Native app
 The same `user-app` code remains an Expo mobile app. Run locally with `npx expo start`.
 Vercel can also host its **web build** by creating a Vercel project with Root Directory = `user-app` and:
 
