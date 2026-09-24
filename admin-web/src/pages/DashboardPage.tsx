@@ -86,6 +86,8 @@ function buildMapHtml(
       incidentMarkers: true,
       responderRoute: true,
       weatherOverlay: true,
+      temperatureOverlay: false,
+      humidityOverlay: false,
       windOverlay: false,
     },
   );

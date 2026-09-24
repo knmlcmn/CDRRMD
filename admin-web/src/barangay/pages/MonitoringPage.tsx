@@ -26,6 +26,8 @@ type MonitoringLayerVisibility = {
   incidentMarkers: boolean;
   responderRoute: boolean;
   weatherOverlay: boolean;
+  temperatureOverlay: boolean;
+  humidityOverlay: boolean;
   windOverlay: boolean;
 };
 
@@ -170,6 +172,8 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
     incidentMarkers: true,
     responderRoute: true,
     weatherOverlay: true,
+    temperatureOverlay: false,
+    humidityOverlay: false,
     windOverlay: false,
   });
 

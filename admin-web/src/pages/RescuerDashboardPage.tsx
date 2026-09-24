@@ -230,7 +230,7 @@ export default function RescuerDashboardPage({ onLogout, onAuthError, onOpenInci
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/flood-risk/calamba/raster`,
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/flood-risk/calamba/rain-impact`,
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/weather/wind-field`,
-    { boundary: true, floodHazard: false, evacuationAreas: true, incidentMarkers: true, responderRoute: true, weatherOverlay: false, windOverlay: false },
+    { boundary: true, floodHazard: false, evacuationAreas: true, incidentMarkers: true, responderRoute: true, weatherOverlay: false, temperatureOverlay: false, humidityOverlay: false, windOverlay: false },
     'Your live CDRRMD Rescuer location',
     { focusOnIncident: true, allowLiveRouteUpdates: true },
   ) : '', [areas, areasLoaded]);

@@ -59,6 +59,8 @@ function buildPointFrame(point, location, frameKey) {
   const windSpeed = Array.isArray(hourly.wind_speed_10m) ? hourly.wind_speed_10m : [];
   const windDirection = Array.isArray(hourly.wind_direction_10m) ? hourly.wind_direction_10m : [];
   const windGusts = Array.isArray(hourly.wind_gusts_10m) ? hourly.wind_gusts_10m : [];
+  const temperatures = Array.isArray(hourly.temperature_2m) ? hourly.temperature_2m : [];
+  const relativeHumidity = Array.isArray(hourly.relative_humidity_2m) ? hourly.relative_humidity_2m : [];
   const currentTime = String(current.time || '');
   const locatedFutureIndex = times.findIndex((time) => String(time) > currentTime);
   const firstFutureIndex = locatedFutureIndex >= 0 ? locatedFutureIndex : Math.max(0, times.length - 1);
@@ -69,6 +71,8 @@ function buildPointFrame(point, location, frameKey) {
   let speedKph = safeNumber(current.wind_speed_10m);
   let directionDegrees = safeNumber(current.wind_direction_10m);
   let gustKph = safeNumber(current.wind_gusts_10m, speedKph);
+  let temperatureCelsius = safeNumber(current.temperature_2m);
+  let relativeHumidityPct = safeNumber(current.relative_humidity_2m);
   let forecastAt = currentTime || new Date().toISOString();
 
   if (String(frameKey).startsWith('hour_')) {
@@ -80,6 +84,8 @@ function buildPointFrame(point, location, frameKey) {
     speedKph = safeNumber(windSpeed[forecastIndex]);
     directionDegrees = safeNumber(windDirection[forecastIndex]);
     gustKph = safeNumber(windGusts[forecastIndex], speedKph);
+    temperatureCelsius = safeNumber(temperatures[forecastIndex], temperatureCelsius);
+    relativeHumidityPct = safeNumber(relativeHumidity[forecastIndex], relativeHumidityPct);
     forecastAt = times[hourIndex] || forecastAt;
   }
 
@@ -96,6 +102,8 @@ function buildPointFrame(point, location, frameKey) {
     directionDegrees: Number(directionDegrees.toFixed(1)),
     rainAmountMm: Number(Math.max(0, rainAmountMm).toFixed(2)),
     rainProbabilityPct: Number(Math.max(0, Math.min(100, rainProbabilityPct)).toFixed(0)),
+    temperatureCelsius: Number(temperatureCelsius.toFixed(1)),
+    relativeHumidityPct: Number(Math.max(0, Math.min(100, relativeHumidityPct)).toFixed(0)),
     forecastAt,
   };
 }
@@ -104,8 +112,8 @@ async function fetchOpenMeteoBatch(points, attempt = 0) {
   const params = new URLSearchParams({
     latitude: points.map((point) => point.latitude.toFixed(4)).join(','),
     longitude: points.map((point) => point.longitude.toFixed(4)).join(','),
-    current: 'precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
-    hourly: 'precipitation,precipitation_probability,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
+    current: 'temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
+    hourly: 'temperature_2m,relative_humidity_2m,precipitation,precipitation_probability,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
     wind_speed_unit: 'kmh',
     timezone: 'Asia/Manila',
     // Eight days guarantees a complete rolling 7-day window even when the
@@ -159,6 +167,8 @@ async function fetchOpenMeteoGrid(points) {
     const averageSpeedKph = framePoints.reduce((sum, point) => sum + point.speedKph, 0) / framePoints.length;
     const maximumGustKph = framePoints.reduce((max, point) => Math.max(max, point.gustKph), 0);
     const averageRainAmountMm = framePoints.reduce((sum, point) => sum + point.rainAmountMm, 0) / framePoints.length;
+    const averageTemperatureCelsius = framePoints.reduce((sum, point) => sum + point.temperatureCelsius, 0) / framePoints.length;
+    const averageRelativeHumidityPct = framePoints.reduce((sum, point) => sum + point.relativeHumidityPct, 0) / framePoints.length;
     frames[frameKey] = {
       ...definitions[frameKey],
       source: 'Open-Meteo',
@@ -166,6 +176,8 @@ async function fetchOpenMeteoGrid(points) {
       averageSpeedKph: Number(averageSpeedKph.toFixed(1)),
       maximumGustKph: Number(maximumGustKph.toFixed(1)),
       averageRainAmountMm: Number(averageRainAmountMm.toFixed(2)),
+      averageTemperatureCelsius: Number(averageTemperatureCelsius.toFixed(1)),
+      averageRelativeHumidityPct: Number(averageRelativeHumidityPct.toFixed(0)),
       rows: GRID_ROWS,
       cols: GRID_COLS,
       bounds: CALAMBA_BOUNDS,
@@ -195,6 +207,8 @@ async function getCalambaWindField() {
       averageSpeedKph: currentFrame.averageSpeedKph,
       maximumGustKph: currentFrame.maximumGustKph,
       averageRainAmountMm: currentFrame.averageRainAmountMm,
+      averageTemperatureCelsius: currentFrame.averageTemperatureCelsius,
+      averageRelativeHumidityPct: currentFrame.averageRelativeHumidityPct,
       rows: GRID_ROWS,
       cols: GRID_COLS,
       bounds: CALAMBA_BOUNDS,
