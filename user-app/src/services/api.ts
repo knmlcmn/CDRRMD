@@ -357,3 +357,22 @@ export async function putAuthMe(payload: {
     return api.put('/auth/me', payload);
   }
 }
+
+export async function assignAuthBarangayFromLocation(latitude: number, longitude: number) {
+  const host = await getHealthyHost();
+  const payload = { latitude, longitude };
+
+  try {
+    const response = await api.put('/auth/location-barangay', payload);
+    setApiHost(host);
+    return response;
+  } catch (error) {
+    if (!isConnectivityError(error)) {
+      throw error;
+    }
+
+    const nextHost = await resolveHealthyHost();
+    setApiHost(nextHost);
+    return api.put('/auth/location-barangay', payload);
+  }
+}

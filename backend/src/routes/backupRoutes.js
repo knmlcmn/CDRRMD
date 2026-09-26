@@ -29,7 +29,8 @@ router.use(async (req, res, next) => {
 router.get('/', async (req, res) => {
   const actor = req.backupActor;
   const { rows } = await pool.query(
-    `SELECT br.id, br.barangay_name, br.created_at, br.acknowledged_at, br.report_id,
+    `SELECT br.id, br.barangay_name, br.created_at, br.acknowledged_at, br.declined_at,
+            br.decline_reason, br.report_id,
             br.assigned_rescuer_id, br.assigned_at, br.picked_up_at,
             ir.report_code, ir.report_type, ir.incident_type, ir.status AS report_status,
             ir.location AS report_location, ir.notes AS report_notes,
@@ -51,6 +52,7 @@ router.get('/', async (req, res) => {
      LEFT JOIN users rescuer ON rescuer.id = br.assigned_rescuer_id
      LEFT JOIN evacuation_areas ea ON ea.id = ir.evacuation_area_id
      WHERE br.arrived_at IS NULL
+       AND br.declined_at IS NULL
        AND ir.report_type = 'rescue'
        AND ir.status IN ('pending', 'accepted', 'in_progress')
        AND ($1::text IS NULL OR LOWER(br.barangay_name) = LOWER($1))
@@ -82,8 +84,8 @@ router.post('/', async (req, res) => {
   if (reportResult.rows[0].report_type !== 'rescue') {
     return res.status(400).json({ message: 'CDRRMD backup can only be requested for rescue reports.' });
   }
-  if (!['pending', 'accepted', 'in_progress'].includes(reportResult.rows[0].status)) {
-    return res.status(400).json({ message: 'This rescue request is no longer active.' });
+  if (!['accepted', 'in_progress'].includes(reportResult.rows[0].status)) {
+    return res.status(400).json({ message: 'Accept the resident rescue request before requesting CDRRMD backup.' });
   }
   if (reportResult.rows[0].latitude == null
     || reportResult.rows[0].longitude == null
@@ -94,7 +96,7 @@ router.post('/', async (req, res) => {
   // The partial unique index prevents duplicates, including simultaneous clicks from different devices.
   const { rows } = await pool.query(
     `INSERT INTO backup_requests (barangay_name, requested_by, report_id) VALUES ($1, $2, $3)
-     ON CONFLICT (LOWER(barangay_name)) WHERE arrived_at IS NULL
+     ON CONFLICT (LOWER(barangay_name)) WHERE arrived_at IS NULL AND declined_at IS NULL
      DO UPDATE SET report_id = COALESCE(backup_requests.report_id, EXCLUDED.report_id)
      RETURNING id, barangay_name, created_at, acknowledged_at, report_id`,
     [actor.barangay_name.trim(), actor.id, reportId],
@@ -111,11 +113,29 @@ router.patch('/:id/acknowledge', async (req, res) => {
     `UPDATE backup_requests
      SET acknowledged_at = COALESCE(acknowledged_at, NOW()),
          acknowledged_by = COALESCE(acknowledged_by, $2)
-     WHERE id = $1 AND arrived_at IS NULL
+     WHERE id = $1 AND arrived_at IS NULL AND declined_at IS NULL
      RETURNING id, acknowledged_at`,
     [id, actor.id],
   );
   if (!rows[0]) return res.status(404).json({ message: 'This backup request is no longer active.' });
+  return res.json(rows[0]);
+});
+
+router.patch('/:id/decline', async (req, res) => {
+  const actor = req.backupActor;
+  if (actor.role !== 'admin') return res.status(403).json({ message: 'Admin access required.' });
+  const id = Number(req.params.id);
+  const reason = String(req.body?.reason || '').trim();
+  if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ message: 'Invalid request ID.' });
+  if (!reason) return res.status(400).json({ message: 'A decline reason is required.' });
+  const { rows } = await pool.query(
+    `UPDATE backup_requests
+     SET declined_at = NOW(), declined_by = $2, decline_reason = $3
+     WHERE id = $1 AND arrived_at IS NULL AND declined_at IS NULL AND acknowledged_at IS NULL
+     RETURNING id, declined_at, decline_reason`,
+    [id, actor.id, reason],
+  );
+  if (!rows[0]) return res.status(409).json({ message: 'Only a pending backup request can be declined.' });
   return res.json(rows[0]);
 });
 
@@ -136,7 +156,7 @@ router.patch('/:id/assign', async (req, res) => {
               ir.status, ir.reported_by, ir.report_code
        FROM backup_requests br
        JOIN incident_reports ir ON ir.id = br.report_id
-       WHERE br.id = $1 AND br.arrived_at IS NULL
+       WHERE br.id = $1 AND br.arrived_at IS NULL AND br.declined_at IS NULL
        FOR UPDATE OF br, ir`,
       [id],
     );
@@ -164,7 +184,7 @@ router.patch('/:id/assign', async (req, res) => {
     }
     const busyResult = await client.query(
       `SELECT id FROM backup_requests
-       WHERE assigned_rescuer_id = $1 AND arrived_at IS NULL AND id <> $2 LIMIT 1`,
+       WHERE assigned_rescuer_id = $1 AND arrived_at IS NULL AND declined_at IS NULL AND id <> $2 LIMIT 1`,
       [rescuerId, id],
     );
     if (busyResult.rows[0]) {
@@ -220,7 +240,7 @@ router.patch('/:id/pickup', async (req, res) => {
     const result = await client.query(
       `SELECT br.*, ir.reported_by, ir.report_code, ir.status, ir.evacuation_area_id, ir.evacuation_area_name
        FROM backup_requests br JOIN incident_reports ir ON ir.id = br.report_id
-       WHERE br.id = $1 AND br.arrived_at IS NULL FOR UPDATE OF br, ir`,
+       WHERE br.id = $1 AND br.arrived_at IS NULL AND br.declined_at IS NULL FOR UPDATE OF br, ir`,
       [id],
     );
     const request = result.rows[0];
@@ -288,7 +308,7 @@ router.patch('/:id/complete', async (req, res) => {
     const result = await client.query(
       `SELECT br.*, ir.reported_by, ir.report_code, ir.status, ir.evacuation_area_name
        FROM backup_requests br JOIN incident_reports ir ON ir.id = br.report_id
-       WHERE br.id = $1 AND br.arrived_at IS NULL FOR UPDATE OF br, ir`,
+       WHERE br.id = $1 AND br.arrived_at IS NULL AND br.declined_at IS NULL FOR UPDATE OF br, ir`,
       [id],
     );
     const request = result.rows[0];

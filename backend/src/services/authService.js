@@ -11,6 +11,7 @@ const {
 } = require('../utils/authTokens');
 const { httpError } = require('../utils/httpError');
 const { SUPPORTED_BARANGAYS: RESIDENT_BARANGAYS } = require('./supportedBarangays');
+const { resolveNearbyBarangayAtLocation } = require('./barangayBoundaryService');
 
 function resolveResidentBarangay(value, address) {
   const requested = String(value || '').trim().toLowerCase();
@@ -69,10 +70,10 @@ async function register(payload) {
   const rawUsername = String(username || '').trim();
   const finalUsername = rawUsername.length > 0 ? rawUsername : trimmedEmail.split('@')[0];
   const passwordHash = await bcrypt.hash(password, 10);
+  // A new resident's barangay is intentionally left empty here. The user app
+  // requires location permission immediately after registration and assigns
+  // the nearest supported barangay from verified coordinates.
   const residentBarangay = resolveResidentBarangay(barangayName, address);
-  if (!residentBarangay) {
-    throw httpError(400, 'Please select one of the six supported barangays.');
-  }
 
   const user = await userModel.createUser({
     username: finalUsername,
@@ -292,6 +293,44 @@ async function updateMe(userId, payload) {
   return { user: toUserResponse(user) };
 }
 
+async function assignBarangayFromLocation(userId, payload) {
+  if (!userId) {
+    throw httpError(401, 'Invalid token payload.');
+  }
+
+  const latitude = Number(payload?.latitude);
+  const longitude = Number(payload?.longitude);
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90
+    || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    throw httpError(400, 'A valid current location is required.');
+  }
+
+  const nearest = resolveNearbyBarangayAtLocation(
+    latitude,
+    longitude,
+    RESIDENT_BARANGAYS,
+    Number.POSITIVE_INFINITY,
+  );
+  const barangayName = RESIDENT_BARANGAYS.find(
+    (name) => name.toLowerCase() === String(nearest?.name || '').toLowerCase(),
+  );
+  if (!barangayName) {
+    throw httpError(400, 'Unable to determine the nearest supported barangay.');
+  }
+
+  const user = await userModel.assignResidentBarangayFromLocation(
+    userId,
+    barangayName,
+    latitude,
+    longitude,
+  );
+  if (!user) {
+    throw httpError(404, 'Resident account not found.');
+  }
+
+  return { user: toUserResponse(user), barangayName };
+}
+
 module.exports = {
   register,
   login,
@@ -299,4 +338,5 @@ module.exports = {
   refresh,
   getMe,
   updateMe,
+  assignBarangayFromLocation,
 };

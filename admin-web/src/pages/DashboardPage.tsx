@@ -401,13 +401,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                   </thead>
                   <tbody>
                     {incidents.map((row) => (
-                      <tr
-                        key={row.caseId}
-                        onClick={onOpenMonitoring}
-                        style={{ cursor: 'pointer' }}
-                        title="Open Monitoring page"
-                        className="hover:bg-slate-50 transition-colors"
-                      >
+                      <tr key={row.caseId}>
                         <td className={d.dashboard.tdStrong}>{row.caseId}</td>
                         <td className={d.dashboard.tdTruncate}>{row.location}</td>
                         <td className={d.dashboard.thHiddenMd}>{titleCase(row.requesterName || 'Unknown')}</td>

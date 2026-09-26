@@ -330,9 +330,9 @@ export const d = {
       'panel flex min-h-0 min-w-0 max-w-full flex-col overflow-hidden p-3 text-sm',
     validationTitle: 'border-b border-slate-400 pb-1 text-base font-bold text-[#19374f]',
     validationScrollWrap:
-      'active-list-scroll mt-2 min-h-0 w-full min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-auto overscroll-x-contain rounded-md border border-slate-300 bg-white p-2',
-    validationEmpty: 'min-w-[900px] text-slate-500',
-    validationStack: 'min-w-[900px] space-y-2',
+      'active-list-scroll mt-2 min-h-0 w-full min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto rounded-md border border-slate-300 bg-white p-2',
+    validationEmpty: 'text-slate-500',
+    validationStack: 'w-full min-w-0 space-y-2',
     validationCurrent: 'font-semibold',
     actionRow: 'flex flex-wrap gap-2',
     actionBox: 'space-y-2 rounded border border-slate-300 bg-white p-2',

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/apiClient';
+import BackupModal from '../components/BackupModal';
 import BackupRequest, { type BackupRequestState } from '../components/BackupRequest';
 import BarangayShell from '../components/BarangayShell';
 import { d } from '../barangayDesign';
@@ -12,6 +13,7 @@ type Props = {
   onOpenFloodMonitoring: () => void;
   onOpenAccount: () => void;
   onAuthError: () => void;
+  focusReportId?: number | null;
 };
 
 type Coordinate = { latitude: number; longitude: number };
@@ -46,7 +48,6 @@ type RouteDestination = {
 };
 
 const ACTIVE_RESCUE_STATUSES = new Set(['pending', 'accepted', 'in_progress']);
-const CDRRMD_LOCATION: Coordinate = { latitude: 14.194052, longitude: 121.159688 };
 
 function sameData(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
@@ -61,6 +62,12 @@ function isRescueAwaitingPickup(report?: IncidentReport | null) {
   if (!isRescueReport(report)) return false;
   const status = String(report?.status || '').toLowerCase();
   return status === 'pending' || status === 'accepted' || status === 'in_progress';
+}
+
+function canRequestBackup(report?: IncidentReport | null) {
+  if (!isRescueReport(report)) return false;
+  const status = String(report?.status || '').toLowerCase();
+  return status === 'accepted' || status === 'in_progress';
 }
 
 // "Rescued" phase: the resident has been confirmed rescued and the barangay
@@ -141,7 +148,7 @@ function formatType(value?: string | null) {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMonitoring, onOpenAccount, onAuthError }: Props) {
+export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMonitoring, onOpenAccount, onAuthError, focusReportId = null }: Props) {
   const [reports, setReports] = useState<IncidentReport[]>([]);
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationAreaItem[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
@@ -150,7 +157,6 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
   const [routeDistanceKm, setRouteDistanceKm] = useState<number | null>(null);
   const [routeEtaMinutes, setRouteEtaMinutes] = useState<number | null>(null);
   const [routeOriginLabel, setRouteOriginLabel] = useState<string | null>(null);
-  const [liveResponderLocation, setLiveResponderLocation] = useState<Coordinate | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -176,6 +182,10 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
     humidityOverlay: false,
     windOverlay: false,
   });
+
+  useEffect(() => {
+    if (focusReportId) setSelectedReportId(focusReportId);
+  }, [focusReportId]);
 
   async function loadData(showLoading = true) {
     if (showLoading) setLoading(true);
@@ -297,32 +307,9 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
   );
 
   const backupReportId = useMemo(() => {
-    if (isRescueAwaitingPickup(selectedReport)) return selectedReport?.id ?? null;
-    return activeReports.find((report) => isRescueAwaitingPickup(report))?.id ?? null;
+    if (canRequestBackup(selectedReport)) return selectedReport?.id ?? null;
+    return activeReports.find((report) => canRequestBackup(report))?.id ?? null;
   }, [activeReports, selectedReport]);
-
-  const trackedReportId = selectedReport?.id ?? null;
-  const shouldTrackResponder = isRescueAwaitingPickup(selectedReport);
-
-  useEffect(() => {
-    if (!shouldTrackResponder || !navigator.geolocation) {
-      setLiveResponderLocation(null);
-      return undefined;
-    }
-
-    let lastUpdate = 0;
-    const watchId = navigator.geolocation.watchPosition(
-      ({ coords }) => {
-        const now = Date.now();
-        if (now - lastUpdate < 2000) return;
-        lastUpdate = now;
-        setLiveResponderLocation({ latitude: coords.latitude, longitude: coords.longitude });
-      },
-      () => setLiveResponderLocation(null),
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 },
-    );
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [shouldTrackResponder, trackedReportId]);
 
   useEffect(() => {
     if (backupRequest?.report_id && reports.some((report) => report.id === backupRequest.report_id)) {
@@ -358,53 +345,24 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
       .sort((x, y) => x.dist - y.dist)[0]?.a ?? null;
   }, [evacuationAreas, selectedReport]);
 
-  // Active response routes always end at the resident. Terminal incidents do
-  // not keep a route or marker on the live map.
+  // Keep the barangay map on the resident-to-evacuation route selected by the
+  // user app. CDRRMD backup routing belongs only to the admin workflow.
   const routeDestination = useMemo<RouteDestination | null>(() => {
     if (!selectedReport || !isRescueReport(selectedReport)) return null;
-
-    const isLinkedBackup = backupRequest?.report_id === selectedReport.id;
-    if (isLinkedBackup && backupRequest?.picked_up_at) {
-      const latitude = Number(backupRequest.evacuation_latitude ?? assignedEvacuationArea?.latitude);
-      const longitude = Number(backupRequest.evacuation_longitude ?? assignedEvacuationArea?.longitude);
-      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+    if (isRescueAwaitingPickup(selectedReport) && assignedEvacuationArea) {
       return {
-        location: { latitude, longitude },
+        location: {
+          latitude: Number(assignedEvacuationArea.latitude),
+          longitude: Number(assignedEvacuationArea.longitude),
+        },
         type: 'evacuation_center',
         label: selectedReport.evacuation_area_name || assignedEvacuationArea?.name || 'Designated evacuation center',
       };
     }
-
-    if (isRescueAwaitingPickup(selectedReport)) {
-      if (!selectedResidentLocation) return null;
-      const code = selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`;
-      return { location: selectedResidentLocation, type: 'resident', label: `Resident needs rescue — ${code}` };
-    }
-
     return null;
-  }, [assignedEvacuationArea, backupRequest, selectedReport, selectedResidentLocation]);
+  }, [assignedEvacuationArea, selectedReport]);
 
-  const backupRouteDestination = useMemo<RouteDestination | null>(() => {
-    if (!backupRequest?.acknowledged_at || backupRequest.assigned_rescuer_id) return null;
-    const linkedReport = backupRequest.report_id
-      ? reports.find((report) => report.id === backupRequest.report_id)
-      : null;
-    if (linkedReport && !isRescueAwaitingPickup(linkedReport)) return null;
-    const storedLatitude = backupRequest.report_latitude === null ? Number.NaN : Number(backupRequest.report_latitude);
-    const storedLongitude = backupRequest.report_longitude === null ? Number.NaN : Number(backupRequest.report_longitude);
-    let location = Number.isFinite(storedLatitude) && Number.isFinite(storedLongitude)
-      ? { latitude: storedLatitude, longitude: storedLongitude }
-      : null;
-    if (!location && backupRequest.report_id) {
-      location = extractCoordinate(linkedReport?.location, linkedReport?.latitude, linkedReport?.longitude);
-    }
-    if (!location) return null;
-    const reportCode = backupRequest.report_code
-      || (backupRequest.report_id ? `RPT-${String(backupRequest.report_id).padStart(6, '0')}` : 'Incident');
-    return { location, type: 'resident', label: `Resident requiring CDRRMD backup — ${reportCode}` };
-  }, [backupRequest, reports]);
-
-  const activeRouteDestination = backupRouteDestination || routeDestination;
+  const activeRouteDestination = routeDestination;
 
   useEffect(() => {
     let cancelled = false;
@@ -434,30 +392,6 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
     }
 
     async function calculateRoute() {
-      if (liveResponderLocation && routeDestination) {
-        try {
-          applyRoute(
-            await fetchRoadRoute(liveResponderLocation, routeDestination.location),
-            `Barangay ${barangayName} rescuer live location`,
-          );
-        } catch {
-          applyFallback(liveResponderLocation, routeDestination.location, `Barangay ${barangayName} rescuer live location`);
-        }
-        return;
-      }
-
-      if (backupRouteDestination) {
-        try {
-          applyRoute(
-            await fetchRoadRoute(CDRRMD_LOCATION, backupRouteDestination.location),
-            'CDRRMD — Calamba City Hall',
-          );
-        } catch {
-          applyFallback(CDRRMD_LOCATION, backupRouteDestination.location, 'CDRRMD — Calamba City Hall');
-        }
-        return;
-      }
-
       if (!routeDestination) {
         clearRoute();
         return;
@@ -525,27 +459,21 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
       cancelled = true;
     };
   }, [
-    backupRouteDestination,
     routeDestination,
     selectedResidentLocation,
     evacuationAreas,
-    liveResponderLocation,
-    barangayName,
   ]);
 
-  const mappedResidentLocation = backupRouteDestination?.location
-    || (isRescueAwaitingPickup(selectedReport) ? selectedResidentLocation : null);
+  const mappedResidentLocation = isRescueAwaitingPickup(selectedReport) ? selectedResidentLocation : null;
 
   const mapHtml = useMemo(
     () => buildCalambaMapHtml(
       evacuationAreas,
       routeCoordinates,
       mappedResidentLocation,
-      backupRouteDestination
-        ? (backupRequest?.report_code || (backupRequest?.report_id ? `RPT-${String(backupRequest.report_id).padStart(6, '0')}` : 'Backup incident'))
-        : selectedReport && routeDestination
-          ? (selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`)
-          : null,
+      selectedReport && routeDestination
+        ? (selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`)
+        : null,
       activeReports
         .map((r) => ({
           reportCode: r.report_code || `RPT-${String(r.id).padStart(6, '0')}`,
@@ -561,11 +489,9 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/weather/wind-field`,
       layerVisibility,
       barangayName,
-      backupRouteDestination
-        ? { origin: backupRouteDestination.label, destination: 'CDRRMD — Calamba City Hall' }
-        : { origin: routeDestination?.label || 'Resident location', destination: routeOriginLabel || 'Evacuation center' },
+      { origin: 'Resident location', destination: routeDestination?.label || 'Assigned evacuation center' },
     ),
-    [activeReports, evacuationAreas, layerVisibility, routeCoordinates, routeDestination, mappedResidentLocation, backupRouteDestination, backupRequest, routeOriginLabel, selectedReport, barangayName],
+    [activeReports, evacuationAreas, layerVisibility, routeCoordinates, routeDestination, mappedResidentLocation, selectedReport, barangayName],
   );
 
   // layerRows handled inside the Leaflet map Layers button (top-right)
@@ -756,15 +682,6 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
                 <p><strong>Reporter:</strong> {[selectedReport.first_name, selectedReport.last_name].filter(Boolean).join(' ') || selectedReport.email || 'N/A'}</p>
                 <p><strong>Contact:</strong> {selectedReport.contact_number || 'N/A'}</p>
                 <p><strong>Reported:</strong> {new Date(selectedReport.created_at).toLocaleString()}</p>
-                {backupRouteDestination ? (
-                  <div style={{ margin: '10px 0', padding: '10px 12px', borderRadius: 8, background: '#f0fdf4', border: '1px solid #86efac', color: '#166534', fontSize: '0.78rem', fontWeight: 700 }}>
-                    CDRRMD acknowledged the backup request. The map is showing the shortest road route from CDRRMD at Calamba City Hall to this resident.
-                    <div style={{ marginTop: 4, fontWeight: 600 }}>
-                      Route: {routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : 'Calculating…'}
-                      {' · '}ETA: {routeEtaMinutes ? `${routeEtaMinutes} mins` : 'Calculating…'}
-                    </div>
-                  </div>
-                ) : null}
                 {isRescueAwaitingPickup(selectedReport) ? (
                   <>
                     <div
@@ -779,11 +696,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
                         color: isRescueAwaitingPickup(selectedReport) ? '#b91c1c' : '#15803d',
                       }}
                     >
-                      {isRescueAwaitingPickup(selectedReport)
-                        ? '🚨 Route to Resident — go pick up the resident'
-                        : isRescueEnRouteToEvac(selectedReport)
-                          ? '✅ Resident Rescued — routing to evacuation center'
-                          : 'Rescue case'}
+                      🚨 Resident evacuation route
                       <div style={{ marginTop: 4, fontWeight: 600 }}>
                         Current destination: {activeRouteDestination?.label || 'Calculating…'}
                       </div>
@@ -792,11 +705,9 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
                     <p><strong>Route Distance:</strong> {routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : 'Calculating...'}</p>
                     <p><strong>Route ETA:</strong> {routeEtaMinutes ? `${routeEtaMinutes} mins` : 'Calculating...'}</p>
                     <p style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                      {backupRouteDestination
-                        ? 'Route origin: CDRRMD, Calamba City Hall (14.194052, 121.159688).'
-                        : routeOriginLabel
-                          ? `Route origin: ${routeOriginLabel}${routeDestination?.type === 'resident' ? ' (nearest active center by road distance).' : '.'}`
-                          : 'Calculating the nearest active evacuation center…'}
+                      {routeOriginLabel
+                        ? `Route: ${routeOriginLabel} to ${routeDestination?.label || 'assigned evacuation center'}.`
+                        : 'Calculating the resident-to-evacuation-center route…'}
                     </p>
                   </>
                 ) : null}
@@ -908,8 +819,18 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
                 ) : null}
                 {selectedReport.status === 'pending' ? (
                   <div className={d.monitoring.actionRow}>
-                    <button onClick={() => setActionMode('accept')} className={d.btn.acceptDisabled} disabled={busy}>Accept</button>
-                    <button onClick={() => setActionMode('decline')} className={d.btn.declineDisabled} disabled={busy}>Decline</button>
+                    <button
+                      type="button"
+                      onClick={() => { setError(null); setActionMode('accept'); }}
+                      className={d.btn.acceptDisabled}
+                      disabled={busy}
+                    >Accept</button>
+                    <button
+                      type="button"
+                      onClick={() => { setError(null); setActionMode('decline'); }}
+                      className={d.btn.declineDisabled}
+                      disabled={busy}
+                    >Decline</button>
                   </div>
                 ) : null}
                 {isRescueReport(selectedReport)
@@ -933,37 +854,64 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenFloodMoni
                   && !backupRequest.assigned_rescuer_id ? (
                     <p className={d.monitoring.assignNote}>Admin confirmed the backup request. Continue responding while a CDRRMD Rescuer team is assigned.</p>
                   ) : null}
-                {actionMode === 'accept' ? (
-                  <div className={d.monitoring.actionBox}>
-                    <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Add validation notes" className={d.form.textareaSm} />
-                    <div className={d.monitoring.actionRow}>
-                      <button onClick={() => updateStatus('accepted')} className={d.btn.acceptDisabled} disabled={busy}>Confirm Accept</button>
-                      <button onClick={() => setActionMode(null)} className={d.btn.secondaryXs} disabled={busy}>Cancel</button>
-                    </div>
-                  </div>
-                ) : null}
-                {actionMode === 'decline' ? (
-                  <div className={d.monitoring.actionBox}>
-                    <select value={declineReason} onChange={(event) => setDeclineReason(event.target.value)} className={d.form.selectSm}>
-                      <option value="">Select reason</option>
-                      <option value="invalid report">Invalid report</option>
-                      <option value="duplicate">Duplicate</option>
-                      <option value="outside jurisdiction">Outside jurisdiction</option>
-                      <option value="false alarm">False alarm</option>
-                      <option value="other">Other</option>
-                    </select>
-                    <textarea value={declineExplanation} onChange={(event) => setDeclineExplanation(event.target.value)} placeholder="Explain why this report is declined" className={d.form.textareaSm} />
-                    <div className={d.monitoring.actionRow}>
-                      <button onClick={() => updateStatus('declined')} className={d.btn.declineDisabled} disabled={busy}>Confirm Decline</button>
-                      <button onClick={() => setActionMode(null)} className={d.btn.secondaryXs} disabled={busy}>Cancel</button>
-                    </div>
-                  </div>
-                ) : null}
                 </div>
               )}
             </div>
           </article>
         </section>
+
+        {actionMode === 'accept' && selectedReport ? (
+          <BackupModal
+            title="Accept Rescue Request?"
+            onClose={() => { if (!busy) { setActionMode(null); setError(null); } }}
+          >
+            <p>Confirm that Barangay {barangayName} will respond to this rescue request.</p>
+            <textarea
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="Add required validation notes"
+              className={d.form.textareaSm}
+              autoFocus
+            />
+            {error ? <p className="backup-error">{error}</p> : null}
+            <div className="backup-actions">
+              <button type="button" onClick={() => updateStatus('accepted')} className="backup-button backup-button-acknowledged" disabled={busy}>
+                {busy ? 'Accepting...' : 'Confirm Accept'}
+              </button>
+              <button type="button" onClick={() => { setActionMode(null); setError(null); }} className="backup-button backup-button-secondary" disabled={busy}>Cancel</button>
+            </div>
+          </BackupModal>
+        ) : null}
+
+        {actionMode === 'decline' && selectedReport ? (
+          <BackupModal
+            title="Decline Rescue Request?"
+            onClose={() => { if (!busy) { setActionMode(null); setError(null); } }}
+          >
+            <p>Choose a reason and explain why Barangay {barangayName} is declining this rescue request.</p>
+            <select value={declineReason} onChange={(event) => setDeclineReason(event.target.value)} className={d.form.selectSm} autoFocus>
+              <option value="">Select reason</option>
+              <option value="invalid report">Invalid report</option>
+              <option value="duplicate">Duplicate</option>
+              <option value="outside jurisdiction">Outside jurisdiction</option>
+              <option value="false alarm">False alarm</option>
+              <option value="other">Other</option>
+            </select>
+            <textarea
+              value={declineExplanation}
+              onChange={(event) => setDeclineExplanation(event.target.value)}
+              placeholder="Explain why this report is declined"
+              className={d.form.textareaSm}
+            />
+            {error ? <p className="backup-error">{error}</p> : null}
+            <div className="backup-actions">
+              <button type="button" onClick={() => updateStatus('declined')} className="backup-button" disabled={busy}>
+                {busy ? 'Declining...' : 'Confirm Decline'}
+              </button>
+              <button type="button" onClick={() => { setActionMode(null); setError(null); }} className="backup-button backup-button-secondary" disabled={busy}>Cancel</button>
+            </div>
+          </BackupModal>
+        ) : null}
 
         {/* Image preview modal */}
         {previewImage ? (

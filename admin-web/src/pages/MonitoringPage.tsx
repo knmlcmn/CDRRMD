@@ -20,7 +20,7 @@ type Props = {
 };
 
 type Coordinate = { latitude: number; longitude: number };
-type ActionMode = 'accept' | 'decline' | 'in_progress' | 'resolved' | null;
+type ActionMode = 'accept' | 'decline' | null;
 type RainRankingItem = {
   barangayName: string;
   rainIntensityMmPerHour: number;
@@ -129,8 +129,6 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   const [busy, setBusy] = useState(false);
   const [actionMode, setActionMode] = useState<ActionMode>(null);
   const [statusFilter, setStatusFilter] = useState<'active' | 'pending' | 'accepted' | 'in_progress' | 'resolved' | 'declined'>('active');
-  const [notes, setNotes] = useState('');
-  const [declineReason, setDeclineReason] = useState('');
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const mapWrapRef = useRef<HTMLElement | null>(null);
   const [declineExplanation, setDeclineExplanation] = useState('');
@@ -250,8 +248,8 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   }, []);
 
   const rescueReports = useMemo(
-    () => reports,
-    [reports],
+    () => reports.filter((report) => backupRequests.some((request) => request.report_id === report.id)),
+    [backupRequests, reports],
   );
 
   const activeRescueReports = useMemo(
@@ -327,13 +325,6 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       }))
       .sort((a, b) => a.dist - b.dist)[0]?.area ?? null;
   }, [evacuationAreas, selectedReport]);
-
-  const nearestTeamLabel = useMemo(() => {
-    if (!assignedResponderArea) {
-      return null;
-    }
-    return `${assignedResponderArea.name} Response Team (${assignedResponderArea.barangay})`;
-  }, [assignedResponderArea]);
 
   const responderLocation = useMemo(() => {
     if (liveResponderLocation) {
@@ -455,18 +446,13 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     };
   }, [rescueReports]);
 
-  async function updateStatus(nextStatus: 'accepted' | 'declined' | 'in_progress' | 'resolved') {
-    if (!selectedReport || busy) {
+  async function validateBackupRequest(decision: 'accepted' | 'declined') {
+    if (!selectedBackup || busy) {
       return;
     }
 
-    if (nextStatus === 'accepted' && !notes.trim()) {
-      setError('Admin notes are required before accepting.');
-      return;
-    }
-
-    if (nextStatus === 'declined' && (!declineReason.trim() || !declineExplanation.trim())) {
-      setError('Decline reason and explanation are required.');
+    if (decision === 'declined' && !declineExplanation.trim()) {
+      setError('A reason is required when declining a backup request.');
       return;
     }
 
@@ -474,18 +460,15 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     setError(null);
 
     try {
-      await api.patch(`/reports/${selectedReport.id}/status`, {
-        status: nextStatus,
-        assignTeam: nearestTeamLabel || '',
-        notes: nextStatus === 'accepted' ? notes : '',
-        dispatchConfirmed: nextStatus === 'accepted',
-        declineReason,
-        declineExplanation,
-      });
+      if (decision === 'accepted') {
+        await api.patch(`/backup-requests/${selectedBackup.id}/acknowledge`);
+      } else {
+        await api.patch(`/backup-requests/${selectedBackup.id}/decline`, {
+          reason: declineExplanation.trim(),
+        });
+      }
 
       setActionMode(null);
-      setNotes('');
-      setDeclineReason('');
       setDeclineExplanation('');
       await loadData(false);
     } catch (err: unknown) {
@@ -494,7 +477,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
         onAuthError();
         return;
       }
-      setError(apiError.response?.data?.message || 'Failed to update report status.');
+      setError(apiError.response?.data?.message || 'Failed to validate the backup request.');
     } finally {
       setBusy(false);
     }
@@ -645,7 +628,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
         <section className={d.monitoring.lowerGrid}>
           <article className={d.monitoring.incidentsCard}>
             <div className={d.monitoring.incidentsHead}>
-              <h3 className={d.monitoring.incidentsTitle}>Active Incidents</h3>
+              <h3 className={d.monitoring.incidentsTitle}>Barangay Backup Requests</h3>
               <div className={d.monitoring.filterWrap}>
                 {(['active', 'pending', 'accepted', 'in_progress', 'resolved', 'declined'] as const).map((status) => (
                   <button
@@ -667,7 +650,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
                 </thead>
                 <tbody>
                   {filteredReports.length === 0 ? (
-                    <tr><td colSpan={6} className={d.table.empty}>No incidents yet.</td></tr>
+                    <tr><td colSpan={6} className={d.table.empty}>No barangay backup requests yet.</td></tr>
                   ) : filteredReports.map((item) => (
                     <tr
                       key={item.id}
@@ -692,13 +675,14 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
           </article>
 
           <article className={d.monitoring.validationCard}>
-            <h3 className={d.monitoring.validationTitle}>Report Validation</h3>
+            <h3 className={d.monitoring.validationTitle}>Backup Request Validation</h3>
             <div className={d.monitoring.validationScrollWrap}>
-              {!selectedReport ? (
-                <p className={d.monitoring.validationEmpty}>Select a report to update status.</p>
+              {!selectedReport || !selectedBackup ? (
+                <p className={d.monitoring.validationEmpty}>Select a barangay backup request to validate.</p>
               ) : (
                 <div className={d.monitoring.validationStack}>
-                <p className={d.monitoring.validationCurrent}>Current status: {formatStatus(selectedReport.status)}</p>
+                <p className={d.monitoring.validationCurrent}>Barangay: {selectedBackup.barangay_name || '-'}</p>
+                <p className={d.monitoring.validationCurrent}>Request status: {selectedBackup.acknowledged_at ? 'Accepted' : 'Pending'}</p>
                 {selectedBackup?.acknowledged_at ? (
                   <div className={d.monitoring.actionBox}>
                     <p className={d.monitoring.validationCurrent}>CDRRMD Backup Assignment</p>
@@ -720,59 +704,26 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
                     )}
                   </div>
                 ) : null}
-                {selectedReport.status === 'pending' ? (
+                {!selectedBackup.acknowledged_at ? (
                   <div className={d.monitoring.actionRow}>
                     <button onClick={() => setActionMode('accept')} className={d.btn.acceptDisabled} disabled={busy}>Accept</button>
                     <button onClick={() => setActionMode('decline')} className={d.btn.declineDisabled} disabled={busy}>Decline</button>
                   </div>
                 ) : null}
-                {selectedReport.status === 'accepted' && !selectedBackup ? (
-                  <button onClick={() => setActionMode('in_progress')} className={d.btn.inProgressDisabled} disabled={busy}>Mark In Progress</button>
-                ) : null}
-                {selectedReport.status === 'in_progress' && !selectedBackup ? (
-                  <button onClick={() => setActionMode('resolved')} className={d.btn.resolvedDisabled} disabled={busy}>Mark Resolved</button>
-                ) : null}
                 {actionMode === 'accept' ? (
                   <div className={d.monitoring.actionBox}>
-                    <p className={d.monitoring.assignNote}>Team assignment: {nearestTeamLabel || 'No nearby active evacuation area'}</p>
-                    <textarea value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Add dispatch notes" className={d.form.textareaSm} />
+                    <p className={d.monitoring.assignNote}>Accept this backup request from Barangay {selectedBackup.barangay_name || '-'}?</p>
                     <div className={d.monitoring.actionRow}>
-                      <button onClick={() => updateStatus('accepted')} className={d.btn.acceptDisabled} disabled={busy}>Confirm Accept</button>
+                      <button onClick={() => void validateBackupRequest('accepted')} className={d.btn.acceptDisabled} disabled={busy}>Confirm Accept</button>
                       <button onClick={() => setActionMode(null)} className={d.btn.secondaryXs} disabled={busy}>Cancel</button>
                     </div>
                   </div>
                 ) : null}
                 {actionMode === 'decline' ? (
                   <div className={d.monitoring.actionBox}>
-                    <select value={declineReason} onChange={(event) => setDeclineReason(event.target.value)} className={d.form.selectSm}>
-                      <option value="">Select reason</option>
-                      <option value="invalid report">Invalid report</option>
-                      <option value="duplicate">Duplicate</option>
-                      <option value="outside jurisdiction">Outside jurisdiction</option>
-                      <option value="false alarm">False alarm</option>
-                      <option value="other">Other</option>
-                    </select>
-                    <textarea value={declineExplanation} onChange={(event) => setDeclineExplanation(event.target.value)} placeholder="Explain why this report is declined" className={d.form.textareaSm} />
+                    <textarea value={declineExplanation} onChange={(event) => setDeclineExplanation(event.target.value)} placeholder="Explain why this backup request is declined" className={d.form.textareaSm} />
                     <div className={d.monitoring.actionRow}>
-                      <button onClick={() => updateStatus('declined')} className={d.btn.declineDisabled} disabled={busy}>Confirm Decline</button>
-                      <button onClick={() => setActionMode(null)} className={d.btn.secondaryXs} disabled={busy}>Cancel</button>
-                    </div>
-                  </div>
-                ) : null}
-                {actionMode === 'in_progress' ? (
-                  <div className={d.monitoring.actionSoloBox}>
-                    <p>Proceed to move this incident into active response state?</p>
-                    <div className={d.monitoring.actionRow}>
-                      <button onClick={() => updateStatus('in_progress')} className={d.btn.inProgressDisabled} disabled={busy}>Continue</button>
-                      <button onClick={() => setActionMode(null)} className={d.btn.secondaryXs} disabled={busy}>Cancel</button>
-                    </div>
-                  </div>
-                ) : null}
-                {actionMode === 'resolved' ? (
-                  <div className={d.monitoring.actionSoloBox}>
-                    <p>Mark this incident as resolved?</p>
-                    <div className={d.monitoring.actionRow}>
-                      <button onClick={() => updateStatus('resolved')} className={d.btn.resolvedDisabled} disabled={busy}>Continue</button>
+                      <button onClick={() => void validateBackupRequest('declined')} className={d.btn.declineDisabled} disabled={busy}>Confirm Decline</button>
                       <button onClick={() => setActionMode(null)} className={d.btn.secondaryXs} disabled={busy}>Cancel</button>
                     </div>
                   </div>

@@ -4,7 +4,10 @@ const {
   resolveBarangayAtLocation,
   resolveNearbyBarangayAtLocation,
 } = require('../services/barangayJurisdictionService');
-const { SUPPORTED_BARANGAYS: FLOOD_ALERT_BARANGAYS } = require('../services/supportedBarangays');
+const {
+  SUPPORTED_BARANGAYS: FLOOD_ALERT_BARANGAYS,
+  isSupportedBarangay,
+} = require('../services/supportedBarangays');
 const FLOOD_ALERT_NEARBY_KM = Number(process.env.FLOOD_ALERT_NEARBY_KM || 2.5);
 const { findShortestReachableDestination } = require('../services/roadRoutingService');
 
@@ -323,6 +326,7 @@ async function createReport(req, res) {
     imageBase64,
     fullName,
     contactNumber,
+    testModeBypassServiceArea,
   } = req.body || {};
 
   const normalizedType = String(reportType || '').trim().toLowerCase();
@@ -375,16 +379,8 @@ async function createReport(req, res) {
     return res.status(400).json({ message: 'Latitude/longitude must be valid numbers.' });
   }
 
-  const assignedBarangay = resolveBarangayAtLocation(lat, lon);
-  if (!assignedBarangay) {
-    return res.status(422).json({
-      message: 'This location is outside the supported barangay jurisdiction. The report cannot be submitted.',
-      code: 'OUTSIDE_BARANGAY_JURISDICTION',
-    });
-  }
-
   const userResult = await pool.query(
-    `SELECT id, first_name, last_name, contact_number, email
+    `SELECT id, first_name, last_name, contact_number, email, barangay_name
      FROM users
      WHERE id = $1
      LIMIT 1`,
@@ -394,6 +390,22 @@ async function createReport(req, res) {
   const user = userResult.rows[0];
   if (!user) {
     return res.status(404).json({ message: 'User not found.' });
+  }
+
+  const serviceAreaBypassEnabled =
+    normalizedType === 'rescue' &&
+    testModeBypassServiceArea === true;
+  const locationBarangay = resolveBarangayAtLocation(lat, lon);
+  const supportedLocationBarangay = isSupportedBarangay(locationBarangay) ? locationBarangay : null;
+  const nearestTestBarangay = serviceAreaBypassEnabled
+    ? resolveNearbyBarangayAtLocation(lat, lon, FLOOD_ALERT_BARANGAYS, Number.POSITIVE_INFINITY)?.name
+    : null;
+  const serviceAreaBarangay = supportedLocationBarangay || nearestTestBarangay || null;
+  if (!serviceAreaBarangay) {
+    return res.status(422).json({
+      message: 'This location is outside the supported barangay jurisdiction. The report cannot be submitted.',
+      code: 'OUTSIDE_BARANGAY_JURISDICTION',
+    });
   }
 
   const submittedName = String(fullName || '').trim();
@@ -438,6 +450,7 @@ async function createReport(req, res) {
   try {
     await client.query('BEGIN');
 
+    let assignedBarangay = serviceAreaBarangay;
     let resolvedAreaId = null;
     let resolvedAreaName = null;
     let evacuationReassigned = false;
@@ -462,6 +475,17 @@ async function createReport(req, res) {
 
       resolvedAreaId = Number(availableArea.id);
       resolvedAreaName = String(availableArea.name || '').trim() || String(evacuationAreaName || '').trim() || null;
+      const evacuationBarangay = String(availableArea.barangay || '').trim();
+      if (!isSupportedBarangay(evacuationBarangay)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({
+          message: 'The selected evacuation center is not assigned to a supported barangay portal.',
+          code: 'EVACUATION_AREA_WITHOUT_SUPPORTED_BARANGAY',
+        });
+      }
+      // Rescue ownership follows the barangay responsible for the selected
+      // shortest-route evacuation center, not the resident's GPS boundary.
+      assignedBarangay = evacuationBarangay;
       const requestedAreaId = Number(evacuationAreaId);
       evacuationReassigned = Number.isFinite(requestedAreaId) ? requestedAreaId !== resolvedAreaId : false;
     }
@@ -662,8 +686,8 @@ async function getReports(req, res) {
 
 async function updateReportStatus(req, res) {
   const requesterRole = req.user?.role;
-  if (requesterRole !== 'admin' && requesterRole !== 'barangay') {
-    res.status(403).json({ message: 'Admin or barangay access required.' });
+  if (requesterRole !== 'barangay') {
+    res.status(403).json({ message: 'Only the assigned barangay can validate resident rescue requests.' });
     return;
   }
 
@@ -695,8 +719,11 @@ async function updateReportStatus(req, res) {
   if (!current) {
     return res.status(404).json({ message: 'Report not found.' });
   }
+  if (current.report_type !== 'rescue') {
+    return res.status(400).json({ message: 'Barangay validation is only available for resident rescue requests.' });
+  }
 
-  const isBarangayWorkflow = requesterRole === 'barangay';
+  const isBarangayWorkflow = true;
   if (isBarangayWorkflow) {
     const barangayName = String(req.user?.barangayName || '').trim();
     if (!barangayName) {

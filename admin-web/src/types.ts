@@ -119,7 +119,11 @@ export type RescuerAccount = {
 export type BackupRequest = {
   id: number;
   report_id: number;
+  barangay_name?: string;
+  created_at?: string;
   acknowledged_at: string | null;
+  declined_at?: string | null;
+  decline_reason?: string | null;
   assigned_rescuer_id: number | null;
   assigned_at: string | null;
   picked_up_at: string | null;

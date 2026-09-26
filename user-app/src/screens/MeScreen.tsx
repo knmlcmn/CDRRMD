@@ -26,6 +26,8 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
   const [draftProfile, setDraftProfile] = useState<AppProfile>(EMPTY_PROFILE);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [changingBarangay, setChangingBarangay] = useState(false);
+  const [barangayError, setBarangayError] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -84,6 +86,32 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
   function onCancelEdit() {
     setDraftProfile(profile);
     setIsEditing(false);
+  }
+
+  async function onChangeBarangay(barangayName: string) {
+    if (!appUserId || saving) return;
+
+    setSaving(true);
+    setBarangayError(null);
+    try {
+      const nextProfile = { ...profile, barangayName };
+      await putAuthMe({
+        firstName: nextProfile.firstName,
+        lastName: nextProfile.lastName,
+        email: nextProfile.email,
+        address: nextProfile.address,
+        contactNumber: nextProfile.contactNumber,
+        barangayName,
+      });
+      await updateAccountProfile(appUserId, nextProfile);
+      setProfile(nextProfile);
+      setDraftProfile(nextProfile);
+      setChangingBarangay(false);
+    } catch (err: any) {
+      setBarangayError(err?.response?.data?.message || 'Unable to change your barangay area.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   const fullName = `${profile.firstName} ${profile.lastName}`.trim() || 'No name set';
@@ -180,20 +208,6 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
               <TextInput style={st.input} value={draftProfile.address} onChangeText={(t) => onChange('address', t)} placeholder="Address" placeholderTextColor="#94a3b8" />
             </View>
             {/* Contact */}
-            <Text style={st.barangayLabel}>Barangay</Text>
-            <View style={st.barangayChoices}>
-              {SUPPORTED_BARANGAYS.map((name) => (
-                <TouchableOpacity
-                  key={name}
-                  style={[st.barangayChoice, draftProfile.barangayName === name && st.barangayChoiceActive]}
-                  onPress={() => onChange('barangayName', name)}
-                >
-                  <Text style={[st.barangayChoiceText, draftProfile.barangayName === name && st.barangayChoiceTextActive]}>{name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Contact */}
             <View style={st.inputRow}>
               <MaterialCommunityIcons name="phone-outline" size={18} color="#64748b" />
               <TextInput style={st.input} value={draftProfile.contactNumber} onChangeText={(t) => onChange('contactNumber', t)} placeholder="Contact Number" keyboardType="phone-pad" placeholderTextColor="#94a3b8" />
@@ -209,6 +223,45 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
             </View>
           </View>
         )}
+
+        <View style={st.card}>
+          <View style={st.areaHeaderRow}>
+            <View style={st.areaIcon}>
+              <MaterialCommunityIcons name="map-marker-radius" size={21} color="#0d3558" />
+            </View>
+            <View style={st.areaCopy}>
+              <Text style={st.areaTitle}>Barangay Area</Text>
+              <Text style={st.areaValue}>{profile.barangayName || 'Not assigned'}</Text>
+            </View>
+            <TouchableOpacity
+              style={st.changeAreaBtn}
+              onPress={() => { setBarangayError(null); setChangingBarangay((value) => !value); }}
+              disabled={saving}
+            >
+              <Text style={st.changeAreaText}>{changingBarangay ? 'Cancel' : 'Change Area'}</Text>
+            </TouchableOpacity>
+          </View>
+          {changingBarangay ? (
+            <>
+              <Text style={st.areaHelp}>Select your correct home barangay:</Text>
+              <View style={st.barangayChoices}>
+                {SUPPORTED_BARANGAYS.map((name) => (
+                  <TouchableOpacity
+                    key={name}
+                    style={[st.barangayChoice, profile.barangayName === name && st.barangayChoiceActive]}
+                    onPress={() => onChangeBarangay(name)}
+                    disabled={saving}
+                  >
+                    <Text style={[st.barangayChoiceText, profile.barangayName === name && st.barangayChoiceTextActive]}>
+                      {saving && profile.barangayName !== name ? name : name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          ) : null}
+          {barangayError ? <Text style={st.areaError}>{barangayError}</Text> : null}
+        </View>
 
         <View style={st.card}>
           <TouchableOpacity style={st.logoutBtn} onPress={onLogout}>
@@ -246,6 +299,15 @@ const st = StyleSheet.create({
   barangayChoiceActive: { backgroundColor: '#0d3558', borderColor: '#0d3558' },
   barangayChoiceText: { color: '#475569', fontSize: 12, fontWeight: '700' },
   barangayChoiceTextActive: { color: '#fff' },
+  areaHeaderRow: { flexDirection: 'row', alignItems: 'center' },
+  areaIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
+  areaCopy: { flex: 1, marginLeft: 10 },
+  areaTitle: { color: '#64748b', fontSize: 11, fontWeight: '700' },
+  areaValue: { color: '#0f2948', fontSize: 15, fontWeight: '900', marginTop: 2 },
+  changeAreaBtn: { borderWidth: 1, borderColor: '#0d3558', borderRadius: 16, paddingHorizontal: 11, paddingVertical: 7 },
+  changeAreaText: { color: '#0d3558', fontSize: 11, fontWeight: '900' },
+  areaHelp: { color: '#64748b', fontSize: 11, marginTop: 14, marginBottom: 8 },
+  areaError: { color: '#b91c1c', fontSize: 11, marginTop: 8 },
 
   profileRow: { flexDirection: 'row', alignItems: 'center' },
   avatar: {

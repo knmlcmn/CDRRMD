@@ -1,5 +1,13 @@
 const express = require('express');
-const { login, register, logout, refresh, me, updateMe } = require('../controllers/authController');
+const {
+  login,
+  register,
+  logout,
+  refresh,
+  me,
+  updateMe,
+  assignBarangayFromLocation,
+} = require('../controllers/authController');
 const auth = require('../middleware/auth');
 const authFlexible = require('../middleware/authFlexible');
 
@@ -16,5 +24,6 @@ router.post('/logout', authFlexible, logout);
 // Profile endpoints require a valid access token.
 router.get('/me', auth, me);
 router.put('/me', auth, updateMe);
+router.put('/location-barangay', auth, assignBarangayFromLocation);
 
 module.exports = router;

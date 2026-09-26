@@ -30,4 +30,9 @@ async function updateMe(req, res) {
   return res.json(response);
 }
 
-module.exports = { login, register, logout, refresh, me, updateMe };
+async function assignBarangayFromLocation(req, res) {
+  const response = await authService.assignBarangayFromLocation(req.user?.userId, req.body);
+  return res.json(response);
+}
+
+module.exports = { login, register, logout, refresh, me, updateMe, assignBarangayFromLocation };

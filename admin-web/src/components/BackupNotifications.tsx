@@ -21,7 +21,7 @@ type Request = {
 export default function BackupNotifications({ onConfirm }: { onConfirm: (reportId: number) => void }) {
   const [requests, setRequests] = useState<Request[]>([]);
   const [dismissed, setDismissed] = useState<Set<number>>(() => new Set());
-  const [busy, setBusy] = useState(false);
+  const busy = false;
   const [error, setError] = useState('');
   const acknowledging = useRef(false);
   const pending = useRef(false);
@@ -69,22 +69,13 @@ export default function BackupNotifications({ onConfirm }: { onConfirm: (reportI
       });
     }, 5000));
   };
-  const acknowledge = async () => {
+  const review = () => {
     if (acknowledging.current) return;
     acknowledging.current = true;
-    setBusy(true);
     setError('');
-    try {
-      const { data } = await api.patch<{ acknowledged_at: string }>('/backup-requests/' + active.id + '/acknowledge');
-      setRequests((previous) => previous.map((request) => request.id === active.id
-        ? { ...request, acknowledged_at: data.acknowledged_at } : request));
-      onConfirm(active.report_id);
-    } catch {
-      setError('Unable to confirm this backup request. Please try again.');
-    } finally {
-      acknowledging.current = false;
-      setBusy(false);
-    }
+    setDismissed((current) => new Set(current).add(active.id));
+    onConfirm(active.report_id);
+    acknowledging.current = false;
   };
   return <BackupModal key={active.id} title="CDRRMD Backup Requested" onClose={dismiss}>
     <p><strong>Barangay:</strong> {active.barangay_name}</p>
@@ -97,12 +88,12 @@ export default function BackupNotifications({ onConfirm }: { onConfirm: (reportI
     <p><strong>Estimated people:</strong> {active.estimated_people ?? '-'}</p>
     {active.report_notes ? <p><strong>Details:</strong> {active.report_notes}</p> : null}
     <p><strong>Requested:</strong> {new Date(active.created_at).toLocaleString()}</p>
-    <p>Dismissed notifications return after 5 seconds. After confirmation, assign an available CDRRMD Rescuer team while the Barangay continues responding.</p>
+    <p>Open this request in Monitoring to accept or decline it. Resident rescue validation remains with the Barangay portal.</p>
     {error && <p role="alert" className="backup-error">{error}</p>}
     <div className="backup-actions">
       <button className="backup-button backup-button-secondary" disabled={busy} onClick={dismiss}>Dismiss</button>
-      <button className="backup-button" disabled={busy} onClick={() => { void acknowledge(); }}>
-        {busy ? 'Confirming…' : 'Confirm'}
+      <button className="backup-button" disabled={busy} onClick={review}>
+        Review Request
       </button>
     </div>
   </BackupModal>;

@@ -3,10 +3,22 @@ import MonitoringPage from './pages/MonitoringPage';
 import AccountPage from './pages/AccountPage';
 import FloodMonitoringPage from './pages/FloodMonitoringPage';
 import WaterLevelAlert, { type WaterLevelNoticeKind } from './components/WaterLevelAlert';
+import BackupModal from './components/BackupModal';
 import { API_BASE_URL, api, setAuthToken } from '../services/apiClient';
 import { loadWaterLevelSensors, type WaterLevelSensor } from './services/waterLevelSensors';
 
 type View = 'monitoring' | 'flood-monitoring' | 'account';
+type RescueRequestNotice = {
+  id: number;
+  report_code?: string | null;
+  location: string;
+  incident_type?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  contact_number?: string | null;
+  status: string;
+  created_at: string;
+};
 
 type Props = {
   token: string;
@@ -17,6 +29,9 @@ type Props = {
 
 export default function BarangayPortal({ token, barangayName, onLogout, onAuthError }: Props) {
   const [view, setView] = useState<View>('monitoring');
+  const [pendingRescueRequests, setPendingRescueRequests] = useState<RescueRequestNotice[]>([]);
+  const [dismissedRescueIds, setDismissedRescueIds] = useState<Set<number>>(() => new Set());
+  const [focusReportId, setFocusReportId] = useState<number | null>(null);
   const [notices, setNotices] = useState<Array<{ id: number; alert: WaterLevelSensor; kind: WaterLevelNoticeKind }>>([]);
   const noticeIdRef = useRef(0);
   const reminderTimerRef = useRef<number | null>(null);
@@ -30,6 +45,27 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
     setAuthToken(token);
     return () => setAuthToken(null);
   }, [token]);
+
+  useEffect(() => {
+    let stopped = false;
+    const checkRescueRequests = async () => {
+      try {
+        const { data } = await api.get<RescueRequestNotice[]>('/barangay/reports/mine');
+        if (stopped) return;
+        setPendingRescueRequests((Array.isArray(data) ? data : []).filter((report) =>
+          String(report.status || '').toLowerCase() === 'pending'
+        ));
+      } catch (error: any) {
+        if (error?.response?.status === 401) onAuthError();
+      }
+    };
+    void checkRescueRequests();
+    const timer = window.setInterval(() => void checkRescueRequests(), 2_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [onAuthError, token]);
 
   useEffect(() => {
     let stopped = false;
@@ -92,14 +128,34 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
 
   const activeNotice = notices[0];
   const popup = activeNotice ? <WaterLevelAlert key={activeNotice.id} alert={activeNotice.alert} kind={activeNotice.kind} onClose={() => setNotices((current) => current.filter((item) => item.id !== activeNotice.id))} /> : null;
+  const activeRescueRequest = pendingRescueRequests.find((request) => !dismissedRescueIds.has(request.id)) || null;
+  const rescuePopup = activeRescueRequest ? (
+    <BackupModal title="New Resident Rescue Request" onClose={() => setDismissedRescueIds((current) => new Set(current).add(activeRescueRequest.id))}>
+      <p><strong>Request:</strong> {activeRescueRequest.report_code || `RPT-${String(activeRescueRequest.id).padStart(6, '0')}`}</p>
+      <p><strong>Incident:</strong> {String(activeRescueRequest.incident_type || 'Request Rescue').replace(/_/g, ' ')}</p>
+      <p><strong>Location:</strong> {activeRescueRequest.location}</p>
+      <p><strong>Resident:</strong> {[activeRescueRequest.first_name, activeRescueRequest.last_name].filter(Boolean).join(' ') || '-'}</p>
+      <p><strong>Contact:</strong> {activeRescueRequest.contact_number || '-'}</p>
+      <p><strong>Submitted:</strong> {new Date(activeRescueRequest.created_at).toLocaleString()}</p>
+      <p>This rescue request must be accepted or declined by Barangay {barangayName}.</p>
+      <div className="backup-actions">
+        <button className="backup-button backup-button-secondary" onClick={() => setDismissedRescueIds((current) => new Set(current).add(activeRescueRequest.id))}>Dismiss</button>
+        <button className="backup-button" onClick={() => {
+          setDismissedRescueIds((current) => new Set(current).add(activeRescueRequest.id));
+          setFocusReportId(activeRescueRequest.id);
+          setView('monitoring');
+        }}>Review Request</button>
+      </div>
+    </BackupModal>
+  ) : null;
   const pageProps = { barangayName, onLogout, onAuthError };
 
   return (
     <>
-      {popup}
+      {rescuePopup || popup}
       {view === 'account' ? <AccountPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenFloodMonitoring={() => setView('flood-monitoring')} /> : null}
       {view === 'flood-monitoring' ? <FloodMonitoringPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenAccount={() => setView('account')} /> : null}
-      {view === 'monitoring' ? <MonitoringPage {...pageProps} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenAccount={() => setView('account')} /> : null}
+      {view === 'monitoring' ? <MonitoringPage {...pageProps} focusReportId={focusReportId} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenAccount={() => setView('account')} /> : null}
     </>
   );
 }

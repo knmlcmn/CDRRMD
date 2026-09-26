@@ -91,6 +91,25 @@ async function updateMyProfile(userId, profile) {
   return result.rows[0] || null;
 }
 
+async function assignResidentBarangayFromLocation(userId, barangayName, latitude, longitude) {
+  const result = await pool.query(
+    `UPDATE users
+     SET barangay_name = $2,
+         current_latitude = $3,
+         current_longitude = $4,
+         current_barangay_name = $2,
+         location_updated_at = NOW()
+     WHERE id = $1
+       AND role = 'user'
+       AND COALESCE(is_archived, FALSE) = FALSE
+     RETURNING id, username, role, email, first_name, last_name, address,
+               contact_number, barangay_name, created_at`,
+    [userId, barangayName, latitude, longitude],
+  );
+
+  return result.rows[0] || null;
+}
+
 async function findDuplicateEmailForUser(email, userId) {
   const result = await pool.query(
     'SELECT id FROM users WHERE LOWER(email) = LOWER($1) AND id <> $2 LIMIT 1',
@@ -801,6 +820,7 @@ async function listReportsByAssignedBarangay(barangayName) {
      FROM incident_reports ir
      JOIN users u ON u.id = ir.reported_by
      WHERE LOWER(ir.assigned_barangay) = LOWER($1)
+       AND ir.report_type = 'rescue'
      ORDER BY ir.created_at DESC`,
     [barangayName],
   );
@@ -956,6 +976,7 @@ module.exports = {
   findPublicUserById,
   createUser,
   updateMyProfile,
+  assignResidentBarangayFromLocation,
   findDuplicateEmailForUser,
   listAdmins,
   listUsers,

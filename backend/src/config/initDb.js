@@ -48,9 +48,17 @@ async function initDb() {
     ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS assigned_rescuer_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
     ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ;
     ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS picked_up_at TIMESTAMPTZ;
+    ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS declined_at TIMESTAMPTZ;
+    ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS declined_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+    ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS decline_reason TEXT;
 
-    CREATE UNIQUE INDEX IF NOT EXISTS backup_requests_active_barangay_idx
-      ON backup_requests (LOWER(barangay_name)) WHERE arrived_at IS NULL;
+    -- Remove the legacy status-based uniqueness rule. It treats a declined
+    -- request as permanently pending and blocks the barangay's next request.
+    DROP INDEX IF EXISTS backup_requests_one_pending;
+    DROP INDEX IF EXISTS backup_requests_active_barangay_idx;
+    CREATE UNIQUE INDEX backup_requests_active_barangay_idx
+      ON backup_requests (LOWER(barangay_name))
+      WHERE arrived_at IS NULL AND declined_at IS NULL;
 
     CREATE TABLE IF NOT EXISTS alerts (
       id SERIAL PRIMARY KEY,
@@ -195,7 +203,14 @@ async function initDb() {
 
     CREATE INDEX IF NOT EXISTS backup_requests_active_rescuer_idx
     ON backup_requests (assigned_rescuer_id)
-    WHERE arrived_at IS NULL AND assigned_rescuer_id IS NOT NULL;
+    WHERE arrived_at IS NULL AND declined_at IS NULL AND assigned_rescuer_id IS NOT NULL;
+
+    UPDATE incident_reports ir
+    SET assigned_barangay = ea.barangay
+    FROM evacuation_areas ea
+    WHERE ir.report_type = 'rescue'
+      AND ir.evacuation_area_id = ea.id
+      AND ir.assigned_barangay IS DISTINCT FROM ea.barangay;
 
     UPDATE backup_requests br
     SET report_id = (

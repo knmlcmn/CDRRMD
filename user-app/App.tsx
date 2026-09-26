@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import HomeScreen from './src/screens/HomeScreen';
 import WeatherScreen from './src/screens/WeatherScreen';
 import RescueMapScreen from './src/screens/RescueMapScreen';
@@ -18,8 +18,14 @@ import {
   SessionData,
 } from './src/services/session';
 import { AppProfile, ensureAccountForSession, patchAccountProfile } from './src/services/appAccount';
-import { getAuthMe, putAuthMe, setApiAuthorizationToken, setAuthFailureHandler } from './src/services/api';
+import {
+  getAuthMe,
+  putAuthMe,
+  setApiAuthorizationToken,
+  setAuthFailureHandler,
+} from './src/services/api';
 import ResidentFloodAlert from './src/components/ResidentFloodAlert';
+import RequiredLocationModal from './src/components/RequiredLocationModal';
 
 function isBlank(value?: string | null) {
   return !String(value ?? '').trim();
@@ -82,6 +88,7 @@ export default function App() {
   const [booting, setBooting] = useState(true);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [session, setSession] = useState<SessionData | null>(null);
+  const [testModeEnabled, setTestModeEnabled] = useState(false);
 
   useEffect(() => {
     registerSessionAuthorizationSetter(setApiAuthorizationToken);
@@ -192,8 +199,21 @@ export default function App() {
 
   async function handleLogout() {
     await clearSession();
+    setTestModeEnabled(false);
     setSession(null);
     setAuthMode('login');
+  }
+
+  async function handleLocationAssigned(user: SessionData['user']) {
+    if (!session) return;
+
+    const nextSession: SessionData = {
+      ...session,
+      user: { ...session.user, ...user },
+    };
+    const ensured = await ensureAccountForSession(nextSession);
+    await saveSession(ensured.session);
+    setSession(ensured.session);
   }
 
   if (booting) {
@@ -222,10 +242,19 @@ export default function App() {
     );
   }
 
+  if (!session.user.barangayName) {
+    return (
+      <View style={styles.locationGate}>
+        <RequiredLocationModal onAssigned={handleLocationAssigned} />
+      </View>
+    );
+  }
+
   return (
-    <NavigationContainer>
-      <ResidentFloodAlert onTestAccountRemoved={handleLogout} />
-      <Tab.Navigator
+    <View style={styles.appRoot}>
+      <NavigationContainer>
+        <ResidentFloodAlert onTestAccountRemoved={handleLogout} />
+        <Tab.Navigator
         id="MainTabs"
         screenOptions={({ route }) => ({
           headerShown: false,
@@ -253,7 +282,9 @@ export default function App() {
       >
         <Tab.Screen name="Home" component={HomeScreen} />
         <Tab.Screen name="Weather" component={WeatherScreen} />
-        <Tab.Screen name="Safe Zone" component={RescueMapScreen} />
+        <Tab.Screen name="Safe Zone">
+          {() => <RescueMapScreen testModeEnabled={testModeEnabled} />}
+        </Tab.Screen>
         <Tab.Screen name="Family">
           {() => <FamilyScreen appUserId={session.appUserId ?? ''} />}
         </Tab.Screen>
@@ -270,16 +301,57 @@ export default function App() {
             tabBarStyle: { display: 'none' },
           }}
         />
-      </Tab.Navigator>
-    </NavigationContainer>
+        </Tab.Navigator>
+      </NavigationContainer>
+
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel={`Temporary service-area test mode is ${testModeEnabled ? 'on' : 'off'}`}
+        activeOpacity={0.85}
+        onPress={() => setTestModeEnabled((current) => !current)}
+        style={[styles.testModeButton, testModeEnabled && styles.testModeButtonEnabled]}
+      >
+        <Text style={styles.testModeButtonText}>
+          TEST MODE: {testModeEnabled ? 'ON' : 'OFF'}
+        </Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  appRoot: {
+    flex: 1,
+  },
+  testModeButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 1000,
+    elevation: 20,
+    borderWidth: 1,
+    borderColor: '#ffffff',
+    borderRadius: 8,
+    backgroundColor: '#64748b',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  testModeButtonEnabled: {
+    backgroundColor: '#dc2626',
+  },
+  testModeButtonText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '900',
+  },
   booting: {
     flex: 1,
     backgroundColor: '#0d3558',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  locationGate: {
+    flex: 1,
+    backgroundColor: '#eef3f6',
   },
 });

@@ -66,6 +66,10 @@ type UserMapLayerVisibility = {
   windOverlay: boolean;
 };
 
+type Props = {
+  testModeEnabled?: boolean;
+};
+
 function normalizeRescueStatus(value: unknown): RescueRecord['status'] {
   const normalized = String(value || 'pending').toLowerCase();
   if (normalized === 'accepted') {
@@ -1273,7 +1277,7 @@ function buildLeafletHtml(
 `;
 }
 
-export default function RescueMapScreen() {
+export default function RescueMapScreen({ testModeEnabled = false }: Props) {
   const { showNotice, noticeModal } = useNoticeModal();
   const navigation = useNavigation<any>();
   const [userLocation, setUserLocation] = useState<Coordinate | null>(null);
@@ -1681,6 +1685,7 @@ export default function RescueMapScreen() {
 
       await api.post('/reports', {
         reportType: 'rescue',
+        testModeBypassServiceArea: testModeEnabled,
         incidentType: 'Request Rescue',
         location: locationText,
         latitude: userLocation.latitude,
