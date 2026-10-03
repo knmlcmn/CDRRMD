@@ -1,17 +1,16 @@
 import { useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from '../components/Typography';
+import { DashboardHeader } from '../components/DashboardHeader';
+import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { postAuth } from '../services/api';
 import { SessionData } from '../services/session';
@@ -57,16 +56,16 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister }: Props) {
   }
 
   return (
-    <SafeAreaView style={styles.root}>
+    <View style={styles.root}>
+      <DashboardHeader />
       <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" bounces={false}>
           <View style={styles.form}>
-            <Image source={require('../../assets/cdrrmd-logo.png')} style={styles.logo} resizeMode="contain" />
             <Text style={styles.title}>Welcome back!</Text>
             <Text style={styles.sectionLabel}>Login</Text>
 
             <View style={styles.inputWrap}>
-              <MaterialCommunityIcons name="account-outline" size={17} color="#17324a" />
+              <MaterialCommunityIcons name="account-outline" size={17} color={editorial.accent} />
               <TextInput
                 value={identifier}
                 onChangeText={setIdentifier}
@@ -80,7 +79,7 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister }: Props) {
             </View>
 
             <View style={styles.inputWrap}>
-              <MaterialCommunityIcons name="lock-outline" size={17} color="#17324a" />
+              <MaterialCommunityIcons name="lock-outline" size={17} color={editorial.accent} />
               <TextInput
                 value={password}
                 onChangeText={setPassword}
@@ -96,7 +95,7 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister }: Props) {
             </View>
 
             <TouchableOpacity style={styles.rememberRow} onPress={() => setRememberMe((value) => !value)}>
-              <MaterialCommunityIcons name={rememberMe ? 'checkbox-marked' : 'checkbox-blank-outline'} size={16} color="#17324a" />
+              <MaterialCommunityIcons name={rememberMe ? 'checkbox-marked' : 'checkbox-blank-outline'} size={16} color={editorial.accent} />
               <Text style={styles.rememberText}>Remember me</Text>
             </TouchableOpacity>
 
@@ -115,30 +114,28 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister }: Props) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#fff' },
+  root: { flex: 1, backgroundColor: '#ffffff' },
   keyboard: { flex: 1 },
-  scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 30 },
-  form: { width: '100%', maxWidth: 390 },
-  logo: { width: 96, height: 96, alignSelf: 'center', marginBottom: 25 },
-  title: { color: '#102e46', fontSize: 21, fontWeight: '900', textAlign: 'center', marginBottom: 24 },
-  sectionLabel: { color: '#17324a', fontSize: 12, fontWeight: '800', marginLeft: 8, marginBottom: 6 },
+  scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 30, backgroundColor: editorial.background },
+  form: { width: '100%', maxWidth: 390, padding: 22, borderRadius: 14, backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border },
+  title: { color: editorial.ink, fontSize: 26, textAlign: 'left', marginBottom: 20, lineHeight: 31 },
+  sectionLabel: { color: editorial.ink, fontSize: 14, fontWeight: '400', marginLeft: 8, marginBottom: 8 },
   inputWrap: {
-    height: 45, borderWidth: 1, borderColor: '#17324a', borderRadius: 23, paddingHorizontal: 14,
+    height: 45, borderWidth: 1, borderColor: editorial.border, borderRadius: 10, paddingHorizontal: 14,
     flexDirection: 'row', alignItems: 'center', marginBottom: 10, backgroundColor: '#fff',
-    shadowColor: '#0f172a', shadowOpacity: 0.18, shadowRadius: 2, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
-  input: { flex: 1, color: '#102e46', fontSize: 13, marginLeft: 8, paddingVertical: 0 },
+  input: { flex: 1, color: '#111111', fontSize: 13, marginLeft: 8, paddingVertical: 0 },
   rememberRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', marginLeft: 8, marginBottom: 18 },
-  rememberText: { color: '#17324a', fontSize: 11, marginLeft: 5 },
+  rememberText: { color: '#333333', fontSize: 11, marginLeft: 5 },
   errorText: { color: '#c62828', fontSize: 12, marginHorizontal: 8, marginBottom: 10 },
-  primaryButton: { height: 47, borderRadius: 24, backgroundColor: '#15364a', alignItems: 'center', justifyContent: 'center', marginBottom: 12, elevation: 2 },
+  primaryButton: { height: 47, borderRadius: 10, backgroundColor: editorial.accent, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   primaryButtonText: { color: '#fff', fontSize: 15, fontWeight: '900' },
   footerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
-  footerText: { color: '#31485a', fontSize: 11 },
-  footerLink: { color: '#102e46', fontSize: 11, fontWeight: '900' },
+  footerText: { color: '#555555', fontSize: 11 },
+  footerLink: { color: editorial.accent, fontSize: 11, fontWeight: '900' },
 });

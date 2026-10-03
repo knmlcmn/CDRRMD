@@ -1,17 +1,16 @@
 import { useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
-  Image,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from '../components/Typography';
+import { DashboardHeader } from '../components/DashboardHeader';
+import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { postAuth } from '../services/api';
 import { SessionData } from '../services/session';
@@ -36,7 +35,7 @@ type FieldProps = {
 function Field({ icon, trailing, ...props }: FieldProps) {
   return (
     <View style={styles.inputWrap}>
-      <MaterialCommunityIcons name={icon} size={16} color="#17324a" />
+      <MaterialCommunityIcons name={icon} size={16} color={editorial.accent} />
       <TextInput {...props} placeholderTextColor="#526170" style={styles.input} />
       {trailing}
     </View>
@@ -104,11 +103,11 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
   }
 
   return (
-    <SafeAreaView style={styles.root}>
+    <View style={styles.root}>
+      <DashboardHeader />
       <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" bounces={false}>
           <View style={styles.form}>
-            <Image source={require('../../assets/cdrrmd-logo.png')} style={styles.logo} resizeMode="contain" />
             <Text style={styles.title}>Create your Account</Text>
             <Text style={styles.sectionLabel}>Register</Text>
 
@@ -142,31 +141,29 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#fff' },
+  root: { flex: 1, backgroundColor: '#ffffff' },
   keyboard: { flex: 1 },
-  scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 24 },
-  form: { width: '100%', maxWidth: 420 },
-  logo: { width: 88, height: 88, alignSelf: 'center', marginBottom: 16 },
-  title: { color: '#102e46', fontSize: 20, fontWeight: '900', textAlign: 'center', marginBottom: 18 },
-  sectionLabel: { color: '#17324a', fontSize: 12, fontWeight: '800', marginLeft: 8, marginBottom: 6 },
+  scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 24, backgroundColor: editorial.background },
+  form: { width: '100%', maxWidth: 420, padding: 18, borderRadius: 14, backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border },
+  title: { color: editorial.ink, fontSize: 25, textAlign: 'left', lineHeight: 30, marginBottom: 18 },
+  sectionLabel: { color: editorial.ink, fontSize: 14, fontWeight: '400', marginLeft: 8, marginBottom: 8 },
   inputWrap: {
-    height: 42, borderWidth: 1, borderColor: '#17324a', borderRadius: 22, paddingHorizontal: 13,
+    height: 42, borderWidth: 1, borderColor: editorial.border, borderRadius: 10, paddingHorizontal: 13,
     flexDirection: 'row', alignItems: 'center', marginBottom: 8, backgroundColor: '#fff',
-    shadowColor: '#0f172a', shadowOpacity: 0.16, shadowRadius: 2, shadowOffset: { width: 0, height: 2 }, elevation: 2,
   },
-  input: { flex: 1, color: '#102e46', fontSize: 12, marginLeft: 7, paddingVertical: 0, minWidth: 0 },
+  input: { flex: 1, color: '#111111', fontSize: 12, marginLeft: 7, paddingVertical: 0, minWidth: 0 },
   nameRow: { flexDirection: 'row', gap: 7 },
   nameField: { flex: 1, minWidth: 0 },
-  locationHint: { color: '#526170', fontSize: 10, marginHorizontal: 8, marginBottom: 8 },
+  locationHint: { color: '#555555', fontSize: 10, marginHorizontal: 8, marginBottom: 8 },
   errorText: { color: '#c62828', fontSize: 11, marginHorizontal: 8, marginBottom: 8 },
-  primaryButton: { height: 45, borderRadius: 23, backgroundColor: '#15364a', alignItems: 'center', justifyContent: 'center', marginTop: 2, marginBottom: 10, elevation: 2 },
+  primaryButton: { height: 45, borderRadius: 10, backgroundColor: editorial.accent, alignItems: 'center', justifyContent: 'center', marginTop: 2, marginBottom: 10 },
   primaryButtonText: { color: '#fff', fontSize: 14, fontWeight: '900' },
   footerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
-  footerText: { color: '#31485a', fontSize: 10 },
-  footerLink: { color: '#102e46', fontSize: 10, fontWeight: '900' },
+  footerText: { color: '#555555', fontSize: 10 },
+  footerLink: { color: editorial.accent, fontSize: 10, fontWeight: '900' },
 });

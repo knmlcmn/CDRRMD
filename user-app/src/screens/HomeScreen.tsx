@@ -1,23 +1,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
-  ImageBackground,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
+import { AppText as Text } from '../components/Typography';
+import { editorial } from '../components/EditorialTheme';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { HomeFeedArtwork, type HomeFeedIconName } from '../components/HomeFeedArtwork';
+import { NotificationArtwork } from '../components/NotificationArtwork';
+import {
+  MetricAccent,
+  TemperatureArtwork,
+  temperatureIconFromCelsius,
+  WeatherConditionArtwork,
+  weatherAdvice,
+  weatherIconFromCode,
+} from '../components/WeatherMetricArtwork';
 import { api } from '../services/api';
 import { getCityCurrentWeather } from '../services/weatherService';
 import { getWeatherVisualByCode } from '../utils/weatherVisual';
 
-type AlertItem = { id: number; title: string; body: string; severity: string };
-type AnnouncementItem = { id: number; title: string; body: string };
+type AlertItem = { id: number; title: string; body: string; severity: string; category?: string; created_at?: string };
+type AnnouncementItem = { id: number; title: string; body: string; created_at?: string };
 type NotificationItem = {
   id: number;
   user_id?: number;
@@ -39,8 +50,59 @@ type ReportLogItem = {
 };
 type WeatherResponse = { current?: { temperature_2m?: number; weather_code?: number } };
 
-export default function HomeScreen() {
+type HomeScreenProps = {
+  barangayName?: string;
+};
+
+const BARANGAY_DASHBOARD_SEALS = {
+  sampiruhan: require('../../assets/sampi-seal-dashboard.jpg'),
+  lingga: require('../../assets/lingga-seal-dashboard.jpg'),
+  looc: require('../../assets/looc-seal-dashboard.jpg'),
+  palingon: require('../../assets/palingon-seal-dashboard.jpg'),
+  parian: require('../../assets/parian-seal-dashboard.jpg'),
+  uwisan: require('../../assets/uwisan-seal-dashboard.jpg'),
+} as const;
+
+function relativeTime(value?: string) {
+  if (!value) return '';
+  const elapsed = Date.now() - new Date(value).getTime();
+  if (!Number.isFinite(elapsed) || elapsed < 0) return '';
+  const minutes = Math.max(1, Math.floor(elapsed / 60_000));
+  if (minutes < 60) return `${minutes} min${minutes === 1 ? '' : 's'} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  const weeks = Math.floor(days / 7);
+  return `${weeks}w ago`;
+}
+
+function alertIcon(item: AlertItem): HomeFeedIconName {
+  const content = `${item.title} ${item.category ?? ''} ${item.severity}`.toLowerCase();
+  if (content.includes('road') || content.includes('closure')) {
+    return 'roadClosure';
+  }
+  if (content.includes('evac') || content.includes('critical') || content.includes('high')) {
+    return 'evacAdvisory';
+  }
+  return 'weather';
+}
+
+function newsIcon(item: AnnouncementItem, index: number): HomeFeedIconName {
+  const content = `${item.title} ${item.body}`.toLowerCase();
+  if (content.includes('weather') || content.includes('rain') || content.includes('storm')) {
+    return 'weatherUpdate';
+  }
+  if (content.includes('reduction') || content.includes('risk') || content.includes('location')) {
+    return 'reduction';
+  }
+  return index === 0 ? 'weatherUpdate' : index === 1 ? 'reduction' : 'announcement';
+}
+
+export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
   const navigation = useNavigation();
+  const { width: screenWidth } = useWindowDimensions();
+  const designScale = screenWidth / 216;
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [news, setNews] = useState<AnnouncementItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -107,6 +169,36 @@ export default function HomeScreen() {
     () => getWeatherVisualByCode(weather?.current?.weather_code),
     [weather?.current?.weather_code],
   );
+  const currentWeatherCode = weather?.current?.weather_code;
+  const currentTemperature = weather?.current?.temperature_2m;
+  const currentWeatherIcon = weatherIconFromCode(currentWeatherCode);
+  const currentTemperatureIcon = temperatureIconFromCelsius(currentTemperature);
+
+  const displayBarangay = barangayName.trim() || 'Sampiruhan';
+  const barangayKey = displayBarangay.toLowerCase().replace(/^(?:brgy\.?|barangay)\s*/, '').trim();
+  const dashboardSeal = BARANGAY_DASHBOARD_SEALS[barangayKey as keyof typeof BARANGAY_DASHBOARD_SEALS];
+  const barangayHero = dashboardSeal
+    ?? require('../../assets/Calamba_City_Hall_(Chipeco_Ave.,_Calamba,_Laguna)(2018-08-21).jpg');
+  const heroHeight = Math.round(126 * designScale);
+  const heroImageWidth = Math.round(heroHeight * (328 / 226));
+  const cardHeight = Math.round(27 * designScale);
+  const sectionLayout = {
+    fontSize: 10 * designScale,
+    lineHeight: 13 * designScale,
+    paddingHorizontal: 10 * designScale,
+    paddingTop: 10 * designScale,
+    paddingBottom: 5 * designScale,
+  };
+  const cardLayout = {
+    minHeight: cardHeight,
+    paddingHorizontal: 10 * designScale,
+    paddingVertical: 5 * designScale,
+    marginHorizontal: 8 * designScale,
+    marginBottom: 6 * designScale,
+    borderRadius: 7 * designScale,
+  };
+  const cardTitleLayout = { fontSize: 7.6 * designScale, lineHeight: 9 * designScale };
+  const cardBodyLayout = { fontSize: 5.5 * designScale, lineHeight: 7 * designScale };
 
   const groupedNotifications = useMemo(() => {
     const groups = new Map<
@@ -213,34 +305,40 @@ export default function HomeScreen() {
   }
 
   return (
-    <View style={st.root}>
+      <View style={st.root}>
       {/* Header */}
-      <View style={st.header}>
+      <View style={[st.header, {
+        paddingTop: 28 * designScale,
+        paddingBottom: 7 * designScale,
+        paddingHorizontal: 10 * designScale,
+      }]}>
         <View style={st.headerLeft}>
-          <View style={st.logoCircle}>
-            <Image source={require('../../assets/cdrrmd-logo.png')} style={st.logoImage} />
-          </View>
-          <Text style={st.headerTitle}>CDRRMD</Text>
+          <Image
+            source={require('../../assets/cdrrmd-logo.png')}
+            style={[st.logoImage, {
+              width: 23 * designScale,
+              height: 23 * designScale,
+              borderRadius: 11.5 * designScale,
+              marginRight: 5 * designScale,
+            }]}
+          />
+          <Text style={[st.headerTitle, { fontSize: 11 * designScale }]}>CDRRMD</Text>
         </View>
-        <View style={st.headerRight}>
-          <TouchableOpacity
-            style={st.headerIconBtn}
-            accessibilityLabel={`Latest notifications, ${unreadCount} unread`}
-            onPress={toggleNotifications}
-          >
-            <MaterialCommunityIcons name="bell-outline" size={20} color="#fff" />
-            {showNewNotificationLabel ? (
-              <View style={st.newNotificationLabel}>
-                <Text style={st.newNotificationLabelText}>New notification</Text>
-              </View>
-            ) : null}
-            {unreadCount > 0 ? (
-              <View style={st.headerBadge}>
-                <Text style={st.headerBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
-              </View>
-            ) : null}
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          style={[st.headerIconBtn, {
+            width: 29 * designScale,
+            height: 29 * designScale,
+          }]}
+          accessibilityLabel={`Latest notifications, ${unreadCount} unread`}
+          onPress={toggleNotifications}
+        >
+          <NotificationArtwork scale={designScale} showUnread={unreadCount > 0} />
+          {showNewNotificationLabel ? (
+            <View style={st.newNotificationLabel}>
+              <Text style={st.newNotificationLabelText}>New notification</Text>
+            </View>
+          ) : null}
+        </TouchableOpacity>
       </View>
 
       {showNotifications ? (
@@ -252,7 +350,7 @@ export default function HomeScreen() {
               setExpandedCaseKey(null);
             }}
           />
-          <View style={st.notificationPanelFloating}>
+          <View style={[st.notificationPanelFloating, { top: 47 * designScale }]}>
             <View style={st.notificationPanelHeader}>
               <Text style={st.notificationPanelTitle}>Latest Notifications</Text>
               <Text style={st.notificationArchiveLabel}>Notification history</Text>
@@ -311,114 +409,119 @@ export default function HomeScreen() {
         contentContainerStyle={st.scrollContent}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Weather Card */}
-        <TouchableOpacity activeOpacity={0.88} onPress={() => navigation.navigate('Weather' as never)}>
-          <ImageBackground
-            source={{ uri: visual.backgroundUri }}
-            resizeMode="cover"
-            style={st.weatherCard}
-            imageStyle={{ borderRadius: 14 }}
-          >
-            <View style={st.weatherOverlay}>
-              <Text style={st.weatherLocation}>
-                <MaterialCommunityIcons name="map-marker" size={14} color="#fff" /> Calamba City
-              </Text>
-              <Text style={st.weatherCondition}>
-                {visual.condition} • {weather?.current?.temperature_2m ?? '--'}°C (Calamba City)
-              </Text>
-            </View>
-          </ImageBackground>
-        </TouchableOpacity>
-
-        {/* Request Rescue */}
+        {/* Barangay and current weather */}
         <TouchableOpacity
-          style={st.rescueBtn}
-          activeOpacity={0.85}
-          onPress={() => navigation.navigate('Safe Zone' as never)}
+          activeOpacity={0.88}
+          onPress={() => navigation.navigate('Weather' as never)}
+          style={[st.barangayHero, { height: heroHeight }]}
         >
-          <View style={st.rescueIconBox}>
-            <MaterialCommunityIcons name="ambulance" size={38} color="#444" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={st.rescueTitle}>Request Rescue</Text>
-            <Text style={st.rescueSub}>Tap to view Calamba rescue map and location bounds</Text>
-          </View>
-          <MaterialCommunityIcons name="chevron-right" size={24} color="#fff" />
+            <Image
+              source={barangayHero}
+              resizeMode="cover"
+              style={dashboardSeal
+                ? [st.barangaySeal, { width: 116 * designScale, height: 116 * designScale, right: 3 * designScale, top: 0 }]
+                : [st.heroImage, { width: heroImageWidth }]}
+            />
+            <View style={[st.heroCopy, {
+              top: 13 * designScale,
+              left: 13 * designScale,
+              width: '52%',
+            }]}>
+              <Text style={[st.heroBarangay, {
+                fontSize: 9 * designScale,
+                lineHeight: 10 * designScale,
+              }]}>Brgy. {displayBarangay.toUpperCase()}</Text>
+              <Text style={[st.heroCity, {
+                fontSize: 7 * designScale,
+                lineHeight: 8 * designScale,
+                marginTop: 2 * designScale,
+              }]}>Calamba City</Text>
+              <View style={[st.heroWeatherRow, { marginTop: 7 * designScale, width: 71 * designScale }]}>
+                <View style={st.heroMetric}>
+                  <View style={st.heroWeatherItem}>
+                    <WeatherConditionArtwork name={currentWeatherIcon} scale={0.8 * designScale} />
+                    <Text style={[st.heroWeatherText, { fontSize: 5 * designScale }]}>{visual.condition}</Text>
+                  </View>
+                  <MetricAccent type="weather" scale={designScale} />
+                </View>
+                <View style={st.heroMetric}>
+                  <View style={st.heroWeatherItem}>
+                    <TemperatureArtwork name={currentTemperatureIcon} scale={0.8 * designScale} />
+                    <Text style={[st.heroWeatherText, { fontSize: 5 * designScale }]}>{currentTemperature ?? '--'}°C</Text>
+                  </View>
+                  <MetricAccent type="temperature" scale={designScale} />
+                </View>
+              </View>
+              <Text style={[st.heroAdvice, {
+                fontSize: 5 * designScale,
+                lineHeight: 6 * designScale,
+                marginTop: 8 * designScale,
+                width: 104 * designScale,
+              }]}>{weatherAdvice(currentWeatherCode, currentTemperature)}</Text>
+            </View>
         </TouchableOpacity>
 
-        {/* Latest Alerts */}
-        <View style={st.sectionHeader}>
-          <Text style={st.sectionTitle}>Latest Alerts</Text>
-        </View>
-        {alerts.length === 0 ? (
-          <View style={st.card}><Text style={st.cardMuted}>No alerts yet.</Text></View>
-        ) : (
-          alerts.slice(0, 3).map((item) => (
-            <View key={item.id} style={st.card}>
-              <Text style={st.cardTitle}>{item.title}</Text>
-              <Text style={st.cardBody}>{item.body}</Text>
-              <Text style={st.cardMuted}>Severity: {item.severity}</Text>
-            </View>
-          ))
-        )}
+        <View style={[st.contentPanel, {
+          paddingBottom: 72 * designScale,
+          marginTop: 6 * designScale,
+        }]}>
+          {/* Latest Alerts */}
+          <Text style={[st.sectionTitle, sectionLayout]}>Latest Alerts</Text>
+          {alerts.length === 0 ? (
+            <View style={[st.card, cardLayout]}><Text style={st.cardMuted}>No alerts yet.</Text></View>
+          ) : (
+            alerts.slice(0, 3).map((item) => {
+              return (
+                <View key={item.id} style={[st.card, cardLayout]}>
+                  <HomeFeedArtwork name={alertIcon(item)} scale={0.82 * designScale} />
+                  <View style={[st.cardCopy, { marginHorizontal: 5 * designScale }]}>
+                    <Text style={[st.cardTitle, cardTitleLayout]} numberOfLines={1}>{item.title}</Text>
+                    <Text style={[st.cardBody, cardBodyLayout]} numberOfLines={1}>{item.body}</Text>
+                  </View>
+                  <Text style={[st.cardTime, { fontSize: 4 * designScale }]}>{relativeTime(item.created_at)}</Text>
+                </View>
+              );
+            })
+          )}
 
-        {/* News & Announcement */}
-        <View style={[st.sectionHeader, { marginTop: 4 }]}>
-          <Text style={st.sectionTitle}>News & Announcement</Text>
+          {/* News & Announcement */}
+          <Text style={[st.sectionTitle, sectionLayout, st.newsSectionTitle]}>News &amp; Announcement</Text>
+          {news.length === 0 ? (
+            <View style={[st.card, cardLayout]}><Text style={st.cardMuted}>No announcements yet.</Text></View>
+          ) : (
+            news.slice(0, 3).map((item, index) => (
+              <TouchableOpacity key={item.id} style={[st.card, cardLayout]} activeOpacity={0.8}>
+                <HomeFeedArtwork name={newsIcon(item, index)} scale={0.82 * designScale} />
+                <View style={[st.cardCopy, { marginHorizontal: 5 * designScale }]}>
+                  <Text style={[st.cardTitle, cardTitleLayout]} numberOfLines={1}>{item.title}</Text>
+                  <Text style={[st.cardBody, cardBodyLayout]} numberOfLines={1}>{item.body}</Text>
+                </View>
+                <Text style={[st.cardTime, { fontSize: 4 * designScale }]}>{relativeTime(item.created_at)}</Text>
+                <MaterialCommunityIcons name="chevron-right" size={13 * designScale} color="#111111" />
+              </TouchableOpacity>
+            ))
+          )}
         </View>
-        {news.length === 0 ? (
-          <View style={st.card}><Text style={st.cardMuted}>No announcements yet.</Text></View>
-        ) : (
-          news.slice(0, 3).map((item) => (
-            <View key={item.id} style={st.card}>
-              <Text style={st.cardTitle}>{item.title}</Text>
-              <Text style={st.cardBody}>{item.body}</Text>
-            </View>
-          ))
-        )}
       </ScrollView>
-    </View>
+      </View>
   );
 }
 
 const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#e8e8ec' },
+  root: { flex: 1, backgroundColor: editorial.background },
   header: {
-    backgroundColor: '#0d3558',
-    paddingTop: 48, paddingBottom: 14, paddingHorizontal: 16,
+    backgroundColor: '#ffffff',
+    paddingTop: 27, paddingBottom: 9, paddingHorizontal: 14,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
   },
   headerLeft: { flexDirection: 'row', alignItems: 'center' },
-  logoCircle: {
-    width: 30, height: 30, borderRadius: 15,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center', justifyContent: 'center', marginRight: 8,
-    overflow: 'hidden',
-  },
-  logoImage: { width: 24, height: 24, borderRadius: 12 },
-  headerTitle: { color: '#fff', fontSize: 20, fontWeight: '900', letterSpacing: 1 },
-  headerRight: { flexDirection: 'row', alignItems: 'center' },
+  logoImage: { width: 29, height: 29, borderRadius: 15, marginRight: 8 },
+  headerTitle: { color: '#111111', fontFamily: 'Manrope_800ExtraBold', fontWeight: '800' },
   headerIconBtn: {
-    width: 34, height: 34, borderRadius: 17,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    width: 34, height: 34,
     alignItems: 'center', justifyContent: 'center',
     position: 'relative',
   },
-  headerBadge: {
-    position: 'absolute',
-    top: -5,
-    right: -7,
-    minWidth: 18,
-    height: 18,
-    paddingHorizontal: 4,
-    borderRadius: 9,
-    backgroundColor: '#ef4444',
-    borderWidth: 1,
-    borderColor: '#ffffff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerBadgeText: { color: '#ffffff', fontSize: 10, fontWeight: '900' },
   newNotificationLabel: {
     position: 'absolute',
     right: 42,
@@ -428,11 +531,11 @@ const st = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 5,
     shadowColor: '#000',
-    shadowOpacity: 0.16,
-    shadowRadius: 6,
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
     shadowOffset: { width: 0, height: 3 },
   },
-  newNotificationLabelText: { color: '#b42318', fontSize: 11, fontWeight: '800', textAlign: 'center' },
+  newNotificationLabelText: { color: editorial.accent, fontSize: 11, fontWeight: '700', textAlign: 'center' },
   notificationOverlay: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 30,
@@ -444,29 +547,29 @@ const st = StyleSheet.create({
   },
   notificationPanelFloating: {
     position: 'absolute',
-    top: 86,
+    top: 68,
     right: 14,
     left: 14,
     maxHeight: 480,
-    backgroundColor: '#f8fafc',
-    borderColor: '#cbd5e1',
+    backgroundColor: editorial.background,
+    borderColor: editorial.border,
     borderWidth: 1,
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
     shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 6 },
   },
   notificationPanelHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  notificationPanelTitle: { color: '#0d3558', fontSize: 15, fontWeight: '800' },
+  notificationPanelTitle: { color: editorial.ink, fontSize: 19, fontWeight: '400' },
   notificationArchiveLabel: { color: '#64748b', fontSize: 10, fontWeight: '700' },
   notificationHistoryList: { flexGrow: 0 },
   notificationPanelEmpty: { color: '#64748b', fontSize: 12 },
   notificationPanelItem: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: editorial.border,
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -474,76 +577,82 @@ const st = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   notificationItemHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  notificationPanelItemTitle: { color: '#0f2948', fontSize: 13, fontWeight: '800' },
-  notificationPanelItemCount: { color: '#1d4ed8', fontSize: 11, fontWeight: '700' },
-  notificationPanelItemBody: { color: '#334155', fontSize: 12, marginTop: 2 },
+  notificationPanelItemTitle: { color: editorial.ink, fontSize: 13, fontWeight: '700' },
+  notificationPanelItemCount: { color: editorial.accent, fontSize: 11, fontWeight: '700' },
+  notificationPanelItemBody: { color: editorial.muted, fontSize: 12, marginTop: 2 },
   notificationPanelItemTime: { color: '#64748b', fontSize: 11, marginTop: 3 },
   notificationExpandedWrap: {
     marginTop: 7,
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
+    borderTopColor: editorial.border,
     paddingTop: 7,
   },
   notificationExpandedHint: { color: '#64748b', fontSize: 11, marginTop: 6 },
   notificationUpdateRow: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: editorial.border,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 6,
     marginBottom: 6,
-    backgroundColor: '#f8fafc',
+    backgroundColor: editorial.accentSoft,
   },
-  notificationUpdateTitle: { color: '#0f2948', fontSize: 12, fontWeight: '700' },
-  notificationUpdateBody: { color: '#334155', fontSize: 11, marginTop: 2 },
+  notificationUpdateTitle: { color: editorial.ink, fontSize: 12, fontWeight: '700' },
+  notificationUpdateBody: { color: editorial.muted, fontSize: 11, marginTop: 2 },
   notificationUpdateTime: { color: '#64748b', fontSize: 10, marginTop: 2 },
-  scrollContent: { padding: 14, paddingBottom: 30 },
+  scrollContent: { flexGrow: 1, backgroundColor: editorial.background },
 
-  weatherCard: { borderRadius: 14, overflow: 'hidden', marginBottom: 12 },
-  weatherOverlay: {
-    backgroundColor: 'rgba(0,0,0,0.38)',
-    paddingVertical: 18, paddingHorizontal: 16, borderRadius: 14,
+  barangayHero: {
+    backgroundColor: editorial.surface,
+    marginHorizontal: 10,
+    marginTop: 10,
+    borderRadius: 14,
+    overflow: 'hidden',
   },
-  weatherLocation: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  weatherCondition: { color: '#fff', fontSize: 14, marginTop: 2 },
-
-  rescueBtn: {
-    backgroundColor: '#e67e22', borderRadius: 16, paddingVertical: 28, paddingHorizontal: 18,
-    flexDirection: 'row', alignItems: 'center', marginBottom: 14,
-    minHeight: 120,
-    shadowColor: '#c0392b',
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 5,
+  heroImage: { position: 'absolute', left: 0, top: 0, height: '100%' },
+  barangaySeal: { position: 'absolute', right: 1, top: -5 },
+  heroCopy: {
+    position: 'absolute',
   },
-  rescueIconBox: {
-    width: 68, height: 68, borderRadius: 16, backgroundColor: '#f5f5f5',
-    alignItems: 'center', justifyContent: 'center', marginRight: 16,
+  heroBarangay: { color: editorial.ink, letterSpacing: 0, includeFontPadding: false },
+  heroCity: { color: editorial.ink, fontWeight: '700', includeFontPadding: false },
+  heroWeatherRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 9,
   },
-  rescueTitle: { color: '#fff', fontSize: 24, fontWeight: '900', letterSpacing: 0.3 },
-  rescueSub: { color: 'rgba(255,255,255,0.92)', fontSize: 13, marginTop: 5, lineHeight: 19 },
-
-  reportRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 14 },
-  reportCard: {
-    width: '48%' as any, borderRadius: 14, paddingVertical: 18,
-    alignItems: 'center', justifyContent: 'center',
+  heroMetric: { alignItems: 'flex-start' },
+  heroWeatherItem: { flexDirection: 'row', alignItems: 'center' },
+  heroWeatherText: { color: editorial.ink, fontSize: 8, marginLeft: 3, fontWeight: '600' },
+  heroAdvice: { color: editorial.muted, fontSize: 8, lineHeight: 10, marginTop: 8 },
+  contentPanel: { flexGrow: 1, backgroundColor: editorial.background },
+  sectionTitle: {
+    color: editorial.ink,
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: '400',
+    paddingHorizontal: 9,
+    paddingTop: 7,
+    paddingBottom: 4,
   },
-  reportIconCircle: {
-    width: 46, height: 46, borderRadius: 23,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    alignItems: 'center', justifyContent: 'center',
+  newsSectionTitle: { paddingTop: 0 },
+  card: {
+    minHeight: 47,
+    backgroundColor: editorial.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: editorial.border,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    marginHorizontal: 8,
+    marginBottom: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  reportLabel: { color: '#fff', fontSize: 14, fontWeight: '800', marginTop: 6 },
-
-  sectionHeader: {
-    backgroundColor: '#d8d8db', borderRadius: 16,
-    paddingHorizontal: 16, paddingVertical: 12, marginBottom: 10,
-  },
-  sectionTitle: { color: '#0d3558', fontSize: 20, fontWeight: '800' },
-
-  card: { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10 },
-  cardTitle: { color: '#0d3558', fontSize: 15, fontWeight: '700' },
-  cardBody: { color: '#475569', fontSize: 13, marginTop: 4, lineHeight: 18 },
-  cardMuted: { color: '#94a3b8', fontSize: 12, marginTop: 4 },
+  cardCopy: { flex: 1, minWidth: 0, marginHorizontal: 10 },
+  cardTitle: { color: editorial.ink, fontWeight: '700', includeFontPadding: false },
+  cardBody: { color: editorial.muted, fontSize: 8, lineHeight: 11 },
+  cardTime: { color: editorial.muted, fontSize: 7, marginLeft: 4, alignSelf: 'flex-end' },
+  cardMuted: { color: '#777777', fontSize: 10 },
 });

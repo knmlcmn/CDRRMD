@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { BottomTabBarProps, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { AppText as Text, TypographyProvider } from './src/components/Typography';
+import {
+  NavigationIcon,
+  NavigationIconName,
+  SosNavigationIcon,
+} from './src/components/NavigationArtwork';
 import HomeScreen from './src/screens/HomeScreen';
 import WeatherScreen from './src/screens/WeatherScreen';
 import RescueMapScreen from './src/screens/RescueMapScreen';
@@ -83,8 +88,139 @@ async function syncMissingServerProfile(
 
 const Tab = createBottomTabNavigator();
 
+type NavigationTabButtonProps = {
+  name: string;
+  focused: boolean;
+  scale: number;
+  onPress: () => void;
+};
+
+function NavigationTabButton({ name, focused, scale, onPress }: NavigationTabButtonProps) {
+  const isSos = name === 'SOS';
+  const hover = useRef(new Animated.Value(0)).current;
+  const press = useRef(new Animated.Value(0)).current;
+
+  const motion = {
+    transform: [
+      { translateY: hover.interpolate({ inputRange: [0, 1], outputRange: [0, -1.5 * scale] }) },
+      { scale: hover.interpolate({ inputRange: [0, 1], outputRange: [1, 1.05] }) },
+      { scale: press.interpolate({ inputRange: [0, 1], outputRange: [1, 0.94] }) },
+    ],
+  };
+
+  function animateHover(toValue: number) {
+    Animated.timing(hover, { toValue, duration: 150, useNativeDriver: true }).start();
+  }
+
+  function animatePress(toValue: number) {
+    Animated.timing(press, { toValue, duration: 95, useNativeDriver: true }).start();
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityLabel={name}
+      accessibilityState={{ selected: focused }}
+      onPress={onPress}
+      onHoverIn={() => animateHover(1)}
+      onHoverOut={() => animateHover(0)}
+      onPressIn={() => animatePress(1)}
+      onPressOut={() => animatePress(0)}
+      style={styles.tabButton}
+    >
+      <Animated.View style={[styles.tabAnimatedContent, motion]}>
+        {isSos ? (
+          <View style={[styles.sosTabIconCircle, {
+            width: 43 * scale,
+            height: 40 * scale,
+            borderRadius: 21.5 * scale,
+            marginTop: -3 * scale,
+            shadowRadius: 2 * scale,
+            shadowOffset: { width: 0, height: 2 * scale },
+          }]}>
+            <SosNavigationIcon selected={focused} scale={scale} />
+            <Text style={[styles.sosIconLabel, {
+              top: 25 * scale,
+              fontSize: 5 * scale,
+              lineHeight: 6 * scale,
+            }]}>SOS</Text>
+          </View>
+        ) : (
+          <>
+            <View style={[styles.tabIconCircle, focused && styles.tabIconCircleSelected, {
+              width: 36 * scale,
+              height: (focused ? 25 : 15) * scale,
+              borderRadius: 12.5 * scale,
+            }]}>
+              <NavigationIcon
+                name={name as NavigationIconName}
+                selected={focused}
+                scale={scale}
+              />
+            </View>
+            {!focused ? (
+              <Text style={[styles.tabLabel, { fontSize: 6 * scale, lineHeight: 7 * scale }]}>
+                {name}
+              </Text>
+            ) : null}
+          </>
+        )}
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+function UserTabBar({ state, navigation }: BottomTabBarProps) {
+  const { width } = useWindowDimensions();
+  const scale = width / 216;
+
+  if (state.routes[state.index]?.name === 'Rescue Status') return null;
+
+  return (
+    <View style={[styles.tabBarShell, {
+      left: 7 * scale,
+      right: 7 * scale,
+      bottom: 26 * scale,
+      height: 29 * scale,
+      borderRadius: 14.5 * scale,
+      shadowRadius: 3 * scale,
+      shadowOffset: { width: 0, height: 2 * scale },
+    }]}>
+      {state.routes.filter((route) => route.name !== 'Rescue Status').map((route) => {
+        const focused = state.routes[state.index]?.key === route.key;
+        return (
+          <NavigationTabButton
+            key={route.key}
+            name={route.name}
+            focused={focused}
+            scale={scale}
+            onPress={() => {
+              const event = navigation.emit({
+                type: 'tabPress',
+                target: route.key,
+                canPreventDefault: true,
+              });
+              if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
+            }}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
 export default function App() {
+  return (
+    <TypographyProvider>
+      <AppContent />
+    </TypographyProvider>
+  );
+}
+
+function AppContent() {
   const RescueStatusScreen = require('./src/screens/RescueStatusScreen').default;
+  const { width: appWidth } = useWindowDimensions();
+  const uiScale = Math.min(appWidth / 216, 1.82);
   const [booting, setBooting] = useState(true);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [session, setSession] = useState<SessionData | null>(null);
@@ -256,33 +392,16 @@ export default function App() {
         <ResidentFloodAlert onTestAccountRemoved={handleLogout} />
         <Tab.Navigator
         id="MainTabs"
-        screenOptions={({ route }) => ({
+        tabBar={(props) => <UserTabBar {...props} />}
+        screenOptions={() => ({
           headerShown: false,
-          tabBarStyle: {
-            backgroundColor: '#0d3558',
-            borderTopWidth: 0,
-            height: 64,
-            paddingBottom: 8,
-            paddingTop: 6,
-          },
-          tabBarActiveTintColor: '#ffffff',
-          tabBarInactiveTintColor: '#94a3b8',
-          tabBarIcon: ({ color, size }) => {
-            const icons: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
-              Home: 'home-variant',
-              Weather: 'weather-partly-cloudy',
-              'Safe Zone': 'shield-check',
-              Family: 'account-group',
-              Me: 'account-circle',
-            };
-            return <MaterialCommunityIcons name={icons[route.name] ?? 'circle'} size={22} color={color} />;
-          },
-          tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
         })}
       >
-        <Tab.Screen name="Home" component={HomeScreen} />
+        <Tab.Screen name="Home">
+          {() => <HomeScreen barangayName={session.user.barangayName ?? ''} />}
+        </Tab.Screen>
         <Tab.Screen name="Weather" component={WeatherScreen} />
-        <Tab.Screen name="Safe Zone">
+        <Tab.Screen name="SOS">
           {() => <RescueMapScreen testModeEnabled={testModeEnabled} />}
         </Tab.Screen>
         <Tab.Screen name="Family">
@@ -308,10 +427,17 @@ export default function App() {
         accessibilityRole="button"
         accessibilityLabel={`Temporary service-area test mode is ${testModeEnabled ? 'on' : 'off'}`}
         activeOpacity={0.85}
+        hitSlop={8}
         onPress={() => setTestModeEnabled((current) => !current)}
-        style={[styles.testModeButton, testModeEnabled && styles.testModeButtonEnabled]}
+        style={[styles.testModeButton, testModeEnabled && styles.testModeButtonEnabled, {
+          bottom: 62 * uiScale,
+          right: 8 * uiScale,
+          paddingHorizontal: 5 * uiScale,
+          paddingVertical: 2 * uiScale,
+          borderRadius: 7 * uiScale,
+        }]}
       >
-        <Text style={styles.testModeButtonText}>
+        <Text style={[styles.testModeButtonText, { fontSize: 6 * uiScale }]}>
           TEST MODE: {testModeEnabled ? 'ON' : 'OFF'}
         </Text>
       </TouchableOpacity>
@@ -325,23 +451,57 @@ const styles = StyleSheet.create({
   },
   testModeButton: {
     position: 'absolute',
-    top: 8,
-    right: 8,
     zIndex: 1000,
     elevation: 20,
     borderWidth: 1,
     borderColor: '#ffffff',
-    borderRadius: 8,
     backgroundColor: '#64748b',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
   },
   testModeButtonEnabled: {
     backgroundColor: '#dc2626',
   },
   testModeButtonText: {
     color: '#ffffff',
-    fontSize: 11,
+    fontWeight: '900',
+  },
+  tabBarShell: {
+    position: 'absolute',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    shadowColor: '#000000',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
+  tabButton: {
+    flex: 1,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabAnimatedContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabIconCircle: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabIconCircleSelected: { backgroundColor: '#3777A8' },
+  tabLabel: { color: '#171717', fontFamily: 'Manrope_400Regular', fontWeight: '400', textAlign: 'center', includeFontPadding: false },
+  sosTabIconCircle: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    shadowColor: '#000000',
+    shadowOpacity: 0.2,
+  },
+  sosIconLabel: {
+    position: 'absolute',
+    color: '#ffffff',
+    fontFamily: 'Manrope_800ExtraBold',
     fontWeight: '900',
   },
   booting: {

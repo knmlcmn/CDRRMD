@@ -5,11 +5,12 @@ import {
   Image,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from '../components/Typography';
+import { DashboardHeader } from '../components/DashboardHeader';
+import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as Location from 'expo-location';
@@ -147,18 +148,14 @@ export default function ReportFloodScreen() {
   return (
     <View style={st.root}>
       {noticeModal}
-      <View style={st.header}>
-        <TouchableOpacity style={st.backBtn} onPress={() => navigation.goBack()}>
-          <MaterialCommunityIcons name="arrow-left" size={22} color="#fff" />
+      <DashboardHeader backAction={
+        <TouchableOpacity style={st.backBtn} onPress={() => navigation.goBack()} accessibilityLabel="Go back">
+          <MaterialCommunityIcons name="arrow-left" size={20} color="#111111" />
         </TouchableOpacity>
-        <View style={st.headerCenter}>
-          <MaterialCommunityIcons name="waves" size={24} color="#fff" />
-          <Text style={st.headerTitle}>Flood Report</Text>
-        </View>
-        <View style={st.headerRightSpacer} />
-      </View>
+      } />
 
       <ScrollView contentContainerStyle={st.content}>
+        <Text style={st.pageTitle}>Flood Report</Text>
         <Text style={st.reportId}>Report ID: {reportId}</Text>
 
         <View style={st.card}>
@@ -184,7 +181,7 @@ export default function ReportFloodScreen() {
             />
           </View>
           <TouchableOpacity style={st.secondaryBtn} onPress={useDeviceLocation} disabled={locating}>
-            {locating ? <ActivityIndicator color="#0f2948" /> : <Text style={st.secondaryBtnText}>Use Device Location</Text>}
+            {locating ? <ActivityIndicator color={editorial.accent} /> : <Text style={st.secondaryBtnText}>Use Device Location</Text>}
           </TouchableOpacity>
 
           <TouchableOpacity style={[st.secondaryBtn, { marginTop: 8 }]} onPress={pickProofImage}>
@@ -278,36 +275,26 @@ export default function ReportFloodScreen() {
 }
 
 const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#e8e8ec' },
-  header: {
-    backgroundColor: '#4d95bf',
-    paddingTop: 48,
-    paddingBottom: 14,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
+  root: { flex: 1, backgroundColor: '#ffffff' },
   backBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: 30,
+    height: 30,
+    marginRight: 4,
+    borderRadius: 15,
+    backgroundColor: '#f1f3f4',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerCenter: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { color: '#fff', fontSize: 24, fontWeight: '900' },
-  headerRightSpacer: { width: 34, height: 34 },
-  content: { padding: 14, paddingBottom: 30 },
-  reportId: { color: '#334155', fontSize: 20, fontWeight: '800', marginBottom: 10 },
-  card: { backgroundColor: '#f8fafc', borderRadius: 14, padding: 12, marginBottom: 10 },
-  sectionTitle: { color: '#0f172a', fontSize: 22, fontWeight: '900', marginBottom: 8 },
-  fieldLabel: { color: '#334155', fontSize: 14, fontWeight: '700', marginBottom: 6 },
+  content: { flexGrow: 1, padding: 14, paddingBottom: 30, backgroundColor: editorial.background },
+  pageTitle: { color: editorial.ink, fontSize: 24, lineHeight: 28, marginBottom: 8 },
+  reportId: { color: '#555555', fontSize: 12, fontWeight: '700', marginBottom: 10 },
+  card: { backgroundColor: editorial.surface, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: editorial.border },
+  sectionTitle: { color: editorial.ink, fontSize: 18, fontWeight: '400', marginBottom: 10 },
+  fieldLabel: { color: '#333333', fontSize: 12, fontWeight: '700', marginBottom: 6 },
   inputRow: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
+    borderColor: editorial.border,
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 8,
     marginBottom: 8,
@@ -315,74 +302,74 @@ const st = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#fff',
   },
-  input: { flex: 1, marginLeft: 8, color: '#0f2948', fontSize: 18 },
+  input: { flex: 1, marginLeft: 8, color: '#111111', fontSize: 14 },
   infoRow: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
+    borderColor: editorial.border,
+    borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#fafafa',
   },
-  infoText: { marginLeft: 8, color: '#0f2948', fontSize: 16, fontWeight: '700' },
+  infoText: { marginLeft: 8, color: '#333333', fontSize: 13, fontWeight: '700' },
   secondaryBtn: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
+    borderColor: editorial.accent,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 9,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: editorial.accentSoft,
   },
-  secondaryBtnText: { color: '#0f2948', fontSize: 14, fontWeight: '700' },
+  secondaryBtnText: { color: editorial.accent, fontSize: 12, fontWeight: '700' },
   previewImage: {
     width: '100%',
     height: 140,
     borderRadius: 10,
     marginTop: 8,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: '#d8dee3',
   },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   chip: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
+    borderColor: '#d8dee3',
+    borderRadius: 7,
     paddingHorizontal: 10,
     paddingVertical: 7,
     backgroundColor: '#fff',
   },
   smallChip: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
+    borderColor: '#d8dee3',
+    borderRadius: 7,
     paddingHorizontal: 16,
     paddingVertical: 7,
     backgroundColor: '#fff',
   },
-  chipActive: { backgroundColor: '#e0f2fe', borderColor: '#7dd3fc' },
-  chipText: { color: '#334155', fontSize: 14, fontWeight: '700' },
-  chipTextActive: { color: '#0c4a6e' },
+  chipActive: { backgroundColor: editorial.accentSoft, borderColor: editorial.accent },
+  chipText: { color: '#333333', fontSize: 12, fontWeight: '700' },
+  chipTextActive: { color: editorial.accent },
   notesInput: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 10,
+    borderColor: '#d8dee3',
+    borderRadius: 8,
     minHeight: 90,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    color: '#0f2948',
-    fontSize: 16,
+    color: '#111111',
+    fontSize: 14,
     backgroundColor: '#fff',
   },
   submitBtn: {
-    backgroundColor: '#2f87b7',
-    borderRadius: 26,
+    backgroundColor: editorial.accent,
+    borderRadius: 10,
     paddingVertical: 13,
     alignItems: 'center',
   },
-  submitBtnText: { color: '#fff', fontSize: 20, fontWeight: '900' },
+  submitBtnText: { color: '#fff', fontSize: 14, fontWeight: '900' },
 });

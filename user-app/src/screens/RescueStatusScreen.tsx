@@ -1,5 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { AppText as Text } from '../components/Typography';
+import { DashboardHeader } from '../components/DashboardHeader';
+import { editorial } from '../components/EditorialTheme';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { api } from '../services/api';
@@ -220,14 +223,14 @@ export default function RescueStatusScreen() {
 
   return (
     <View style={st.root}>
-      <View style={st.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={st.backBtn}>
-          <MaterialCommunityIcons name="arrow-left" size={20} color="#fff" />
+      <DashboardHeader backAction={
+        <TouchableOpacity onPress={() => navigation.goBack()} style={st.backBtn} accessibilityLabel="Back to rescue requests">
+          <MaterialCommunityIcons name="arrow-left" size={20} color="#111111" />
         </TouchableOpacity>
-        <Text style={st.headerTitle}>Rescue Request Status</Text>
-      </View>
+      } />
 
       <ScrollView contentContainerStyle={st.content}>
+        <Text style={st.pageTitle}>Rescue Request Status</Text>
         {error ? <Text style={st.errorText}>{error}</Text> : null}
 
         <View style={st.mainCard}>
@@ -287,28 +290,20 @@ export default function RescueStatusScreen() {
 }
 
 const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#e5e7eb' },
-  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#eef2f7' },
+  root: { flex: 1, backgroundColor: editorial.background },
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: editorial.background },
   loadingText: { marginTop: 10, fontSize: 13, color: '#475569', fontWeight: '600' },
-  header: {
-    backgroundColor: '#0d3558',
-    paddingTop: 48,
-    paddingBottom: 14,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   backBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(255,255,255,0.16)',
-    marginRight: 10,
+    backgroundColor: '#ffffff',
+    marginRight: 6,
   },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  content: { padding: 14, paddingBottom: 28 },
+  content: { flexGrow: 1, paddingHorizontal: 14, paddingTop: 16, paddingBottom: 40, backgroundColor: editorial.background },
+  pageTitle: { color: editorial.ink, fontSize: 24, lineHeight: 28, marginBottom: 14 },
   errorText: {
     color: '#b91c1c',
     fontWeight: '700',
@@ -322,12 +317,12 @@ const st = StyleSheet.create({
     marginBottom: 10,
   },
   mainCard: {
-    backgroundColor: '#f3f4f6',
-    borderRadius: 18,
+    backgroundColor: editorial.surface,
+    borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 16,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: editorial.border,
   },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   statusText: { color: '#1f8b30', fontSize: 18, fontWeight: '500' },
@@ -352,15 +347,15 @@ const st = StyleSheet.create({
     justifyContent: 'space-between',
   },
   infoCard: {
-    marginTop: 12,
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
+    marginTop: 6,
+    backgroundColor: editorial.surface,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#dbe2ea',
+    borderColor: editorial.border,
     padding: 14,
   },
-  infoTitle: { color: '#0f2948', fontSize: 16, fontWeight: '900', marginBottom: 10 },
+  infoTitle: { color: editorial.ink, fontSize: 18, fontWeight: '400', marginBottom: 10 },
   label: { color: '#475569', fontSize: 12, fontWeight: '700', marginTop: 8 },
-  value: { color: '#0f2948', fontSize: 14, fontWeight: '700', marginTop: 2 },
+  value: { color: '#181818', fontSize: 14, fontWeight: '700', marginTop: 2 },
   metaHint: { color: '#64748b', fontSize: 12, marginTop: 8, fontWeight: '600' },
 });

@@ -1,5 +1,8 @@
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from '../components/Typography';
+import { DashboardHeader } from '../components/DashboardHeader';
+import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { AppProfile, getAccountById, updateAccountProfile } from '../services/appAccount';
@@ -118,17 +121,14 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
 
   return (
     <View style={st.root}>
-      {/* Header */}
-      <View style={st.header}>
-        <Text style={st.headerTitle}>Me</Text>
-        {!isEditing ? (
-          <TouchableOpacity style={st.editHeaderBtn} onPress={onStartEdit}>
-            <Text style={st.editHeaderText}>Edit</Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
+      <DashboardHeader action={!isEditing ? (
+        <TouchableOpacity style={st.editHeaderBtn} onPress={onStartEdit}>
+          <Text style={st.editHeaderText}>Edit</Text>
+        </TouchableOpacity>
+      ) : null} />
 
-      <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: 30 }}>
+      <ScrollView contentContainerStyle={st.scrollContent}>
+        <Text style={st.pageTitle}>Me</Text>
         {/* Profile Card */}
         <View style={st.card}>
           <View style={st.profileRow}>
@@ -275,58 +275,54 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
 }
 
 const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#d4d4d8' },
-
-  header: {
-    backgroundColor: '#0d3558', paddingTop: 48, paddingBottom: 14, paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerTitle: { color: '#fff', fontSize: 20, fontWeight: '900', flex: 1 },
+  root: { flex: 1, backgroundColor: editorial.background },
+  scrollContent: { flexGrow: 1, paddingHorizontal: 14, paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
+  pageTitle: { color: editorial.ink, fontSize: 24, lineHeight: 28, marginBottom: 14 },
   editHeaderBtn: {
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
+    borderColor: editorial.border,
     borderRadius: 14,
     paddingHorizontal: 12,
     paddingVertical: 5,
+    backgroundColor: '#ffffff',
   },
-  editHeaderText: { color: '#fff', fontSize: 13, fontWeight: '800' },
+  editHeaderText: { color: '#111111', fontSize: 13, fontWeight: '700' },
 
-  card: { backgroundColor: '#f8fafc', borderRadius: 14, padding: 14, marginBottom: 10 },
-  barangayLabel: { color: '#334155', fontSize: 13, fontWeight: '700', marginBottom: 7 },
+  card: { backgroundColor: editorial.surface, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: editorial.border },
+  barangayLabel: { color: editorial.ink, fontSize: 14, fontWeight: '700', marginBottom: 8 },
   barangayChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 10 },
-  barangayChoice: { borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 7 },
-  barangayChoiceActive: { backgroundColor: '#0d3558', borderColor: '#0d3558' },
+  barangayChoice: { borderWidth: 1, borderColor: editorial.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },
+  barangayChoiceActive: { backgroundColor: editorial.accent, borderColor: editorial.accent },
   barangayChoiceText: { color: '#475569', fontSize: 12, fontWeight: '700' },
   barangayChoiceTextActive: { color: '#fff' },
   areaHeaderRow: { flexDirection: 'row', alignItems: 'center' },
-  areaIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
+  areaIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: editorial.accentSoft, alignItems: 'center', justifyContent: 'center' },
   areaCopy: { flex: 1, marginLeft: 10 },
-  areaTitle: { color: '#64748b', fontSize: 11, fontWeight: '700' },
-  areaValue: { color: '#0f2948', fontSize: 15, fontWeight: '900', marginTop: 2 },
-  changeAreaBtn: { borderWidth: 1, borderColor: '#0d3558', borderRadius: 16, paddingHorizontal: 11, paddingVertical: 7 },
-  changeAreaText: { color: '#0d3558', fontSize: 11, fontWeight: '900' },
-  areaHelp: { color: '#64748b', fontSize: 11, marginTop: 14, marginBottom: 8 },
+  areaTitle: { color: editorial.muted, fontSize: 11, fontWeight: '700' },
+  areaValue: { color: '#181818', fontSize: 15, fontWeight: '800', marginTop: 2 },
+  changeAreaBtn: { borderWidth: 1, borderColor: editorial.accent, borderRadius: 10, paddingHorizontal: 11, paddingVertical: 7 },
+  changeAreaText: { color: editorial.accent, fontSize: 11, fontWeight: '800' },
+  areaHelp: { color: editorial.muted, fontSize: 11, marginTop: 14, marginBottom: 8 },
   areaError: { color: '#b91c1c', fontSize: 11, marginTop: 8 },
 
   profileRow: { flexDirection: 'row', alignItems: 'center' },
   avatar: {
-    width: 50, height: 50, borderRadius: 25, backgroundColor: '#e2e8f0',
+    width: 50, height: 50, borderRadius: 25, backgroundColor: editorial.accentSoft,
     alignItems: 'center', justifyContent: 'center',
   },
-  profileName: { color: '#0f2948', fontSize: 16, fontWeight: '800' },
-  profileHandle: { color: '#64748b', fontSize: 13, marginTop: 1 },
+  profileName: { color: '#181818', fontSize: 16, fontWeight: '800' },
+  profileHandle: { color: editorial.muted, fontSize: 13, marginTop: 1 },
 
   changeImgBtn: {
-    borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 12, paddingVertical: 8, paddingHorizontal: 12,
+    borderWidth: 1, borderColor: editorial.border, borderRadius: 10, paddingVertical: 8, paddingHorizontal: 12,
     flexDirection: 'row', alignItems: 'center', marginTop: 12,
   },
   changeImgText: { color: '#475569', fontSize: 13, marginLeft: 6 },
 
   idRow: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 24,
+    borderColor: editorial.border,
+    borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
     flexDirection: 'row',
@@ -334,34 +330,34 @@ const st = StyleSheet.create({
     marginBottom: 10,
   },
   idLabel: { color: '#475569', fontSize: 13, marginLeft: 8, flex: 1 },
-  idValue: { color: '#0f2948', fontSize: 12, fontWeight: '800' },
+  idValue: { color: '#181818', fontSize: 12, fontWeight: '800' },
 
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: editorial.border,
     paddingVertical: 10,
   },
-  infoLabel: { color: '#64748b', fontSize: 13, fontWeight: '700' },
-  infoValue: { color: '#0f2948', fontSize: 13, fontWeight: '700', maxWidth: '60%' },
+  infoLabel: { color: editorial.muted, fontSize: 13, fontWeight: '700' },
+  infoValue: { color: '#181818', fontSize: 13, fontWeight: '700', maxWidth: '60%' },
 
   inputRow: {
-    borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 24, paddingHorizontal: 14, paddingVertical: 10,
+    borderWidth: 1, borderColor: editorial.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
     flexDirection: 'row', alignItems: 'center', marginBottom: 10,
   },
-  input: { flex: 1, marginLeft: 8, color: '#0f2948', fontSize: 14 },
+  input: { flex: 1, marginLeft: 8, color: editorial.ink, fontSize: 14 },
 
   saveBtn: {
-    backgroundColor: '#1f678f', borderRadius: 24, paddingVertical: 12, alignItems: 'center', marginTop: 4, flex: 1,
+    backgroundColor: editorial.accent, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4, flex: 1,
   },
   saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '800' },
   editActionsRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 8 },
   cancelBtn: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 24,
+    borderColor: editorial.border,
+    borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
     flex: 1,

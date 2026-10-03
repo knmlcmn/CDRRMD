@@ -1,5 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from '../components/Typography';
+import { DashboardHeader } from '../components/DashboardHeader';
+import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { AppAccount, getFamilyAccounts, inviteFamilyById } from '../services/appAccount';
@@ -93,23 +96,21 @@ export default function FamilyScreen({ appUserId }: Props) {
 
   return (
     <View style={st.root}>
-      {/* Header */}
-      <View style={st.header}>
-        <MaterialCommunityIcons name="arrow-left" size={22} color="#fff" />
-        <Text style={st.headerTitle}>Family Status</Text>
-        <TouchableOpacity onPress={addMember} style={st.addBtn}>
-          <MaterialCommunityIcons name="account-plus-outline" size={18} color="#fff" />
+      <DashboardHeader action={
+        <TouchableOpacity onPress={addMember} style={st.addBtn} accessibilityLabel="Invite family member">
+          <MaterialCommunityIcons name="account-plus-outline" size={18} color="#111111" />
         </TouchableOpacity>
-      </View>
+      } />
 
-      <ScrollView contentContainerStyle={{ padding: 14, paddingBottom: 30 }}>
+      <ScrollView contentContainerStyle={st.scrollContent}>
+        <Text style={st.pageTitle}>Family Status</Text>
         {/* Counters */}
         <View style={st.counterRow}>
-          <View style={[st.counterCard, { backgroundColor: '#c4e8cf' }]}>
+          <View style={st.counterCard}>
             <Text style={[st.counterLabel, { color: '#166534' }]}>Safe</Text>
             <Text style={[st.counterValue, { color: '#14532d' }]}>{counts.safe}</Text>
           </View>
-          <View style={[st.counterCard, { backgroundColor: '#f0e5b6' }]}>
+          <View style={st.counterCard}>
             <Text style={[st.counterLabel, { color: '#b45309' }]}>No Response</Text>
             <Text style={[st.counterValue, { color: '#78350f' }]}>{counts.nr}</Text>
           </View>
@@ -200,29 +201,26 @@ export default function FamilyScreen({ appUserId }: Props) {
 }
 
 const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#d4d4d8' },
-
-  header: {
-    backgroundColor: '#0d3558', paddingTop: 48, paddingBottom: 14, paddingHorizontal: 16,
-    flexDirection: 'row', alignItems: 'center',
-  },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '800', flex: 1, marginLeft: 10 },
+  root: { flex: 1, backgroundColor: editorial.background },
+  scrollContent: { flexGrow: 1, paddingHorizontal: 14, paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
+  pageTitle: { color: editorial.ink, fontSize: 24, lineHeight: 28, marginBottom: 14 },
   addBtn: {
     width: 34, height: 34, borderRadius: 17,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: '#ffffff',
     alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: editorial.border,
   },
 
-  counterRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  counterCard: { width: '48%' as any, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10 },
+  counterRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  counterCard: { width: '48%' as any, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border },
   counterLabel: { fontSize: 14, fontWeight: '600' },
   counterValue: { fontSize: 32, fontWeight: '900', lineHeight: 36 },
 
-  card: { backgroundColor: '#f8fafc', borderRadius: 14, padding: 14, marginBottom: 10 },
+  card: { backgroundColor: editorial.surface, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: editorial.border },
 
   yourStatusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  yourStatusLabel: { color: '#64748b', fontSize: 13 },
-  yourStatusNote: { color: '#0f172a', fontSize: 14, fontWeight: '700', marginTop: 6 },
+  yourStatusLabel: { color: '#585858', fontSize: 13 },
+  yourStatusNote: { color: '#181818', fontSize: 13, fontWeight: '600', marginTop: 6 },
 
   badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
   badgeText: { fontSize: 12, fontWeight: '700', marginLeft: 4 },
@@ -232,18 +230,18 @@ const st = StyleSheet.create({
 
   inviteRow: {
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 24,
+    borderColor: editorial.border,
+    borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 8,
     marginTop: 8,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  inviteInput: { flex: 1, marginLeft: 8, color: '#0f2948', fontSize: 14 },
+  inviteInput: { flex: 1, marginLeft: 8, color: editorial.ink, fontSize: 14 },
   inviteBtn: {
-    backgroundColor: '#1f678f',
-    borderRadius: 12,
+    backgroundColor: editorial.accent,
+    borderRadius: 10,
     paddingVertical: 10,
     alignItems: 'center',
     marginTop: 10,
@@ -252,9 +250,9 @@ const st = StyleSheet.create({
   errorText: { color: '#dc2626', fontSize: 12, marginTop: 8 },
 
   memberRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  memberIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
-  memberName: { color: '#0f2948', fontSize: 15, fontWeight: '800' },
-  memberRelation: { color: '#475569', fontSize: 12, marginTop: 1 },
+  memberIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: editorial.accentSoft, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  memberName: { color: '#181818', fontSize: 14, fontWeight: '700' },
+  memberRelation: { color: '#585858', fontSize: 12, marginTop: 1 },
   memberFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  memberMeta: { color: '#94a3b8', fontSize: 11 },
+  memberMeta: { color: '#656565', fontSize: 11 },
 });

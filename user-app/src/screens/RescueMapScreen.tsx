@@ -7,11 +7,12 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
-  Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from '../components/Typography';
+import { DashboardHeader } from '../components/DashboardHeader';
+import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import PlatformMap from '../components/PlatformMap';
@@ -1770,11 +1771,10 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
   return (
     <View style={st.root}>
       {noticeModal}
-      <View style={st.header}>
-        <Text style={st.headerTitle}>Request Rescue</Text>
-      </View>
+      <DashboardHeader />
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+      <ScrollView contentContainerStyle={st.scrollContent}>
+        <Text style={st.pageTitle}>Request Rescue</Text>
         {/* Fullscreen map modal */}
         <Modal visible={isMapFullscreen} animationType="fade" statusBarTranslucent onRequestClose={() => setIsMapFullscreen(false)}>
           <View style={{ flex: 1, backgroundColor: '#000' }}>
@@ -1965,19 +1965,16 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
 }
 
 const st = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#e5e7eb' },
-  loadingWrap: { flex: 1, backgroundColor: '#eef2f7', alignItems: 'center', justifyContent: 'center' },
+  root: { flex: 1, backgroundColor: editorial.background },
+  loadingWrap: { flex: 1, backgroundColor: editorial.background, alignItems: 'center', justifyContent: 'center' },
   loadingText: { color: '#475569', marginTop: 10, fontSize: 13, fontWeight: '600' },
 
-  header: {
-    backgroundColor: '#0d3558', paddingTop: 48, paddingBottom: 14, paddingHorizontal: 16,
-    flexDirection: 'row', alignItems: 'center',
-  },
-  headerTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  scrollContent: { flexGrow: 1, paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
+  pageTitle: { color: editorial.ink, fontSize: 24, lineHeight: 28, marginHorizontal: 14, marginBottom: 6 },
 
   mapContainer: {
     marginHorizontal: 14, marginTop: 10, borderRadius: 12, overflow: 'hidden',
-    borderWidth: 1, borderColor: '#cbd5e1', aspectRatio: 1.08, minHeight: 280, maxHeight: 420, backgroundColor: '#fff',
+    borderWidth: 1, borderColor: editorial.border, aspectRatio: 1.08, minHeight: 280, maxHeight: 420, backgroundColor: editorial.surface,
   },
   map: { flex: 1 },
   fsEnterBtn: {
@@ -1997,44 +1994,44 @@ const st = StyleSheet.create({
   notesInput: {
     marginTop: 10,
     backgroundColor: '#ffffff',
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: editorial.border,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 13,
-    color: '#0f2948',
+    color: editorial.ink,
     minHeight: 72,
     lineHeight: 19,
   },
 
   listWrap: { paddingHorizontal: 14, marginTop: 12 },
-  areaSectionTitle: { color: '#0f2948', fontSize: 14, fontWeight: '800', marginBottom: 8 },
+  areaSectionTitle: { color: editorial.ink, fontSize: 18, fontWeight: '400', marginBottom: 8 },
   areaCountText: { color: '#475569', fontSize: 11, fontWeight: '600', marginBottom: 8 },
   areaCard: {
-    backgroundColor: '#ffffff', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 12,
-    marginBottom: 10, flexDirection: 'row', alignItems: 'flex-start',
-    borderWidth: 1, borderColor: '#e2e8f0',
+    backgroundColor: editorial.surface, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14,
+    marginBottom: 8, flexDirection: 'row', alignItems: 'flex-start',
+    borderWidth: 1, borderColor: editorial.border,
   },
   areaCardSelected: { borderColor: '#86efac', backgroundColor: '#f0fdf4' },
-  areaName: { color: '#0f2948', fontSize: 14, fontWeight: '800' },
-  areaMetaLabel: { color: '#0f2948', fontSize: 11, marginTop: 5, fontWeight: '700' },
-  areaAddr: { color: '#475569', fontSize: 12, marginTop: 2 },
+  areaName: { color: '#181818', fontSize: 14, fontWeight: '700' },
+  areaMetaLabel: { color: editorial.muted, fontSize: 11, marginTop: 5, fontWeight: '700' },
+  areaAddr: { color: '#585858', fontSize: 12, marginTop: 2 },
   areaBestTag: { color: '#15803d', fontSize: 11, marginTop: 4, fontWeight: '700' },
   areaHintCard: {
-    backgroundColor: '#ecfeff',
+    backgroundColor: editorial.surface,
     borderRadius: 10,
     paddingVertical: 8,
     paddingHorizontal: 10,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#bae6fd',
+    borderColor: editorial.border,
   },
-  areaHintText: { color: '#0f2948', fontSize: 11, fontWeight: '600' },
+  areaHintText: { color: editorial.muted, fontSize: 11, fontWeight: '600' },
 
   actionWrap: { paddingHorizontal: 14, marginTop: 2 },
   actionBtn: {
-    backgroundColor: '#0d3558',
+    backgroundColor: editorial.accent,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -2045,7 +2042,7 @@ const st = StyleSheet.create({
   bottomActionRow: { flexDirection: 'row', marginTop: 10, gap: 8 },
   uploadBtn: {
     flex: 1,
-    backgroundColor: '#0369a1',
+    backgroundColor: editorial.accent,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',

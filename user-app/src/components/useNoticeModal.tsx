@@ -1,5 +1,7 @@
 import { useCallback, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './Typography';
+import { editorial } from './EditorialTheme';
 
 export function useNoticeModal() {
   const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
@@ -33,9 +35,9 @@ export function submissionErrorNotice(error: any, fallback: string) {
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.55)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  card: { width: '100%', maxWidth: 420, borderRadius: 16, backgroundColor: '#fff', padding: 24 },
-  title: { color: '#0f2948', fontSize: 21, fontWeight: '800', marginBottom: 12 },
-  message: { color: '#334155', fontSize: 16, lineHeight: 24, marginBottom: 22 },
-  button: { backgroundColor: '#0d3558', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  card: { width: '100%', maxWidth: 420, borderRadius: 14, backgroundColor: editorial.surface, padding: 24 },
+  title: { color: editorial.ink, fontSize: 24, fontWeight: '400', marginBottom: 12 },
+  message: { color: editorial.muted, fontSize: 15, lineHeight: 22, marginBottom: 22 },
+  button: { backgroundColor: editorial.accent, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

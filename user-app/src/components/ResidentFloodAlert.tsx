@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { AppText as Text } from './Typography';
+import { editorial } from './EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { api } from '../services/api';
@@ -122,11 +124,11 @@ export default function ResidentFloodAlert({ onTestAccountRemoved }: Props) {
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: 'rgba(15,23,42,.38)' },
-  card: { width: '100%', maxWidth: 340, overflow: 'hidden', alignItems: 'center', borderRadius: 20, backgroundColor: 'rgba(255,255,255,.98)', paddingTop: 22, shadowColor: '#000', shadowOpacity: .24, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 18 },
+  card: { width: '100%', maxWidth: 340, overflow: 'hidden', alignItems: 'center', borderRadius: 14, backgroundColor: editorial.surface, paddingTop: 22 },
   iconCircle: { width: 54, height: 54, borderRadius: 27, alignItems: 'center', justifyContent: 'center', marginBottom: 11 },
   level: { fontSize: 11, fontWeight: '900', letterSpacing: 1.1, marginBottom: 7 },
-  title: { color: '#101828', fontSize: 18, fontWeight: '800', textAlign: 'center', paddingHorizontal: 22 },
-  body: { color: '#475467', fontSize: 14, lineHeight: 20, textAlign: 'center', paddingHorizontal: 24, marginTop: 9 },
+  title: { color: editorial.ink, fontSize: 22, fontWeight: '400', textAlign: 'center', paddingHorizontal: 22 },
+  body: { color: editorial.muted, fontSize: 14, lineHeight: 20, textAlign: 'center', paddingHorizontal: 24, marginTop: 9 },
   locationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 13, gap: 4 },
   location: { color: '#344054', fontSize: 13, fontWeight: '700' },
   time: { color: '#98a2b3', fontSize: 11, marginTop: 7, marginBottom: 17 },
