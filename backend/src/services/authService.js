@@ -23,7 +23,7 @@ function resolveResidentBarangay(value, address) {
 
 // Keeps API response shape stable even if DB column names differ.
 function toUserResponse(user) {
-  const accountPrefix = user.role === 'admin' ? 'ADM' : user.role === 'barangay' ? 'BRG' : user.role === 'rescuer' ? 'RSC' : null;
+  const accountPrefix = user.role === 'admin' ? 'ADM' : user.role === 'barangay' ? 'BRG' : user.role === 'rescuer' ? 'RSC' : user.role === 'barangay_rescuer' ? 'BRS' : null;
   const createdYear = user.created_at ? new Date(user.created_at).getFullYear() : null;
   return {
     id: user.id,
@@ -70,10 +70,10 @@ async function register(payload) {
   const rawUsername = String(username || '').trim();
   const finalUsername = rawUsername.length > 0 ? rawUsername : trimmedEmail.split('@')[0];
   const passwordHash = await bcrypt.hash(password, 10);
-  // A new resident's barangay is intentionally left empty here. The user app
-  // requires location permission immediately after registration and assigns
-  // the nearest supported barangay from verified coordinates.
   const residentBarangay = resolveResidentBarangay(barangayName, address);
+  if (!residentBarangay) {
+    throw httpError(400, 'Please select a supported barangay when creating your account.');
+  }
 
   const user = await userModel.createUser({
     username: finalUsername,
@@ -106,6 +106,8 @@ async function login(payload) {
       ? 'barangay'
       : portal === 'rescuer'
         ? 'rescuer'
+        : portal === 'barangay_rescuer'
+          ? 'barangay_rescuer'
         : null;
 
   if (staffRole) {
@@ -114,7 +116,9 @@ async function login(payload) {
       ? /^ADM-\d{4}-\d{5}$/
       : staffRole === 'barangay'
         ? /^BRG-\d{4}-\d{5}$/
-        : /^RSC-\d{4}-\d{5}$/;
+        : staffRole === 'rescuer'
+          ? /^RSC-\d{4}-\d{5}$/
+          : /^BRS-\d{4}-\d{5}$/;
     if (!expectedPattern.test(normalizedAccountId) || !password) {
       throw httpError(401, 'Invalid account ID or password.');
     }
@@ -149,7 +153,7 @@ async function login(payload) {
     throw httpError(401, 'Invalid email or password.');
   }
 
-  if (['admin', 'barangay', 'rescuer'].includes(user.role)) {
+  if (['admin', 'barangay', 'rescuer', 'barangay_rescuer'].includes(user.role)) {
     throw httpError(401, 'Staff accounts must log in with their account ID through the correct web portal.');
   }
 

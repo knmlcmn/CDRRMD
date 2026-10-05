@@ -5,6 +5,7 @@ import type { EvacuationAreaItem } from '../types';
 import { buildCalambaMapHtml, type Coordinate } from '../utils/calambaMapHtml';
 
 type Props = {
+  responderRole: 'rescuer' | 'barangay_rescuer';
   onLogout: () => void;
   onAuthError: () => void;
   onOpenIncidents: () => void;
@@ -23,6 +24,8 @@ type Assignment = {
   longitude: number;
   resident_location_updated_at?: string | null;
   notes: string | null;
+  estimated_people: number | null;
+  evacuees_reserved: number;
   assigned_barangay: string;
   evacuation_area_id: number | null;
   evacuation_area_name: string | null;
@@ -31,6 +34,7 @@ type Assignment = {
   reporter_name: string | null;
   reporter_contact: string | null;
   assigned_at: string;
+  responder_acknowledged_at: string | null;
   picked_up_at: string | null;
 };
 
@@ -49,18 +53,13 @@ type BackupHistory = {
 };
 
 type ApiError = { response?: { status?: number; data?: { message?: string } } };
-type ProximityAction = 'pickup' | 'complete';
 type LocationUpdate = {
   backupRequestId?: number;
-  proximityAction?: ProximityAction | null;
+  pickupConfirmed?: boolean;
 };
 
 function sameData(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
-}
-
-function updateBackupPhase(backupRequestId: number, action: ProximityAction) {
-  return api.patch(`/backup-requests/${backupRequestId}/${action}`);
 }
 
 async function fetchShortestRoute(from: Coordinate, to: Coordinate) {
@@ -78,7 +77,7 @@ async function fetchShortestRoute(from: Coordinate, to: Coordinate) {
   };
 }
 
-export default function RescuerDashboardPage({ onLogout, onAuthError, onOpenIncidents, onOpenFloodMonitoring, onOpenAccount }: Props) {
+export default function RescuerDashboardPage({ responderRole, onLogout, onAuthError, onOpenIncidents, onOpenFloodMonitoring, onOpenAccount }: Props) {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [history, setHistory] = useState<BackupHistory[]>([]);
   const [areas, setAreas] = useState<EvacuationAreaItem[]>([]);
@@ -91,7 +90,6 @@ export default function RescuerDashboardPage({ onLogout, onAuthError, onOpenInci
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const lastLocationPush = useRef(0);
-  const proximityMutation = useRef(false);
   const mapFrameRef = useRef<HTMLIFrameElement | null>(null);
   const lastFocusedRescue = useRef('');
   const [mapReady, setMapReady] = useState(false);
@@ -148,19 +146,8 @@ export default function RescuerDashboardPage({ onLogout, onAuthError, onOpenInci
         const point = { latitude: coords.latitude, longitude: coords.longitude };
         setLocation(point);
         api.patch<LocationUpdate>('/rescuers/location', { ...point, accuracy: coords.accuracy })
-          .then(async ({ data }) => {
-            if (!data.proximityAction || !data.backupRequestId || proximityMutation.current) return;
-            proximityMutation.current = true;
-            try {
-              await updateBackupPhase(data.backupRequestId, data.proximityAction);
-              await loadData();
-            } catch (error: unknown) {
-              const err = error as ApiError;
-              if (err.response?.status === 401) onAuthError();
-              else setError(err.response?.data?.message || 'Failed to update the incident status automatically.');
-            } finally {
-              proximityMutation.current = false;
-            }
+          .then(({ data }) => {
+            if (data.pickupConfirmed) void loadData();
           })
           .catch(() => {});
       },
@@ -176,7 +163,7 @@ export default function RescuerDashboardPage({ onLogout, onAuthError, onOpenInci
   );
 
   const destination = useMemo<Coordinate | null>(() => {
-    if (!selected) return null;
+    if (!selected?.responder_acknowledged_at) return null;
     if (selected.picked_up_at) {
       const latitude = Number(selected.evacuation_latitude);
       const longitude = Number(selected.evacuation_longitude);
@@ -231,9 +218,9 @@ export default function RescuerDashboardPage({ onLogout, onAuthError, onOpenInci
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/flood-risk/calamba/rain-impact`,
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/weather/wind-field`,
     { boundary: true, floodHazard: false, evacuationAreas: true, incidentMarkers: true, responderRoute: true, weatherOverlay: false, temperatureOverlay: false, humidityOverlay: false, windOverlay: false },
-    'Your live CDRRMD Rescuer location',
-    { focusOnIncident: true, allowLiveRouteUpdates: true },
-  ) : '', [areas, areasLoaded]);
+    responderRole === 'barangay_rescuer' ? 'Your live Barangay Rescuer location' : 'Your live CDRRMD Rescuer location',
+    { focusOnIncident: true, focusOnResponder: true, allowLiveRouteUpdates: true, responderKind: responderRole === 'barangay_rescuer' ? 'barangay' : 'cddrmd' },
+  ) : '', [areas, areasLoaded, responderRole]);
 
   const postMapUpdate = useCallback((recenter = false) => {
     if (!mapReady) return;
@@ -248,7 +235,7 @@ export default function RescuerDashboardPage({ onLogout, onAuthError, onOpenInci
     }, '*');
   }, [destination, incidentPoints, location, mapReady, route, selected?.report_code]);
 
-  const focusKey = selected ? `${selected.backup_request_id}:${Boolean(selected.picked_up_at)}` : '';
+  const focusKey = selected ? `${selected.backup_request_id}:${Boolean(selected.responder_acknowledged_at)}:${Boolean(selected.picked_up_at)}` : '';
   useEffect(() => {
     if (!mapReady) return;
     const shouldRecenter = Boolean(focusKey) && lastFocusedRescue.current !== focusKey;
@@ -257,24 +244,24 @@ export default function RescuerDashboardPage({ onLogout, onAuthError, onOpenInci
     if (!focusKey) lastFocusedRescue.current = '';
   }, [focusKey, mapReady, postMapUpdate]);
 
-  async function advanceRescue() {
-    if (!selected || busy) return;
+  async function acknowledgeDispatch() {
+    if (!selected || selected.responder_acknowledged_at || busy) return;
     setBusy(true);
     setError('');
     try {
-      await updateBackupPhase(selected.backup_request_id, selected.picked_up_at ? 'complete' : 'pickup');
+      await api.patch(`/backup-requests/${selected.backup_request_id}/respond`);
       await loadData();
     } catch (error: unknown) {
       const err = error as ApiError;
       if (err.response?.status === 401) return onAuthError();
-      setError(err.response?.data?.message || 'Failed to update the rescue operation.');
+      setError(err.response?.data?.message || 'Failed to acknowledge the dispatch.');
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <RescuerShell activeView="incidents" title="Incident Reports" subtitle="Assigned incidents and live routing" onLogout={onLogout} onOpenIncidents={onOpenIncidents} onOpenFloodMonitoring={onOpenFloodMonitoring} onOpenAccount={onOpenAccount}>
+    <RescuerShell responderRole={responderRole} activeView="incidents" title={responderRole === 'barangay_rescuer' ? 'Barangay Rescue Assignments' : 'CDRRMD Backup Assignments'} subtitle="Assigned incidents and live routing" onLogout={onLogout} onOpenIncidents={onOpenIncidents} onOpenFloodMonitoring={onOpenFloodMonitoring} onOpenAccount={onOpenAccount}>
       {error ? <p className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
       <section className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_400px]">
         <div className="relative min-h-[34rem] overflow-hidden rounded-xl border border-slate-300 bg-slate-800 shadow-lg">
@@ -284,14 +271,14 @@ export default function RescuerDashboardPage({ onLogout, onAuthError, onOpenInci
 
         <aside className="space-y-3">
           <section className="rounded-xl bg-white p-3 shadow">
-            <div className="mb-2"><h2 className="font-black text-[#19374f]">Assigned Incidents</h2><p className="text-xs text-slate-500">Barangay responders continue working with your team.</p></div>
+            <div className="mb-2"><h2 className="font-black text-[#19374f]">Assigned Incidents</h2><p className="text-xs text-slate-500">{responderRole === 'barangay_rescuer' ? 'Only incidents from your assigned barangay appear here.' : 'Only CDRRMD backup incidents assigned to you appear here.'}</p></div>
             <div className="max-h-64 overflow-auto rounded-lg border border-slate-200">
               <table className="w-full text-left text-sm">
                 <thead className="sticky top-0 bg-[#12314b] text-white"><tr><th className="px-3 py-2">Incident</th><th className="px-3 py-2">Barangay</th><th className="px-3 py-2">Phase</th></tr></thead>
                 <tbody>
                   {assignments.map((item) => (
                     <tr key={item.backup_request_id} onClick={() => setSelectedId(item.backup_request_id)} className={`cursor-pointer border-t border-slate-200 ${selected?.backup_request_id === item.backup_request_id ? 'bg-blue-100' : 'hover:bg-slate-50'}`}>
-                      <td className="px-3 py-2 font-bold">{item.report_code}</td><td className="px-3 py-2">{item.assigned_barangay}</td><td className="px-3 py-2 text-xs font-bold text-blue-700">{item.picked_up_at ? 'Evacuation' : 'Response'}</td>
+                      <td className="px-3 py-2 font-bold">{item.report_code}</td><td className="px-3 py-2">{item.assigned_barangay}</td><td className="px-3 py-2 text-xs font-bold text-blue-700">{!item.responder_acknowledged_at ? 'Awaiting acknowledgment' : item.picked_up_at ? 'Evacuation' : 'Response'}</td>
                     </tr>
                   ))}
                   {!assignments.length ? <tr><td colSpan={3} className="px-3 py-6 text-center text-sm text-emerald-700">No active incident assigned.</td></tr> : null}
@@ -303,16 +290,16 @@ export default function RescuerDashboardPage({ onLogout, onAuthError, onOpenInci
           {selected ? (
             <section className="rounded-xl bg-white p-4 text-sm shadow">
               <h2 className="font-black text-[#19374f]">{selected.report_code}</h2>
-              <div className="mt-3 space-y-1.5"><p><strong>Status:</strong> {selected.status.replace(/_/g, ' ')}</p><p><strong>Resident:</strong> {selected.reporter_name || '-'}</p><p><strong>Contact:</strong> {selected.reporter_contact || '-'}</p><p><strong>Incident:</strong> {selected.incident_type.replace(/_/g, ' ')}</p><p><strong>Location:</strong> {selected.location}</p><p><strong>Barangay team:</strong> Barangay {selected.assigned_barangay}</p><p><strong>Evacuation center:</strong> {selected.evacuation_area_name || '-'}</p><p><strong>Distance:</strong> {distanceKm ? `${distanceKm.toFixed(2)} km` : 'Calculating...'}</p><p><strong>ETA:</strong> {etaMinutes ? `${etaMinutes} minutes` : 'Calculating...'}</p></div>
-              <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">{selected.picked_up_at ? `Navigate the resident to ${selected.evacuation_area_name}. Complete only after safe arrival.` : 'Follow the shortest road route to the resident. The Barangay team continues responding with you.'}</div>
-              <button disabled={busy || !location} onClick={() => void advanceRescue()} className="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-3 font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Updating...' : selected.picked_up_at ? 'Confirm Safe Arrival' : 'Confirm Resident Pickup'}</button>
+              <div className="mt-3 space-y-1.5"><p><strong>Status:</strong> {selected.status.replace(/_/g, ' ')}</p><p><strong>Resident:</strong> {selected.reporter_name || '-'}</p><p><strong>Contact:</strong> {selected.reporter_contact || '-'}</p><p><strong>People to rescue:</strong> {selected.estimated_people ?? selected.evacuees_reserved ?? 1}</p><p><strong>Incident:</strong> {selected.incident_type.replace(/_/g, ' ')}</p><p><strong>Location:</strong> {selected.location}</p><p><strong>Barangay team:</strong> Barangay {selected.assigned_barangay}</p><p><strong>Evacuation center:</strong> {selected.evacuation_area_name || '-'}</p><p><strong>Distance:</strong> {distanceKm ? `${distanceKm.toFixed(2)} km` : 'Calculating...'}</p><p><strong>ETA:</strong> {etaMinutes ? `${etaMinutes} minutes` : 'Calculating...'}</p></div>
+              <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">{!selected.responder_acknowledged_at ? 'Acknowledge this dispatch to activate live routing to the resident.' : selected.picked_up_at ? `Navigate the resident to ${selected.evacuation_area_name}. Barangay Evacuation Personnel will confirm arrival and resolve the report.` : responderRole === 'barangay_rescuer' ? 'Follow the shortest road route to the resident. GPS proximity will start the rescue automatically.' : 'Follow the shortest road route to the resident as CDRRMD backup. GPS proximity will start the rescue automatically.'}</div>
+              {!selected.responder_acknowledged_at ? <button disabled={busy} onClick={() => void acknowledgeDispatch()} className="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-3 font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Confirming...' : 'Acknowledge Dispatch'}</button> : null}
             </section>
           ) : null}
         </aside>
       </section>
 
       <section className="mt-3 rounded-xl bg-white p-3 shadow">
-        <div className="mb-2 flex items-center justify-between gap-3"><div><h2 className="font-black text-[#19374f]">Backup History</h2><p className="text-xs text-slate-500">Completed CDRRMD backup assignments</p></div><span className="text-xs font-bold text-slate-500">{history.length} completed</span></div>
+        <div className="mb-2 flex items-center justify-between gap-3"><div><h2 className="font-black text-[#19374f]">Assignment History</h2><p className="text-xs text-slate-500">Completed {responderRole === 'barangay_rescuer' ? 'Barangay Rescuer' : 'CDRRMD backup'} assignments</p></div><span className="text-xs font-bold text-slate-500">{history.length} completed</span></div>
         <div className="max-h-72 overflow-auto rounded-lg border border-slate-200">
           <table className="min-w-[900px] w-full text-left text-sm">
             <thead className="sticky top-0 bg-[#12314b] text-white"><tr><th className="px-3 py-2">Incident</th><th className="px-3 py-2">Resident</th><th className="px-3 py-2">Barangay</th><th className="px-3 py-2">Location</th><th className="px-3 py-2">Evacuation Area</th><th className="px-3 py-2">Completed</th></tr></thead>

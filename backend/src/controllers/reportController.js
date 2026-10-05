@@ -10,6 +10,7 @@ const {
 } = require('../services/supportedBarangays');
 const FLOOD_ALERT_NEARBY_KM = Number(process.env.FLOOD_ALERT_NEARBY_KM || 2.5);
 const { findShortestReachableDestination } = require('../services/roadRoutingService');
+const { assignNearestAvailableRescuer } = require('../services/rescuerDispatchService');
 
 function buildReportCode(id, createdAt) {
   const year = new Date(createdAt || Date.now()).getFullYear();
@@ -138,6 +139,7 @@ async function findNearestAvailableEvacuationArea(
   longitude,
   preferredAreaId = null,
   requirePreferredArea = false,
+  requiredSlots = 1,
 ) {
   await client.query('SELECT pg_advisory_xact_lock($1)', [880021]);
 
@@ -155,15 +157,17 @@ async function findNearestAvailableEvacuationArea(
          ea.latitude,
          ea.longitude,
          ea.capacity,
-         COALESCE(stats.confirmed_total, 0)::int AS total_evacuees
+         (ea.evacuees + COALESCE(stats.incoming_total, 0))::int AS total_evacuees
        FROM evacuation_areas ea
        LEFT JOIN (
          SELECT
            evacuation_area_id,
-           COALESCE(SUM(CASE WHEN status IN ('accepted', 'in_progress', 'resolved') THEN evacuees_reserved ELSE 0 END), 0)::int AS confirmed_total
+           COALESCE(SUM(evacuees_reserved), 0)::int AS incoming_total
          FROM incident_reports
          WHERE report_type = 'rescue'
            AND evacuation_area_id IS NOT NULL
+           AND status IN ('accepted', 'in_progress')
+           AND evacuation_arrived_at IS NULL
          GROUP BY evacuation_area_id
        ) stats ON stats.evacuation_area_id = ea.id
        WHERE ea.id = $1
@@ -173,7 +177,7 @@ async function findNearestAvailableEvacuationArea(
     );
 
     const preferredRow = preferred.rows[0];
-    if (preferredRow && Number(preferredRow.total_evacuees) < Number(preferredRow.capacity)) {
+    if (preferredRow && Number(preferredRow.total_evacuees) + requiredSlots <= Number(preferredRow.capacity)) {
       const reachablePreferred = await findShortestReachableDestination(
         { latitude, longitude },
         [{
@@ -202,22 +206,25 @@ async function findNearestAvailableEvacuationArea(
        ea.latitude,
        ea.longitude,
        ea.capacity,
-       COALESCE(stats.confirmed_total, 0)::int AS total_evacuees
+       (ea.evacuees + COALESCE(stats.incoming_total, 0))::int AS total_evacuees
      FROM evacuation_areas ea
      LEFT JOIN (
        SELECT
          evacuation_area_id,
-         COALESCE(SUM(CASE WHEN status IN ('accepted', 'in_progress', 'resolved') THEN evacuees_reserved ELSE 0 END), 0)::int AS confirmed_total
+         COALESCE(SUM(evacuees_reserved), 0)::int AS incoming_total
        FROM incident_reports
        WHERE report_type = 'rescue'
          AND evacuation_area_id IS NOT NULL
+         AND status IN ('accepted', 'in_progress')
+         AND evacuation_arrived_at IS NULL
        GROUP BY evacuation_area_id
      ) stats ON stats.evacuation_area_id = ea.id
      WHERE ea.is_active = TRUE
        AND ea.latitude IS NOT NULL
        AND ea.longitude IS NOT NULL
-       AND COALESCE(stats.confirmed_total, 0) < ea.capacity
+       AND (ea.evacuees + COALESCE(stats.incoming_total, 0) + $1) <= ea.capacity
      ORDER BY ea.id ASC`,
+    [requiredSlots],
   );
 
   const routed = await findShortestReachableDestination(
@@ -244,15 +251,17 @@ async function evacuationAreaStillHasCapacity(client, evacuationAreaId) {
        ea.name,
        ea.barangay,
        ea.capacity,
-       COALESCE(stats.confirmed_total, 0)::int AS total_evacuees
+       (ea.evacuees + COALESCE(stats.incoming_total, 0))::int AS total_evacuees
      FROM evacuation_areas ea
      LEFT JOIN (
        SELECT
          evacuation_area_id,
-         COALESCE(SUM(CASE WHEN status IN ('accepted', 'in_progress', 'resolved') THEN evacuees_reserved ELSE 0 END), 0)::int AS confirmed_total
+         COALESCE(SUM(evacuees_reserved), 0)::int AS incoming_total
        FROM incident_reports
        WHERE report_type = 'rescue'
          AND evacuation_area_id IS NOT NULL
+         AND status IN ('accepted', 'in_progress')
+         AND evacuation_arrived_at IS NULL
        GROUP BY evacuation_area_id
      ) stats ON stats.evacuation_area_id = ea.id
      WHERE ea.id = $1
@@ -362,6 +371,11 @@ async function createReport(req, res) {
   if (estimatedPeopleValue && !Number.isFinite(estimatedPeopleInt)) {
     return res.status(400).json({ message: 'Estimated people must be a number.' });
   }
+  if (normalizedType === 'rescue'
+    && (!Number.isInteger(estimatedPeopleInt) || estimatedPeopleInt < 1 || estimatedPeopleInt > 100)) {
+    return res.status(400).json({ message: 'People needing rescue must be a whole number from 1 to 100.' });
+  }
+  const rescuePartySize = normalizedType === 'rescue' ? estimatedPeopleInt : 1;
 
   const safeImageBase64 = String(imageBase64 || '').trim() || null;
   if (!safeImageBase64) {
@@ -464,6 +478,7 @@ async function createReport(req, res) {
         lon,
         evacuationAreaId,
         true,
+        rescuePartySize,
       );
       if (!availableArea) {
         await client.query('ROLLBACK');
@@ -483,9 +498,6 @@ async function createReport(req, res) {
           code: 'EVACUATION_AREA_WITHOUT_SUPPORTED_BARANGAY',
         });
       }
-      // Rescue ownership follows the barangay responsible for the selected
-      // shortest-route evacuation center, not the resident's GPS boundary.
-      assignedBarangay = evacuationBarangay;
       const requestedAreaId = Number(evacuationAreaId);
       evacuationReassigned = Number.isFinite(requestedAreaId) ? requestedAreaId !== resolvedAreaId : false;
     }
@@ -528,7 +540,7 @@ async function createReport(req, res) {
         normalizedStatus,
         resolvedAreaId,
         resolvedAreaName,
-        normalizedType === 'rescue' ? 1 : 0,
+        normalizedType === 'rescue' ? rescuePartySize : 0,
       ],
     );
 
@@ -627,8 +639,33 @@ async function getMyReports(req, res) {
       r.dispatched_at,
       r.resolved_at,
       r.created_at,
-      r.updated_at
+      r.updated_at,
+      r.evacuation_arrived_at,
+      ea.latitude AS evacuation_latitude,
+      ea.longitude AS evacuation_longitude,
+      dispatch.id AS dispatch_id,
+      dispatch.dispatch_type,
+      dispatch.assigned_rescuer_id,
+      dispatch.assigned_at AS rescuer_assigned_at,
+      dispatch.responder_acknowledged_at,
+      dispatch.picked_up_at,
+      NULLIF(TRIM(CONCAT_WS(' ', responder.first_name, responder.last_name)), '') AS rescuer_name,
+      responder.current_latitude AS rescuer_latitude,
+      responder.current_longitude AS rescuer_longitude,
+      responder.location_updated_at AS rescuer_location_updated_at
      FROM incident_reports r
+     LEFT JOIN evacuation_areas ea ON ea.id = r.evacuation_area_id
+     LEFT JOIN LATERAL (
+       SELECT br.id, br.dispatch_type, br.assigned_rescuer_id, br.assigned_at,
+              br.responder_acknowledged_at, br.picked_up_at
+       FROM backup_requests br
+       WHERE br.report_id = r.id AND br.assigned_rescuer_id IS NOT NULL
+         AND br.arrived_at IS NULL AND br.declined_at IS NULL
+       ORDER BY CASE WHEN br.dispatch_type = 'cddrmd_backup' THEN 0 ELSE 1 END,
+         br.assigned_at DESC NULLS LAST, br.id DESC
+       LIMIT 1
+     ) dispatch ON TRUE
+     LEFT JOIN users responder ON responder.id = dispatch.assigned_rescuer_id
      WHERE r.reported_by = $1
      ORDER BY r.created_at DESC
      LIMIT 200`,
@@ -684,6 +721,54 @@ async function getReports(req, res) {
   return res.json(result.rows);
 }
 
+async function getReportHistory(req, res) {
+  const role = req.user?.role;
+  if (!['admin', 'barangay'].includes(role)) {
+    return res.status(403).json({ message: 'Admin or barangay access required.' });
+  }
+
+  const month = req.query?.month ? Number(req.query.month) : null;
+  const year = req.query?.year ? Number(req.query.year) : null;
+  const search = String(req.query?.search || '').trim().toLowerCase().slice(0, 120);
+  if (month !== null && (!Number.isInteger(month) || month < 1 || month > 12)) {
+    return res.status(400).json({ message: 'Month must be between 1 and 12.' });
+  }
+  if (year !== null && (!Number.isInteger(year) || year < 2000 || year > 2100)) {
+    return res.status(400).json({ message: 'Enter a valid year.' });
+  }
+
+  const barangayName = role === 'barangay' ? String(req.user?.barangayName || '').trim() : null;
+  if (role === 'barangay' && !barangayName) {
+    return res.status(403).json({ message: 'No barangay is assigned to this account.' });
+  }
+
+  const result = await pool.query(
+    `SELECT r.id, r.report_code, r.report_type, r.incident_type, r.status,
+            r.location, r.assigned_barangay, r.evacuation_area_name,
+            r.created_at, r.resolved_at,
+            u.id AS reporter_id,
+            CONCAT('USR-', EXTRACT(YEAR FROM u.created_at)::text, '-', LPAD(u.id::text, 5, '0')) AS reporter_account_id,
+            NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), '') AS reporter_name,
+            u.username AS reporter_username, u.contact_number, u.email
+     FROM incident_reports r
+     LEFT JOIN users u ON u.id = r.reported_by
+     WHERE ($1::text IS NULL OR LOWER(r.assigned_barangay) = LOWER($1))
+       AND ($2::integer IS NULL OR EXTRACT(MONTH FROM r.created_at) = $2)
+       AND ($3::integer IS NULL OR EXTRACT(YEAR FROM r.created_at) = $3)
+       AND ($4::text = ''
+         OR LOWER(COALESCE(r.report_code, '')) LIKE '%' || $4 || '%'
+         OR LOWER(COALESCE(u.username, '')) LIKE '%' || $4 || '%'
+         OR LOWER(COALESCE(CONCAT_WS(' ', u.first_name, u.last_name), '')) LIKE '%' || $4 || '%'
+         OR LOWER(COALESCE(CONCAT('USR-', EXTRACT(YEAR FROM u.created_at)::text, '-', LPAD(u.id::text, 5, '0')), '')) LIKE '%' || $4 || '%'
+         OR COALESCE(u.id::text, '') = $4)
+     ORDER BY r.created_at DESC, r.id DESC
+     LIMIT 1000`,
+    [barangayName, month, year, search],
+  );
+
+  return res.json(result.rows);
+}
+
 async function updateReportStatus(req, res) {
   const requesterRole = req.user?.role;
   if (requesterRole !== 'barangay') {
@@ -724,8 +809,8 @@ async function updateReportStatus(req, res) {
   }
 
   const isBarangayWorkflow = true;
+  const barangayName = String(req.user?.barangayName || '').trim();
   if (isBarangayWorkflow) {
-    const barangayName = String(req.user?.barangayName || '').trim();
     if (!barangayName) {
       return res.status(400).json({ message: 'No barangay assigned to this account.' });
     }
@@ -742,8 +827,8 @@ async function updateReportStatus(req, res) {
   const allowedTransitions = isBarangayWorkflow
     ? {
         pending: ['accepted', 'declined'],
-        accepted: current.report_type === 'rescue' ? ['resolved'] : [],
-        in_progress: current.report_type === 'rescue' ? ['resolved'] : [],
+        accepted: [],
+        in_progress: [],
         resolved: [],
         declined: [],
       }
@@ -886,7 +971,9 @@ async function updateReportStatus(req, res) {
         return res.json(updated);
       }
 
-      const effectiveBarangayStatus = nextStatus === 'accepted' ? 'in_progress' : nextStatus;
+      // Acceptance immediately dispatches the nearest available responder. The
+      // report stays accepted until responder GPS confirms arrival at the user.
+      const effectiveBarangayStatus = nextStatus;
       const nextAdminNotes = nextStatus === 'accepted' ? notes : null;
       const nextDeclineReason = nextStatus === 'declined' ? declineReason : null;
       const nextDeclineExplanation = nextStatus === 'declined' ? declineExplanation : null;
@@ -913,8 +1000,35 @@ async function updateReportStatus(req, res) {
       );
 
       const updated = updateResult.rows[0];
+      let automaticAssignment = null;
+      if (nextStatus === 'accepted') {
+        const dispatchResult = await client.query(
+          `INSERT INTO backup_requests
+             (barangay_name, requested_by, report_id, acknowledged_at, acknowledged_by, dispatch_type)
+           VALUES ($1, $2, $3, NOW(), $2, 'barangay_responder')
+           ON CONFLICT (report_id, dispatch_type)
+             WHERE arrived_at IS NULL AND declined_at IS NULL AND report_id IS NOT NULL
+           DO UPDATE SET requested_by = EXCLUDED.requested_by
+           RETURNING id`,
+          [barangayName, req.user.userId, reportId],
+        );
+        automaticAssignment = await assignNearestAvailableRescuer(
+          client,
+          dispatchResult.rows[0].id,
+          'barangay_responder',
+          req.user.userId,
+        );
+        const previewedRescuerId = Number(req.body?.rescuerId);
+        if (Number.isSafeInteger(previewedRescuerId)
+          && previewedRescuerId > 0
+          && Number(automaticAssignment.assigned_rescuer_id) !== previewedRescuerId) {
+          throw Object.assign(new Error('The nearest available Barangay Rescuer changed. Review the updated assignment and confirm again.'), { status: 409, code: 'RESPONDER_CHANGED' });
+        }
+        updated.assigned_team = automaticAssignment.teamLabel;
+        updated.dispatched_at = automaticAssignment.assigned_at;
+      }
       const actionNote = nextStatus === 'accepted'
-        ? 'Barangay accepted the report. Routing rescuer to the resident.'
+        ? 'Barangay accepted the report and automatically dispatched the nearest available Barangay Rescuer.'
         : `Barangay declined the report: ${declineExplanation}`;
 
       try {
@@ -936,20 +1050,20 @@ async function updateReportStatus(req, res) {
         console.error('Failed to write report status log:', logError.message);
       }
 
-      const userMessage = nextStatus === 'accepted'
-        ? 'Your report was accepted by the barangay. A rescuer is on the way.'
-        : `Your report was declined by the barangay. Reason: ${declineExplanation}`;
-
-      try {
-        await createNotification(
-          client,
-          current.reported_by,
-          reportId,
-          `Report ${current.report_code || reportId} updated`,
-          userMessage,
-        );
-      } catch (notificationError) {
-        console.error('Failed to create report notification:', notificationError.message);
+      // Automatic assignment already notifies accepted requests. Declines need
+      // their own notification because no dispatch is created.
+      if (nextStatus === 'declined') {
+        try {
+          await createNotification(
+            client,
+            current.reported_by,
+            reportId,
+            `Report ${current.report_code || reportId} updated`,
+            `Your report was declined by the barangay. Reason: ${declineExplanation}`,
+          );
+        } catch (notificationError) {
+          console.error('Failed to create report notification:', notificationError.message);
+        }
       }
 
       await client.query('COMMIT');
@@ -1125,7 +1239,10 @@ async function updateReportStatus(req, res) {
   } catch (error) {
     await client.query('ROLLBACK');
     console.error('Failed to update report status:', error.message);
-    return res.status(500).json({ message: 'Failed to update report status. Please retry.' });
+    return res.status(error.status || 500).json({
+      message: error.status ? error.message : 'Failed to update report status. Please retry.',
+      ...(error.code ? { code: error.code } : {}),
+    });
   } finally {
     client.release();
   }
@@ -1295,6 +1412,7 @@ module.exports = {
   createReport,
   getMyReports,
   getReports,
+  getReportHistory,
   updateReportStatus,
   getReportLogs,
   getMyNotifications,

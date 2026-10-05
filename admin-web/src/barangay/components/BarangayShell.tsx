@@ -2,7 +2,7 @@ import { type ReactNode } from 'react';
 import cdrrmdLogo from '../../assets/cdrrmd-logo.png';
 import { d } from '../barangayDesign';
 
-type ActiveView = 'monitoring' | 'flood-monitoring' | 'account';
+type ActiveView = 'dashboard' | 'monitoring' | 'flood-monitoring' | 'evacuation-center' | 'account';
 
 type Props = {
   activeView: ActiveView;
@@ -11,8 +11,10 @@ type Props = {
   noMainScroll?: boolean;
   barangayName: string;
   onLogout: () => void;
+  onOpenDashboard: () => void;
   onOpenMonitoring: () => void;
   onOpenFloodMonitoring: () => void;
+  onOpenEvacuationCenter: () => void;
   onOpenAccount: () => void;
   actions?: ReactNode;
   children: ReactNode;
@@ -32,8 +34,10 @@ export default function BarangayShell({
   noMainScroll,
   barangayName,
   onLogout,
+  onOpenDashboard,
   onOpenMonitoring,
   onOpenFloodMonitoring,
+  onOpenEvacuationCenter,
   onOpenAccount,
   actions,
   children,
@@ -83,11 +87,17 @@ export default function BarangayShell({
           </div>
 
           <nav className={d.shell.nav}>
+            <button onClick={onOpenDashboard} className={itemClass(activeView === 'dashboard')}>
+              Dashboard
+            </button>
             <button onClick={onOpenMonitoring} className={itemClass(activeView === 'monitoring')}>
               Incident Monitoring
             </button>
             <button onClick={onOpenFloodMonitoring} className={itemClass(activeView === 'flood-monitoring')}>
               Flood Monitoring
+            </button>
+            <button onClick={onOpenEvacuationCenter} className={itemClass(activeView === 'evacuation-center')}>
+              Evacuation Center
             </button>
             <button onClick={onOpenAccount} className={itemClass(activeView === 'account')}>
               My Account
@@ -122,6 +132,15 @@ export default function BarangayShell({
         {/* Mobile bottom nav */}
         <nav className={d.shell.mobileNav}>
           <button
+            onClick={onOpenDashboard}
+            className={[
+              d.shell.mobileNavItem,
+              activeView === 'dashboard' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
+            ].join(' ')}
+          >
+            Dashboard
+          </button>
+          <button
             onClick={onOpenMonitoring}
             className={[
               d.shell.mobileNavItem,
@@ -138,6 +157,15 @@ export default function BarangayShell({
             ].join(' ')}
           >
             Flood
+          </button>
+          <button
+            onClick={onOpenEvacuationCenter}
+            className={[
+              d.shell.mobileNavItem,
+              activeView === 'evacuation-center' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
+            ].join(' ')}
+          >
+            Evacuation
           </button>
           <button
             onClick={onOpenAccount}

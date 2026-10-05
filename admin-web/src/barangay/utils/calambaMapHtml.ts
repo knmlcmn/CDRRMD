@@ -27,6 +27,7 @@ export function buildCalambaMapHtml(
   layerVisibility: MonitoringLayerVisibility,
   focusBarangayName: string,
   routeLabels?: { origin?: string; destination?: string },
+  showForecastTimeline = false,
 ) {
   const payload = JSON.stringify({
     areas,
@@ -41,6 +42,7 @@ export function buildCalambaMapHtml(
     layerVisibility,
     focusBarangayName,
     routeLabels,
+    showForecastTimeline,
     boundaryGeoJson: {
       type: 'FeatureCollection',
       features: [
@@ -604,7 +606,8 @@ export function buildCalambaMapHtml(
 
       function updateForecastTimebar() {
         if (!forecastTimebar) return;
-        var visible = isScalarWeatherVisible() || Boolean(visibility.windOverlay);
+        var visible = Boolean(payload.showForecastTimeline)
+          && (isScalarWeatherVisible() || Boolean(visibility.windOverlay));
         forecastTimebar.style.display = visible ? 'block' : 'none';
         if (!visible) return;
         var range = forecastTimebar.querySelector('.forecast-time-range');

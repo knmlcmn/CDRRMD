@@ -5,6 +5,7 @@ import { d } from '../adminDesign';
 export type RescuerView = 'incidents' | 'flood-monitoring' | 'account';
 
 type Props = {
+  responderRole: 'rescuer' | 'barangay_rescuer';
   activeView: RescuerView;
   title: string;
   subtitle: string;
@@ -29,6 +30,7 @@ function NavIcon({ name }: { name: RescuerView }) {
 }
 
 export default function RescuerShell({
+  responderRole,
   activeView,
   title,
   subtitle,
@@ -49,7 +51,7 @@ export default function RescuerShell({
       <div className={d.shell.layout}>
         <div className={d.shell.mobileTop}>
           <div className={d.shell.mobileTopInner}>
-            <div className={d.shell.mobileLogoWrap}><img src={cdrrmdLogo} alt="CDRRMD logo" className={d.shell.mobileLogo} /><p className={d.shell.mobileBrand}>CDRRMD Rescuer</p></div>
+            <div className={d.shell.mobileLogoWrap}><img src={cdrrmdLogo} alt="CDRRMD logo" className={d.shell.mobileLogo} /><p className={d.shell.mobileBrand}>{responderRole === 'barangay_rescuer' ? 'Barangay Rescuer' : 'CDRRMD Rescuer'}</p></div>
             <button type="button" onClick={onLogout} className={d.shell.mobileLogout}>Logout</button>
           </div>
         </div>
@@ -57,7 +59,7 @@ export default function RescuerShell({
         <aside className={d.shell.aside}>
           <div className={d.shell.logoWrap}>
             <img src={cdrrmdLogo} alt="CDRRMD logo" className={d.shell.logo} />
-            <p className="text-lg font-extrabold leading-tight text-white">CDRRMD<br /><span className="text-sm text-slate-300">Rescuer</span></p>
+            <p className="text-lg font-extrabold leading-tight text-white">CDRRMD<br /><span className="text-sm text-slate-300">{responderRole === 'barangay_rescuer' ? 'Barangay Rescuer' : 'CDRRMD Rescuer'}</span></p>
           </div>
           <nav className={d.shell.nav}>
             {navigation.map((item) => (

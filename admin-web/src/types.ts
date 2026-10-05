@@ -109,6 +109,7 @@ export type RescuerAccount = {
   last_name: string | null;
   address: string | null;
   contact_number: string | null;
+  barangay_name: string | null;
   created_at: string;
   last_login: string | null;
   is_online: boolean;
@@ -124,8 +125,11 @@ export type BackupRequest = {
   acknowledged_at: string | null;
   declined_at?: string | null;
   decline_reason?: string | null;
+  report_notes?: string | null;
+  barangay_notes?: string | null;
   assigned_rescuer_id: number | null;
   assigned_at: string | null;
+  responder_acknowledged_at?: string | null;
   picked_up_at: string | null;
   rescuer_name?: string | null;
   rescuer_account_id?: string | null;
@@ -161,6 +165,18 @@ export type MonitoringReport = {
   resolved_at?: string | null;
   updated_at?: string | null;
   updated_by?: number | null;
+  dispatch_id?: number | null;
+  assigned_rescuer_id?: number | null;
+  rescuer_assigned_at?: string | null;
+  responder_acknowledged_at?: string | null;
+  picked_up_at?: string | null;
+  rescuer_name?: string | null;
+  rescuer_latitude?: number | null;
+  rescuer_longitude?: number | null;
+  rescuer_location_updated_at?: string | null;
+  evacuation_arrived_at?: string | null;
+  departure_requested_at?: string | null;
+  departure_confirmed_at?: string | null;
   created_at: string;
   reporter_id: number;
   first_name?: string | null;
@@ -181,4 +197,7 @@ export type BarangayUser = {
   contactNumber: string | null;
   role: string;
   barangayName: string | null;
+  isActive?: boolean;
+  lastLogin?: string | null;
+  createdAt?: string;
 };

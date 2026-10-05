@@ -4,6 +4,7 @@ import { api } from '../services/apiClient';
 import { d } from '../adminDesign';
 
 type Props = {
+  responderRole: 'rescuer' | 'barangay_rescuer';
   onLogout: () => void;
   onAuthError: () => void;
   onOpenIncidents: () => void;

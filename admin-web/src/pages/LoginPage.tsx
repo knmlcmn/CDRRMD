@@ -25,7 +25,7 @@ export default function LoginPage({ onLoggedIn }: Props) {
       onLoggedIn(data.token, rememberMe, data.user.role);
     } catch {
       const portal = portalFromAccountId(accountId);
-      const accountType = portal === 'admin' ? 'Admin' : portal === 'barangay' ? 'Barangay' : portal === 'rescuer' ? 'CDRRMD Rescuer' : 'staff';
+      const accountType = portal === 'admin' ? 'Admin' : portal === 'barangay' ? 'Barangay' : portal === 'rescuer' ? 'CDRRMD Rescuer' : portal === 'barangay_rescuer' ? 'Barangay Rescuer' : 'staff';
       setError(`Login failed. Check your ${accountType} ID and password.`);
     } finally {
       setLoading(false);
@@ -43,7 +43,7 @@ export default function LoginPage({ onLoggedIn }: Props) {
             <input
               value={accountId}
               onChange={(e) => setAccountId(e.target.value.toUpperCase())}
-              placeholder="Account ID (ADM-, BRG-, or RSC-YYYY-00000)"
+              placeholder="Account ID (ADM-, BRG-, RSC-, or BRS-YYYY-00000)"
               className={d.login.input}
               autoComplete="username"
             />

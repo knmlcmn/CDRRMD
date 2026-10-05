@@ -200,18 +200,25 @@ async function getMyProfile(req, res) {
 async function updateMyProfile(req, res) {
   if (!ensureBarangayOrAdmin(req, res)) return;
   const userId = req.user?.userId;
-  const { firstName, lastName, email, address, contactNumber } = req.body || {};
+  const { firstName, lastName, email, address, contactNumber, password } = req.body || {};
   if (!email) throw httpError(400, 'Email is required.');
+
+  const nextPassword = String(password || '');
+  if (nextPassword && nextPassword.length < 6) {
+    throw httpError(400, 'New password must be at least 6 characters.');
+  }
 
   const dup = await userModel.findDuplicateEmailForUser(String(email).trim().toLowerCase(), userId);
   if (dup) throw httpError(409, 'Email already in use.');
 
+  const passwordHash = nextPassword ? await bcrypt.hash(nextPassword, 10) : null;
   const updated = await userModel.updateMyProfile(userId, {
     firstName: String(firstName || '').trim() || null,
     lastName: String(lastName || '').trim() || null,
     email: String(email).trim().toLowerCase(),
     address: String(address || '').trim() || null,
     contactNumber: String(contactNumber || '').trim() || null,
+    passwordHash,
   });
   return res.json({
     id: updated.id,

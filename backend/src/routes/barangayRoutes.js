@@ -16,6 +16,9 @@ const {
   markPresenceOffline,
 } = require('../controllers/barangayController');
 const { updateReportStatus } = require('../controllers/reportController');
+const evacuationCenter = require('../controllers/evacuationCenterController');
+const barangayRescuer = require('../controllers/barangayRescuerController');
+const rescuerAccounts = require('../controllers/rescuerController');
 
 const router = express.Router();
 
@@ -34,8 +37,17 @@ router.delete('/accounts/:id/permanent', auth, asyncHandler(permanentlyDeleteAcc
 router.delete('/accounts/:id', auth, asyncHandler(archiveAccount));
 
 // Barangay: own jurisdiction
+router.get('/personnel', auth, asyncHandler(rescuerAccounts.listAccounts));
+router.post('/personnel', auth, asyncHandler(rescuerAccounts.createAccount));
 router.get('/reports/mine', auth, asyncHandler(getMyReports));
+router.get('/reports/:id/rescuer-preview', auth, asyncHandler(barangayRescuer.previewNearestRescuer));
 router.patch('/reports/:id/status', auth, asyncHandler(updateReportStatus));
+router.get('/evacuation-centers', auth, asyncHandler(evacuationCenter.listCenters));
+router.get('/evacuation-centers/:centerId/cases', auth, asyncHandler(evacuationCenter.listCases));
+router.patch('/evacuation-centers/:centerId/count', auth, asyncHandler(evacuationCenter.updateManualCount));
+router.patch('/evacuation-centers/:centerId/cases/:reportId/arrival', auth, asyncHandler(evacuationCenter.confirmArrival));
+router.patch('/evacuation-centers/:centerId/cases/:reportId/departure-request', auth, asyncHandler(evacuationCenter.recordDeparture));
+router.patch('/evacuation-centers/:centerId/cases/:reportId/departure', auth, asyncHandler(evacuationCenter.confirmDeparture));
 router.get('/me', auth, asyncHandler(getMyProfile));
 router.patch('/me', auth, asyncHandler(updateMyProfile));
 router.post('/presence/heartbeat', auth, asyncHandler(heartbeatPresence));

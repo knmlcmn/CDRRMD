@@ -15,6 +15,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { postAuth } from '../services/api';
 import { SessionData } from '../services/session';
 import { AppProfile } from '../services/appAccount';
+import { SUPPORTED_BARANGAYS } from '../constants/barangays';
 
 type Props = {
   onRegisterSuccess: (session: SessionData, profile?: AppProfile) => Promise<void>;
@@ -49,6 +50,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
   const [contactNumber, setContactNumber] = useState('');
+  const [barangayName, setBarangayName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -57,7 +59,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
   const [error, setError] = useState<string | null>(null);
 
   async function onRegister() {
-    if (!firstName.trim() || !lastName.trim() || !email.trim() || !password) {
+    if (!firstName.trim() || !lastName.trim() || !email.trim() || !barangayName || !password) {
       setError('Please fill in all required fields.');
       return;
     }
@@ -81,6 +83,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
         email: email.trim(),
         address: address.trim(),
         contactNumber: contactNumber.trim(),
+        barangayName,
       });
       const nextSession = res.data as SessionData;
       if (!nextSession?.user || nextSession.user.role !== 'user') {
@@ -89,7 +92,8 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
       }
       await onRegisterSuccess(nextSession, {
         firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(),
-        address: address.trim(), contactNumber: contactNumber.trim(), barangayName: '',
+        address: address.trim(), contactNumber: contactNumber.trim(),
+        barangayName: nextSession.user.barangayName || barangayName,
       });
     } catch (err: any) {
       if (err?.code === 'ECONNABORTED' || err?.message?.toLowerCase?.().includes('network')) {
@@ -119,6 +123,23 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
             <Field icon="email-outline" value={email} onChangeText={setEmail} placeholder="Email *" keyboardType="email-address" autoCapitalize="none" />
             <Field icon="map-marker-outline" value={address} onChangeText={setAddress} placeholder="Address" autoCapitalize="words" />
             <Field icon="phone-outline" value={contactNumber} onChangeText={setContactNumber} placeholder="Contact Number" keyboardType="phone-pad" />
+            <Text style={styles.barangayLabel}>Registered Barangay *</Text>
+            <View style={styles.barangayChoices}>
+              {SUPPORTED_BARANGAYS.map((name) => {
+                const selected = barangayName === name;
+                return (
+                  <TouchableOpacity
+                    key={name}
+                    style={[styles.barangayChoice, selected && styles.barangayChoiceSelected]}
+                    onPress={() => setBarangayName(name)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                  >
+                    <Text style={[styles.barangayChoiceText, selected && styles.barangayChoiceTextSelected]}>{name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
             <Field
               icon="lock-outline" value={password} onChangeText={setPassword} placeholder="Password *" secureTextEntry={!showPassword}
               trailing={<TouchableOpacity onPress={() => setShowPassword((value) => !value)}><MaterialCommunityIcons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={16} color="#526170" /></TouchableOpacity>}
@@ -128,7 +149,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
               trailing={<TouchableOpacity onPress={() => setShowConfirmPassword((value) => !value)}><MaterialCommunityIcons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={16} color="#526170" /></TouchableOpacity>}
             />
 
-            <Text style={styles.locationHint}>Your barangay will be assigned from your location after registration.</Text>
+            <Text style={styles.locationHint}>Your selected barangay will be shown on your resident account.</Text>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <TouchableOpacity style={styles.primaryButton} onPress={onRegister} disabled={loading} activeOpacity={0.85}>
@@ -159,6 +180,12 @@ const styles = StyleSheet.create({
   input: { flex: 1, color: '#111111', fontSize: 12, marginLeft: 7, paddingVertical: 0, minWidth: 0 },
   nameRow: { flexDirection: 'row', gap: 7 },
   nameField: { flex: 1, minWidth: 0 },
+  barangayLabel: { color: editorial.ink, fontSize: 11, fontWeight: '800', marginHorizontal: 8, marginTop: 2, marginBottom: 6 },
+  barangayChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 9 },
+  barangayChoice: { borderWidth: 1, borderColor: editorial.border, borderRadius: 8, backgroundColor: '#fff', paddingHorizontal: 10, paddingVertical: 7 },
+  barangayChoiceSelected: { borderColor: editorial.accent, backgroundColor: '#e8f2f8' },
+  barangayChoiceText: { color: '#526170', fontSize: 11, fontWeight: '700' },
+  barangayChoiceTextSelected: { color: editorial.accent, fontWeight: '900' },
   locationHint: { color: '#555555', fontSize: 10, marginHorizontal: 8, marginBottom: 8 },
   errorText: { color: '#c62828', fontSize: 11, marginHorizontal: 8, marginBottom: 8 },
   primaryButton: { height: 45, borderRadius: 10, backgroundColor: editorial.accent, alignItems: 'center', justifyContent: 'center', marginTop: 2, marginBottom: 10 },

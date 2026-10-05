@@ -7,7 +7,9 @@ import { loadWaterLevelSensorStatuses, type WaterLevelSensorStatus } from '../se
 type Props = {
   barangayName: string;
   onLogout: () => void;
+  onOpenDashboard: () => void;
   onOpenMonitoring: () => void;
+  onOpenEvacuationCenter: () => void;
   onOpenAccount: () => void;
   onAuthError: () => void;
 };
@@ -174,7 +176,9 @@ async function loadFirebaseHardwareReadings(sensorPaths: readonly string[]): Pro
 export default function FloodMonitoringPage({
   barangayName,
   onLogout,
+  onOpenDashboard,
   onOpenMonitoring,
+  onOpenEvacuationCenter,
   onOpenAccount,
   onAuthError,
 }: Props) {
@@ -279,8 +283,10 @@ export default function FloodMonitoringPage({
       noMainScroll
       barangayName={barangayName}
       onLogout={onLogout}
+      onOpenDashboard={onOpenDashboard}
       onOpenMonitoring={onOpenMonitoring}
       onOpenFloodMonitoring={() => {}}
+      onOpenEvacuationCenter={onOpenEvacuationCenter}
       onOpenAccount={onOpenAccount}
       actions={<button onClick={onOpenMonitoring} className={d.monitoring.actionEvac}>Open Incident Monitoring</button>}
     >

@@ -43,7 +43,7 @@ export const d = {
     mobileLogo: 'h-9 w-9 rounded-full border border-[#f4b400] bg-white object-cover',
     mobileBrand: 'text-lg font-extrabold leading-none text-[#0b2e4e]',
     mobileLogout: 'rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700',
-    mobileNav: 'fixed bottom-0 left-0 right-0 z-40 grid grid-cols-3 border-t border-slate-300 bg-white/95 p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] backdrop-blur lg:hidden',
+    mobileNav: 'fixed bottom-0 left-0 right-0 z-40 grid grid-cols-5 border-t border-slate-300 bg-white/95 p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] backdrop-blur lg:hidden',
     mobileNavItem: 'truncate rounded-lg px-1.5 py-2 text-center text-[0.7rem] font-bold transition-colors sm:px-2 sm:text-xs',
     mobileNavActive: 'bg-[#1f4e79] text-white',
     mobileNavIdle: 'text-[#1f4e79] hover:bg-slate-100',

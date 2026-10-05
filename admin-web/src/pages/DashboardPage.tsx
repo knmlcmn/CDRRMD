@@ -58,6 +58,7 @@ function buildMapHtml(
   barangayBoundaryGeoJsonUrl: string,
   rainImpactUrl: string,
   windDataUrl: string,
+  showForecastTimeline: boolean,
 ) {
   return buildCalambaMapHtml(
     areas,
@@ -90,6 +91,8 @@ function buildMapHtml(
       humidityOverlay: false,
       windOverlay: false,
     },
+    'Closest responder base',
+    { showForecastTimeline },
   );
 }
 
@@ -303,8 +306,9 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/flood-risk/calamba/barangays`,
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/flood-risk/calamba/rain-impact`,
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/weather/wind-field`,
+      isMapFullscreen,
     ),
-    [areas, incidents],
+    [areas, incidents, isMapFullscreen],
   );
 
   const statusRows = useMemo(

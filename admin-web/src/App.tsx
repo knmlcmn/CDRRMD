@@ -44,7 +44,7 @@ function roleFromToken(token: string | null): StaffPortal | null {
     if (!token) return null;
     const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
     const role = JSON.parse(atob(payload)).role;
-    return role === 'admin' || role === 'barangay' || role === 'rescuer' ? role : null;
+    return role === 'admin' || role === 'barangay' || role === 'rescuer' || role === 'barangay_rescuer' ? role : null;
   } catch {
     return null;
   }
@@ -186,8 +186,9 @@ function App() {
     return <LoginPage onLoggedIn={onLoggedIn} />;
   }
 
-  if (role === 'rescuer') {
+  if (role === 'rescuer' || role === 'barangay_rescuer') {
     const rescuerProps = {
+      responderRole: role,
       onLogout,
       onAuthError: onLogout,
       onOpenIncidents: () => setRescuerView('incidents'),

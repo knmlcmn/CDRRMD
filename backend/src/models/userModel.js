@@ -17,7 +17,7 @@ async function findUserByUsername(username) {
 }
 
 async function findStaffByAccountId(accountId, role) {
-  const prefix = role === 'admin' ? 'ADM' : role === 'barangay' ? 'BRG' : role === 'rescuer' ? 'RSC' : null;
+  const prefix = role === 'admin' ? 'ADM' : role === 'barangay' ? 'BRG' : role === 'rescuer' ? 'RSC' : role === 'barangay_rescuer' ? 'BRS' : null;
   if (!prefix) return null;
   const result = await pool.query(
     `SELECT * FROM users
@@ -82,10 +82,20 @@ async function updateMyProfile(userId, profile) {
        email = $3,
        address = $4,
        contact_number = $5,
-       barangay_name = $6
-     WHERE id = $7
+       barangay_name = COALESCE($6, barangay_name),
+       password_hash = COALESCE($7, password_hash)
+     WHERE id = $8
      RETURNING id, username, role, email, first_name, last_name, address, contact_number, barangay_name, created_at`,
-    [profile.firstName, profile.lastName, profile.email, profile.address, profile.contactNumber, profile.barangayName, userId],
+    [
+      profile.firstName,
+      profile.lastName,
+      profile.email,
+      profile.address,
+      profile.contactNumber,
+      profile.barangayName,
+      profile.passwordHash || null,
+      userId,
+    ],
   );
 
   return result.rows[0] || null;
@@ -810,15 +820,36 @@ async function listReportsByAssignedBarangay(barangayName) {
   const result = await pool.query(
     `SELECT
        ir.id, ir.report_code, ir.report_type, ir.location,
-       ir.latitude, ir.longitude, ir.assigned_barangay, ir.incident_type, ir.water_level,
+       CASE WHEN u.location_updated_at >= NOW() - INTERVAL '5 minutes'
+              AND u.current_latitude IS NOT NULL AND u.current_longitude IS NOT NULL
+            THEN u.current_latitude ELSE ir.latitude END AS latitude,
+       CASE WHEN u.location_updated_at >= NOW() - INTERVAL '5 minutes'
+              AND u.current_latitude IS NOT NULL AND u.current_longitude IS NOT NULL
+            THEN u.current_longitude ELSE ir.longitude END AS longitude,
+       ir.assigned_barangay, ir.incident_type, ir.water_level,
        ir.are_people_trapped, ir.estimated_people, ir.notes, ir.image_base64,
        ir.status, ir.evacuation_area_id, ir.evacuation_area_name,
        ir.evacuees_reserved, ir.assigned_team, ir.admin_notes,
        ir.decline_reason, ir.decline_explanation,
        ir.dispatched_at, ir.resolved_at, ir.updated_at, ir.created_at,
-       u.id AS reporter_id, u.first_name, u.last_name, u.contact_number, u.email
+       ir.evacuation_arrived_at, ir.departure_requested_at, ir.departure_confirmed_at,
+       u.id AS reporter_id, u.first_name, u.last_name, u.contact_number, u.email,
+       dispatch.id AS dispatch_id, dispatch.assigned_rescuer_id,
+       dispatch.assigned_at AS rescuer_assigned_at, dispatch.responder_acknowledged_at, dispatch.picked_up_at,
+       NULLIF(TRIM(CONCAT_WS(' ', responder.first_name, responder.last_name)), '') AS rescuer_name,
+       responder.current_latitude AS rescuer_latitude,
+       responder.current_longitude AS rescuer_longitude,
+       responder.location_updated_at AS rescuer_location_updated_at
      FROM incident_reports ir
      JOIN users u ON u.id = ir.reported_by
+     LEFT JOIN LATERAL (
+       SELECT br.id, br.assigned_rescuer_id, br.assigned_at, br.responder_acknowledged_at, br.picked_up_at
+       FROM backup_requests br
+       WHERE br.report_id = ir.id AND br.dispatch_type = 'barangay_responder'
+         AND br.arrived_at IS NULL AND br.declined_at IS NULL
+       ORDER BY br.id DESC LIMIT 1
+     ) dispatch ON TRUE
+     LEFT JOIN users responder ON responder.id = dispatch.assigned_rescuer_id
      WHERE LOWER(ir.assigned_barangay) = LOWER($1)
        AND ir.report_type = 'rescue'
      ORDER BY ir.created_at DESC`,

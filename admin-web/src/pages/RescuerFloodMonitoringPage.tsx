@@ -5,6 +5,7 @@ import { api } from '../services/apiClient';
 import { loadWaterLevelSensors, type WaterLevelSensor } from '../services/waterLevelSensors';
 
 type Props = {
+  responderRole: 'rescuer' | 'barangay_rescuer';
   onLogout: () => void;
   onAuthError: () => void;
   onOpenIncidents: () => void;

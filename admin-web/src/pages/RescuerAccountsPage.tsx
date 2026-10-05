@@ -27,11 +27,15 @@ type AccountForm = {
   lastName: string;
   address: string;
   contactNumber: string;
+  barangayName: string;
 };
 
 const EMPTY_FORM: AccountForm = {
-  id: null, username: '', email: '', password: '', firstName: '', lastName: '', address: '', contactNumber: '',
+  id: null, username: '', email: '', password: '', firstName: '', lastName: '', address: '', contactNumber: '', barangayName: '',
 };
+
+type RescuerRole = 'rescuer' | 'barangay_rescuer';
+const BARANGAYS = ['Palingon', 'Sampiruhan', 'Lingga', 'Parian', 'Looc', 'Uwisan'];
 
 const ARCHIVE_ICON = 'https://cdn-icons-png.flaticon.com/512/3143/3143462.png';
 
@@ -50,20 +54,23 @@ export default function RescuerAccountsPage(props: Props) {
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [accountRole, setAccountRole] = useState<RescuerRole>('rescuer');
+  const isBarangayRescuer = accountRole === 'barangay_rescuer';
+  const accountLabel = isBarangayRescuer ? 'Barangay Rescuer' : 'CDRRMD Rescuer';
 
   const loadAccounts = useCallback(async () => {
     try {
-      const { data } = await api.get<RescuerAccount[]>('/rescuers/accounts');
+      const { data } = await api.get<RescuerAccount[]>('/rescuers/accounts', { params: { role: accountRole } });
       setAccounts(Array.isArray(data) ? data : []);
       setError('');
     } catch (error: unknown) {
       const err = error as ApiError;
       if (err.response?.status === 401) return onAuthError();
-      setError(err.response?.data?.message || 'Failed to load CDRRMD Rescuer accounts.');
+      setError(err.response?.data?.message || `Failed to load ${accountLabel} accounts.`);
     } finally {
       setLoading(false);
     }
-  }, [onAuthError]);
+  }, [accountLabel, accountRole, onAuthError]);
 
   useEffect(() => {
     void loadAccounts();
@@ -76,7 +83,7 @@ export default function RescuerAccountsPage(props: Props) {
     return accounts
       .filter((account) => availabilityFilter === 'all' || (availabilityFilter === 'available' ? account.is_available : !account.is_available))
       .filter((account) => !needle || [
-        account.rescuer_id, account.username, account.email, account.first_name, account.last_name, account.contact_number,
+        account.rescuer_id, account.username, account.email, account.first_name, account.last_name, account.contact_number, account.barangay_name,
       ].some((value) => String(value || '').toLowerCase().includes(needle)));
   }, [accounts, availabilityFilter, search]);
 
@@ -90,6 +97,7 @@ export default function RescuerAccountsPage(props: Props) {
       lastName: account.last_name || '',
       address: account.address || '',
       contactNumber: account.contact_number || '',
+      barangayName: account.barangay_name || '',
     });
     setShowForm(true);
   }
@@ -103,6 +111,7 @@ export default function RescuerAccountsPage(props: Props) {
         username: form.username.trim(), email: form.email.trim(), password: form.password,
         firstName: form.firstName.trim(), lastName: form.lastName.trim(),
         address: form.address.trim(), contactNumber: form.contactNumber.trim(),
+        role: accountRole, barangayName: form.barangayName,
       };
       if (form.id) await api.patch(`/rescuers/accounts/${form.id}`, payload);
       else await api.post('/rescuers/accounts', payload);
@@ -112,7 +121,7 @@ export default function RescuerAccountsPage(props: Props) {
     } catch (error: unknown) {
       const err = error as ApiError;
       if (err.response?.status === 401) return onAuthError();
-      setError(err.response?.data?.message || 'Failed to save CDRRMD Rescuer account.');
+      setError(err.response?.data?.message || `Failed to save ${accountLabel} account.`);
     } finally {
       setBusy(false);
     }
@@ -126,7 +135,7 @@ export default function RescuerAccountsPage(props: Props) {
       await loadAccounts();
     } catch (error: unknown) {
       const err = error as ApiError;
-      setError(err.response?.data?.message || 'Failed to archive CDRRMD Rescuer account.');
+      setError(err.response?.data?.message || `Failed to archive ${accountLabel} account.`);
     } finally {
       setBusy(false);
     }
@@ -135,12 +144,12 @@ export default function RescuerAccountsPage(props: Props) {
   async function loadArchivedAccounts() {
     setArchiveBusy(true);
     try {
-      const { data } = await api.get<RescuerAccount[]>('/rescuers/accounts/archived');
+      const { data } = await api.get<RescuerAccount[]>('/rescuers/accounts/archived', { params: { role: accountRole } });
       setArchivedAccounts(Array.isArray(data) ? data : []);
     } catch (error: unknown) {
       const err = error as ApiError;
       if (err.response?.status === 401) return onAuthError();
-      setError(err.response?.data?.message || 'Failed to load archived CDRRMD Rescuer accounts.');
+      setError(err.response?.data?.message || `Failed to load archived ${accountLabel} accounts.`);
     } finally {
       setArchiveBusy(false);
     }
@@ -153,7 +162,7 @@ export default function RescuerAccountsPage(props: Props) {
       await Promise.all([loadAccounts(), loadArchivedAccounts()]);
     } catch (error: unknown) {
       const err = error as ApiError;
-      setError(err.response?.data?.message || 'Failed to restore CDRRMD Rescuer account.');
+      setError(err.response?.data?.message || `Failed to restore ${accountLabel} account.`);
     } finally {
       setArchiveBusy(false);
     }
@@ -167,7 +176,7 @@ export default function RescuerAccountsPage(props: Props) {
       await loadArchivedAccounts();
     } catch (error: unknown) {
       const err = error as ApiError;
-      setError(err.response?.data?.message || 'Failed to permanently delete CDRRMD Rescuer account.');
+      setError(err.response?.data?.message || `Failed to permanently delete ${accountLabel} account.`);
     } finally {
       setArchiveBusy(false);
     }
@@ -177,17 +186,41 @@ export default function RescuerAccountsPage(props: Props) {
     return value ? new Date(value).toLocaleString() : '—';
   }
 
+  function selectAccountRole(role: RescuerRole) {
+    setAccountRole(role);
+    setAccounts([]);
+    setArchivedAccounts([]);
+    setForm(EMPTY_FORM);
+    setShowForm(false);
+    setShowArchive(false);
+    setSearch('');
+    setAvailabilityFilter('all');
+    setError('');
+    setLoading(true);
+  }
+
+  function openCreateForm() {
+    setForm({ ...EMPTY_FORM, barangayName: isBarangayRescuer ? BARANGAYS[0] : '' });
+    setShowForm(true);
+  }
+
   return (
     <AdminShell
       {...props}
       activeView="rescuers"
-      title="CDRRMD Rescuer Account Management"
+      title="Rescuer Account Management"
       noMainScroll
-      actions={<button className={d.admin.actionAdd} onClick={() => { setForm(EMPTY_FORM); setShowForm(true); }}>Add Rescuer Account</button>}
+      actions={<button className={d.admin.actionAdd} onClick={openCreateForm}>Add {accountLabel}</button>}
     >
       <div className={d.admin.root}>
         <div className={d.admin.headerRow}>
-          <h2 className={d.admin.title}>CDRRMD Rescuer Accounts</h2>
+          <div>
+            <h2 className={d.admin.title}>{accountLabel} Accounts</h2>
+            <div className="mt-2 flex flex-wrap gap-2" role="tablist" aria-label="Rescuer account type">
+              <button type="button" role="tab" aria-selected={!isBarangayRescuer} onClick={() => selectAccountRole('rescuer')} className={[d.monitoring.filterBase, !isBarangayRescuer ? d.monitoring.filterActive : d.monitoring.filterIdle].join(' ')}>CDRRMD Rescuers</button>
+              <button type="button" role="tab" aria-selected={isBarangayRescuer} onClick={() => selectAccountRole('barangay_rescuer')} className={[d.monitoring.filterBase, isBarangayRescuer ? d.monitoring.filterActive : d.monitoring.filterIdle].join(' ')}>Barangay Rescuers</button>
+            </div>
+          </div>
           <div className={d.admin.searchRow}>
             <button type="button" onClick={() => { setShowArchive(true); void loadArchivedAccounts(); }} className={d.admin.archiveButton}><img src={ARCHIVE_ICON} alt="Archive" className={d.admin.archiveIcon} /> Archive</button>
             <select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)} className={d.admin.search} aria-label="Filter rescuer accounts by availability"><option value="all">All Rescuers</option><option value="available">Available</option><option value="assigned">Assigned</option></select>
@@ -198,7 +231,7 @@ export default function RescuerAccountsPage(props: Props) {
 
         {showForm ? (
           <form className={d.admin.form} onSubmit={saveAccount}>
-            <div className={d.admin.idBox}>ID: {form.id ? accounts.find((account) => account.id === form.id)?.rescuer_id || `RSC-${form.id}` : 'Auto-generated after create'}</div>
+            <div className={d.admin.idBox}>ID: {form.id ? accounts.find((account) => account.id === form.id)?.rescuer_id || `${isBarangayRescuer ? 'BRS' : 'RSC'}-${form.id}` : 'Auto-generated after create'}</div>
             <input className={d.form.inputSm} required placeholder="Username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} />
             <input className={d.form.inputSm} required type="email" placeholder="Email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
             <input className={d.form.inputSm} required={!form.id} type="password" placeholder={form.id ? 'Password (optional)' : 'Password'} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
@@ -206,6 +239,11 @@ export default function RescuerAccountsPage(props: Props) {
             <input className={d.form.inputSm} placeholder="Last Name" value={form.lastName} onChange={(event) => setForm({ ...form, lastName: event.target.value })} />
             <input className={d.form.inputSm} placeholder="Contact Number" value={form.contactNumber} onChange={(event) => setForm({ ...form, contactNumber: event.target.value })} />
             <input className={d.form.inputSm} placeholder="Address / Team Base" value={form.address} onChange={(event) => setForm({ ...form, address: event.target.value })} />
+            {isBarangayRescuer ? (
+              <select className={d.form.inputSm} required aria-label="Assigned barangay" value={form.barangayName} onChange={(event) => setForm({ ...form, barangayName: event.target.value })}>
+                {BARANGAYS.map((barangay) => <option key={barangay} value={barangay}>{barangay}</option>)}
+              </select>
+            ) : null}
             <div className={d.admin.formActions}><button className={d.btn.primary} disabled={busy}>{busy ? 'Saving…' : form.id ? 'Update Account' : 'Create Account'}</button><button type="button" className={d.btn.secondary} onClick={() => setShowForm(false)}>Cancel</button></div>
           </form>
         ) : null}
@@ -213,12 +251,13 @@ export default function RescuerAccountsPage(props: Props) {
         {loading ? <p className={d.page.loading}>Loading…</p> : null}
         <div className={d.table.wrap} style={{ flex: 1 }}>
           <table className={d.table.main}>
-            <thead className={d.admin.tableHead}><tr><th>ID</th><th>Name</th><th className={d.admin.thHiddenMd}>Email</th><th className={d.admin.thHiddenLg}>Username</th><th className={d.admin.thHiddenLg}>Contact</th><th className={d.admin.thHiddenMd}>Status</th><th className={d.admin.thHiddenXl}>Last Login</th><th>Actions</th></tr></thead>
+            <thead className={d.admin.tableHead}><tr><th>ID</th><th>Name</th>{isBarangayRescuer ? <th className={d.admin.thHiddenMd}>Barangay</th> : null}<th className={d.admin.thHiddenMd}>Email</th><th className={d.admin.thHiddenLg}>Username</th><th className={d.admin.thHiddenLg}>Contact</th><th className={d.admin.thHiddenMd}>Status</th><th className={d.admin.thHiddenXl}>Last Login</th><th>Actions</th></tr></thead>
             <tbody>
               {filtered.map((account) => (
                 <tr key={account.id} className={[d.admin.row, form.id === account.id ? 'bg-sky-50' : ''].join(' ')}>
                   <td className="font-mono text-xs text-slate-500">{account.rescuer_id}</td>
                   <td className={d.admin.truncate}>{[account.first_name, account.last_name].filter(Boolean).join(' ') || '—'}</td>
+                  {isBarangayRescuer ? <td className={d.admin.tdHiddenTruncateMd}>{account.barangay_name || 'Not assigned'}</td> : null}
                   <td className={d.admin.tdHiddenTruncateMd}>{account.email}</td>
                   <td className={d.admin.tdHiddenLg}>{account.username}</td>
                   <td className={d.admin.tdHiddenLg}>{account.contact_number || '—'}</td>
@@ -227,12 +266,12 @@ export default function RescuerAccountsPage(props: Props) {
                   <td><div className={d.admin.actions}><button className={d.btn.secondaryXs} onClick={() => editAccount(account)}>Edit</button><button className={d.btn.dangerXs} disabled={busy || !account.is_available} onClick={() => void archiveAccount(account)}>Archive</button></div></td>
                 </tr>
               ))}
-              {!filtered.length && !loading ? <tr><td colSpan={8} className={d.table.empty}>{search ? 'No accounts match your search.' : 'No CDRRMD Rescuer accounts yet.'}</td></tr> : null}
+              {!filtered.length && !loading ? <tr><td colSpan={isBarangayRescuer ? 9 : 8} className={d.table.empty}>{search ? 'No accounts match your search.' : `No ${accountLabel} accounts yet.`}</td></tr> : null}
             </tbody>
           </table>
         </div>
 
-        {showArchive ? <div className={d.modal.overlay}><div className={d.admin.archiveModalCard}><div className={d.modal.header}><h4 className={d.modal.title}>Archived CDRRMD Rescuer Accounts</h4><button type="button" onClick={() => setShowArchive(false)} className={d.modal.close}>Close</button></div><div className={d.admin.archiveModalBody}>{archiveBusy ? <p className={d.page.loading}>Loading archive...</p> : null}{!archiveBusy && !archivedAccounts.length ? <p className={d.admin.archiveEmpty}>No archived CDRRMD Rescuer accounts.</p> : null}{!archiveBusy && archivedAccounts.length ? <div className={d.admin.archiveList}>{archivedAccounts.map((account) => <article key={account.id} className={d.admin.archiveItem}><div><p className={d.admin.archiveName}>{[account.first_name, account.last_name].filter(Boolean).join(' ') || account.username}</p><p className={d.admin.archiveMeta}>{account.rescuer_id} · Archived: {formatDate(account.archived_at)}</p></div><div className={d.admin.archiveActions}><button type="button" onClick={() => void restoreAccount(account)} className={[d.btn.secondaryXs, d.admin.archiveActionButton].join(' ')} disabled={archiveBusy}>Restore</button><button type="button" onClick={() => void permanentlyDeleteAccount(account)} className={[d.btn.dangerXs, d.admin.archiveActionButton].join(' ')} disabled={archiveBusy}>Permanent Delete</button></div></article>)}</div> : null}</div></div></div> : null}
+        {showArchive ? <div className={d.modal.overlay}><div className={d.admin.archiveModalCard}><div className={d.modal.header}><h4 className={d.modal.title}>Archived {accountLabel} Accounts</h4><button type="button" onClick={() => setShowArchive(false)} className={d.modal.close}>Close</button></div><div className={d.admin.archiveModalBody}>{archiveBusy ? <p className={d.page.loading}>Loading archive...</p> : null}{!archiveBusy && !archivedAccounts.length ? <p className={d.admin.archiveEmpty}>No archived {accountLabel} accounts.</p> : null}{!archiveBusy && archivedAccounts.length ? <div className={d.admin.archiveList}>{archivedAccounts.map((account) => <article key={account.id} className={d.admin.archiveItem}><div><p className={d.admin.archiveName}>{[account.first_name, account.last_name].filter(Boolean).join(' ') || account.username}</p><p className={d.admin.archiveMeta}>{account.rescuer_id}{account.barangay_name ? ` · ${account.barangay_name}` : ''} · Archived: {formatDate(account.archived_at)}</p></div><div className={d.admin.archiveActions}><button type="button" onClick={() => void restoreAccount(account)} className={[d.btn.secondaryXs, d.admin.archiveActionButton].join(' ')} disabled={archiveBusy}>Restore</button><button type="button" onClick={() => void permanentlyDeleteAccount(account)} className={[d.btn.dangerXs, d.admin.archiveActionButton].join(' ')} disabled={archiveBusy}>Permanent Delete</button></div></article>)}</div> : null}</div></div></div> : null}
       </div>
     </AdminShell>
   );

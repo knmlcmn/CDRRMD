@@ -15,7 +15,10 @@ export type MonitoringLayerVisibility = {
 
 export type MapBehavior = {
   focusOnIncident?: boolean;
+  focusOnResponder?: boolean;
   allowLiveRouteUpdates?: boolean;
+  responderKind?: 'barangay' | 'cddrmd' | 'generic';
+  showForecastTimeline?: boolean;
 };
 
 const MIN_ACTIVE_RAIN_MM_PER_HOUR = 0.1;
@@ -290,6 +293,7 @@ export function buildCalambaMapHtml(
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script>
       var payload = ${payload};
+      var mapBehavior = payload.mapBehavior || {};
       var visibility = Object.assign({
         boundary: true,
         floodHazard: true,
@@ -587,7 +591,9 @@ export function buildCalambaMapHtml(
 
       function updateForecastTimebar() {
         if (!forecastTimebar) return;
-        var visible = (isScalarWeatherVisible() || Boolean(visibility.windOverlay)) && !focusModeActive;
+        var visible = Boolean(mapBehavior.showForecastTimeline)
+          && (isScalarWeatherVisible() || Boolean(visibility.windOverlay))
+          && !focusModeActive;
         forecastTimebar.style.display = visible ? 'block' : 'none';
         if (!visible) return;
         var range = forecastTimebar.querySelector('.forecast-time-range');
@@ -1941,6 +1947,19 @@ export function buildCalambaMapHtml(
           .openOn(map);
       }
 
+      function mapPersonIcon(iconName, backgroundColor, size, horizontalOffset) {
+        var offset = Number(horizontalOffset) || 0;
+        return L.divIcon({
+          className: '',
+          html: '<div style="align-items:center;background:' + backgroundColor + ';border:3px solid #fff;border-radius:999px;box-shadow:0 3px 9px rgba(15,23,42,.38);display:flex;height:' + size + 'px;justify-content:center;width:' + size + 'px"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/' + iconName + '.svg" style="filter:brightness(0) invert(1);height:' + Math.round(size * .62) + 'px;width:' + Math.round(size * .62) + 'px" /></div>',
+          iconSize: [size + 6, size + 6],
+          iconAnchor: [(size + 6) / 2 + offset, (size + 6) / 2],
+          popupAnchor: [0, -(size / 2)],
+        });
+      }
+
+      var residentPinIcon = mapPersonIcon('bxs-user', '#dc2626', 22);
+
       function renderIncidents() {
         incidentLayer.clearLayers();
         (payload.incidentPoints || []).forEach(function(point) {
@@ -1950,13 +1969,7 @@ export function buildCalambaMapHtml(
             return;
           }
           fitBounds.extend([lat, lon]);
-          L.circleMarker([lat, lon], {
-            radius: 5,
-            color: '#fff',
-            weight: 2,
-            fillColor: '#2563eb',
-            fillOpacity: 0.95,
-          }).addTo(incidentLayer).bindPopup(
+          L.marker([lat, lon], { icon: residentPinIcon }).addTo(incidentLayer).bindPopup(
             '<strong>' + (point.reportCode || 'Incident') + '</strong><br/>' +
             'Type: ' + (point.reportType || 'incident') + '<br/>' +
             'Status: ' + (point.status || 'pending')
@@ -2054,6 +2067,14 @@ export function buildCalambaMapHtml(
       });
 
       function focusActiveRescue() {
+        if (payload.mapBehavior && payload.mapBehavior.focusOnResponder && payload.responderLocation) {
+          var responderLatitude = Number(payload.responderLocation.latitude);
+          var responderLongitude = Number(payload.responderLocation.longitude);
+          if (Number.isFinite(responderLatitude) && Number.isFinite(responderLongitude) && inCalamba(responderLatitude, responderLongitude)) {
+            map.setView([responderLatitude, responderLongitude], 17, { animate: true });
+            return;
+          }
+        }
         if (!payload.incidentLocation) return;
         var latitude = Number(payload.incidentLocation.latitude);
         var longitude = Number(payload.incidentLocation.longitude);
@@ -2064,26 +2085,26 @@ export function buildCalambaMapHtml(
 
       function renderResponderRoute(extendInitialBounds) {
         responderRouteLayer.clearLayers();
+        var responderOverlapsResident = Boolean(payload.incidentLocation && payload.responderLocation)
+          && Math.abs(Number(payload.incidentLocation.latitude) - Number(payload.responderLocation.latitude)) < 0.00005
+          && Math.abs(Number(payload.incidentLocation.longitude) - Number(payload.responderLocation.longitude)) < 0.00005;
         if (payload.incidentLocation && inCalamba(Number(payload.incidentLocation.latitude), Number(payload.incidentLocation.longitude))) {
           if (extendInitialBounds) fitBounds.extend([payload.incidentLocation.latitude, payload.incidentLocation.longitude]);
-          L.circleMarker([payload.incidentLocation.latitude, payload.incidentLocation.longitude], {
-            radius: 9,
-            color: '#ffffff',
-            weight: 2,
-            fillColor: '#dc2626',
-            fillOpacity: 0.95,
-          }).addTo(responderRouteLayer).bindPopup('<strong>Selected incident</strong><br/>' + (payload.selectedReportCode || 'Rescue report'));
+          var activeResidentIcon = responderOverlapsResident ? mapPersonIcon('bxs-user', '#dc2626', 22, 13) : residentPinIcon;
+          L.marker([payload.incidentLocation.latitude, payload.incidentLocation.longitude], { icon: activeResidentIcon, zIndexOffset: 1000 })
+            .addTo(responderRouteLayer).bindPopup('<strong>Resident location</strong><br/>' + (payload.selectedReportCode || 'Rescue report'));
         }
 
         if (payload.responderLocation && inCalamba(Number(payload.responderLocation.latitude), Number(payload.responderLocation.longitude))) {
           if (extendInitialBounds) fitBounds.extend([payload.responderLocation.latitude, payload.responderLocation.longitude]);
-          L.circleMarker([payload.responderLocation.latitude, payload.responderLocation.longitude], {
-            radius: 8,
-            color: '#fff',
-            weight: 2,
-            fillColor: '#0ea5e9',
-            fillOpacity: 1,
-          }).addTo(responderRouteLayer).bindPopup('<strong>' + escapeHtml(payload.responderLabel || 'Closest responder base') + '</strong>');
+          var responderKind = payload.mapBehavior && payload.mapBehavior.responderKind;
+          var responderIcon = responderKind === 'barangay'
+            ? mapPersonIcon('bxs-shield', '#2563eb', 24, responderOverlapsResident ? -13 : 0)
+            : responderKind === 'cddrmd'
+              ? mapPersonIcon('bxs-ambulance', '#ea580c', 24, responderOverlapsResident ? -13 : 0)
+              : mapPersonIcon('bxs-car', '#0f766e', 24, responderOverlapsResident ? -13 : 0);
+          L.marker([payload.responderLocation.latitude, payload.responderLocation.longitude], { icon: responderIcon, zIndexOffset: 1100 })
+            .addTo(responderRouteLayer).bindPopup('<strong>' + escapeHtml(payload.responderLabel || 'Closest responder base') + '</strong>');
         }
 
         if ((payload.routeCoordinates || []).length > 1) {

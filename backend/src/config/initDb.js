@@ -47,18 +47,22 @@ async function initDb() {
     ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS acknowledged_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
     ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS assigned_rescuer_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
     ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMPTZ;
+    ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS responder_acknowledged_at TIMESTAMPTZ;
+    ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS responder_acknowledged_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
     ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS picked_up_at TIMESTAMPTZ;
     ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS declined_at TIMESTAMPTZ;
     ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS declined_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
     ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS decline_reason TEXT;
+    ALTER TABLE backup_requests ADD COLUMN IF NOT EXISTS dispatch_type VARCHAR(30) NOT NULL DEFAULT 'cddrmd_backup';
 
     -- Remove the legacy status-based uniqueness rule. It treats a declined
     -- request as permanently pending and blocks the barangay's next request.
     DROP INDEX IF EXISTS backup_requests_one_pending;
     DROP INDEX IF EXISTS backup_requests_active_barangay_idx;
-    CREATE UNIQUE INDEX backup_requests_active_barangay_idx
-      ON backup_requests (LOWER(barangay_name))
-      WHERE arrived_at IS NULL AND declined_at IS NULL;
+    -- This legacy index permits only one active dispatch for a report. Rescue
+    -- workflow now requires a Barangay dispatch and optional CDRRMD backup to
+    -- coexist, with uniqueness enforced per dispatch type below.
+    DROP INDEX IF EXISTS backup_requests_active_report_idx;
 
     CREATE TABLE IF NOT EXISTS alerts (
       id SERIAL PRIMARY KEY,
@@ -201,16 +205,22 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS backup_requests_report_id_idx
     ON backup_requests (report_id);
 
+    DROP INDEX IF EXISTS backup_requests_active_report_type_idx;
+    CREATE UNIQUE INDEX backup_requests_active_report_type_idx
+    ON backup_requests (report_id, dispatch_type)
+    WHERE arrived_at IS NULL AND declined_at IS NULL AND report_id IS NOT NULL;
+
     CREATE INDEX IF NOT EXISTS backup_requests_active_rescuer_idx
     ON backup_requests (assigned_rescuer_id)
     WHERE arrived_at IS NULL AND declined_at IS NULL AND assigned_rescuer_id IS NOT NULL;
 
-    UPDATE incident_reports ir
-    SET assigned_barangay = ea.barangay
-    FROM evacuation_areas ea
-    WHERE ir.report_type = 'rescue'
-      AND ir.evacuation_area_id = ea.id
-      AND ir.assigned_barangay IS DISTINCT FROM ea.barangay;
+    UPDATE backup_requests br
+    SET assigned_rescuer_id = NULL, assigned_at = NULL
+    FROM users u
+    WHERE br.dispatch_type = 'barangay_responder'
+      AND br.assigned_rescuer_id = u.id
+      AND u.role <> 'barangay_rescuer'
+      AND br.arrived_at IS NULL AND br.declined_at IS NULL;
 
     UPDATE backup_requests br
     SET report_id = (
@@ -312,6 +322,21 @@ async function initDb() {
     ALTER TABLE incident_reports
     ADD COLUMN IF NOT EXISTS evacuees_reserved INTEGER NOT NULL DEFAULT 1;
 
+    ALTER TABLE incident_reports
+    ADD COLUMN IF NOT EXISTS evacuation_arrived_at TIMESTAMPTZ;
+
+    ALTER TABLE incident_reports
+    ADD COLUMN IF NOT EXISTS evacuation_confirmed_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+    ALTER TABLE incident_reports
+    ADD COLUMN IF NOT EXISTS departure_requested_at TIMESTAMPTZ;
+
+    ALTER TABLE incident_reports
+    ADD COLUMN IF NOT EXISTS departure_confirmed_at TIMESTAMPTZ;
+
+    ALTER TABLE incident_reports
+    ADD COLUMN IF NOT EXISTS departure_confirmed_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
     ALTER TABLE report_status_logs
     ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}'::jsonb;
 
@@ -382,6 +407,19 @@ async function initDb() {
     CREATE INDEX IF NOT EXISTS incident_reports_status_idx
     ON incident_reports (status, created_at DESC);
 
+    CREATE INDEX IF NOT EXISTS incident_reports_evacuation_lifecycle_idx
+    ON incident_reports (evacuation_area_id, evacuation_arrived_at, departure_confirmed_at)
+    WHERE report_type = 'rescue' AND evacuation_area_id IS NOT NULL;
+
+    UPDATE incident_reports ir
+    SET status = 'accepted', assigned_team = NULL, dispatched_at = NULL, updated_at = NOW()
+    WHERE ir.status = 'in_progress'
+      AND EXISTS (
+        SELECT 1 FROM backup_requests br
+        WHERE br.report_id = ir.id AND br.dispatch_type = 'barangay_responder'
+          AND br.assigned_rescuer_id IS NULL AND br.arrived_at IS NULL AND br.declined_at IS NULL
+      );
+
     CREATE INDEX IF NOT EXISTS report_status_logs_report_id_idx
     ON report_status_logs (report_id, created_at ASC);
 
@@ -414,21 +452,27 @@ async function initDb() {
     WHERE role = 'user' AND COALESCE(barangay_name, '') = '';
   `);
 
-  // One-time migration for reports created before jurisdiction assignment was
-  // stored. Reports outside all supported polygons remain unassigned and are
-  // intentionally invisible to every barangay portal.
-  const unassignedReports = await pool.query(
-    `SELECT id, latitude, longitude
+  // Rescue ownership follows the resident GPS jurisdiction, independently of
+  // which evacuation center is designated. This also repairs legacy rows that
+  // were previously assigned from the evacuation center's barangay.
+  const jurisdictionReports = await pool.query(
+    `SELECT id, latitude, longitude, assigned_barangay
      FROM incident_reports
-     WHERE assigned_barangay IS NULL
+     WHERE report_type = 'rescue'
        AND latitude IS NOT NULL
        AND longitude IS NOT NULL`,
   );
-  for (const report of unassignedReports.rows) {
+  for (const report of jurisdictionReports.rows) {
     const barangayName = resolveBarangayAtLocation(report.latitude, report.longitude);
-    if (barangayName) {
+    if (barangayName && String(report.assigned_barangay || '').toLowerCase() !== barangayName.toLowerCase()) {
       await pool.query(
-        'UPDATE incident_reports SET assigned_barangay = $1 WHERE id = $2 AND assigned_barangay IS NULL',
+        'UPDATE incident_reports SET assigned_barangay = $1 WHERE id = $2',
+        [barangayName, report.id],
+      );
+      await pool.query(
+        `UPDATE backup_requests SET barangay_name = $1
+         WHERE report_id = $2 AND dispatch_type = 'barangay_responder'
+           AND arrived_at IS NULL AND declined_at IS NULL`,
         [barangayName, report.id],
       );
     }
@@ -819,6 +863,28 @@ async function initDb() {
        VALUES ($1, $2, 'Rescuer', 'Team 1', '09170000001', $3, 'rescuer', FALSE)`,
       [rescuerUsername, rescuerEmail, rescuerPasswordHash],
     );
+  }
+
+  // Barangay Rescuers are first responders controlled by their own Barangay
+  // Portal. They are intentionally separate from city-level CDRRMD Rescuers.
+  const barangayRescuerPasswordHash = await bcrypt.hash('BarangayRescuer@123', 10);
+  for (const barangayName of SUPPORTED_BARANGAYS) {
+    const slug = barangayName.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+    const username = `brs_${slug}_1`;
+    const email = `${username}@cddrmd.local`;
+    const existing = await pool.query(
+      `SELECT id FROM users WHERE role = 'barangay_rescuer'
+         AND (LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($2)) LIMIT 1`,
+      [username, email],
+    );
+    if (!existing.rows[0]) {
+      await pool.query(
+        `INSERT INTO users
+           (username, email, first_name, last_name, password_hash, role, barangay_name, is_active)
+         VALUES ($1, $2, $3, 'Responder 1', $4, 'barangay_rescuer', $3, FALSE)`,
+        [username, email, barangayName, barangayRescuerPasswordHash],
+      );
+    }
   }
 }
 

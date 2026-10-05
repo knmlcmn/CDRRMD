@@ -7,6 +7,8 @@ import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/nativ
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { api } from '../services/api';
 import { fetchRoadRoute } from '../services/routingService';
+import PlatformMap from '../components/PlatformMap';
+import { buildCalambaMapHtml } from '../utils/calambaMapHtml';
 
 type Coordinate = { latitude: number; longitude: number };
 
@@ -22,6 +24,17 @@ type RescueReport = {
   updated_at?: string;
   assigned_team?: string | null;
   decline_explanation?: string | null;
+  evacuation_area_id?: number | null;
+  evacuation_area_name?: string | null;
+  evacuation_latitude?: number | null;
+  evacuation_longitude?: number | null;
+  picked_up_at?: string | null;
+  dispatch_type?: 'barangay_responder' | 'cddrmd_backup' | null;
+  rescuer_name?: string | null;
+  responder_acknowledged_at?: string | null;
+  rescuer_latitude?: number | null;
+  rescuer_longitude?: number | null;
+  rescuer_location_updated_at?: string | null;
 };
 
 type EvacuationArea = {
@@ -30,6 +43,10 @@ type EvacuationArea = {
   barangay: string;
   latitude: number;
   longitude: number;
+  capacity: number;
+  evacuees: number;
+  is_active: boolean;
+  created_at: string;
 };
 
 function normalizeStatus(value?: string | null): RescueStatus {
@@ -59,6 +76,12 @@ function distanceSquared(a: Coordinate, b: Coordinate) {
   return dLat * dLat + dLon * dLon;
 }
 
+function optionalNumber(value: unknown) {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 export default function RescueStatusScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
@@ -70,6 +93,8 @@ export default function RescueStatusScreen() {
   const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
+  const [evacuationAreas, setEvacuationAreas] = useState<EvacuationArea[]>([]);
+  const [routeCoordinates, setRouteCoordinates] = useState<Coordinate[]>([]);
 
   const loadStatus = useCallback(async () => {
     if (!reportId) {
@@ -92,12 +117,23 @@ export default function RescueStatusScreen() {
         id: Number(selected.id),
         report_code: selected.report_code || null,
         status: selected.status || 'pending',
-        latitude: Number.isFinite(Number(selected.latitude)) ? Number(selected.latitude) : null,
-        longitude: Number.isFinite(Number(selected.longitude)) ? Number(selected.longitude) : null,
+        latitude: optionalNumber(selected.latitude),
+        longitude: optionalNumber(selected.longitude),
         created_at: selected.created_at,
         updated_at: selected.updated_at,
         assigned_team: selected.assigned_team || null,
         decline_explanation: selected.decline_explanation || null,
+        evacuation_area_id: optionalNumber(selected.evacuation_area_id),
+        evacuation_area_name: selected.evacuation_area_name || null,
+        evacuation_latitude: optionalNumber(selected.evacuation_latitude),
+        evacuation_longitude: optionalNumber(selected.evacuation_longitude),
+        picked_up_at: selected.picked_up_at || null,
+        dispatch_type: selected.dispatch_type || null,
+        rescuer_name: selected.rescuer_name || null,
+        responder_acknowledged_at: selected.responder_acknowledged_at || null,
+        rescuer_latitude: optionalNumber(selected.rescuer_latitude),
+        rescuer_longitude: optionalNumber(selected.rescuer_longitude),
+        rescuer_location_updated_at: selected.rescuer_location_updated_at || null,
       };
 
       setReport(normalized);
@@ -108,6 +144,7 @@ export default function RescueStatusScreen() {
       if (!Number.isFinite(normalized.latitude) || !Number.isFinite(normalized.longitude) || nextStatus === 'pending' || nextStatus === 'declined') {
         setEtaMinutes(null);
         setDistanceKm(null);
+        setRouteCoordinates([]);
         setLoading(false);
         return;
       }
@@ -120,40 +157,55 @@ export default function RescueStatusScreen() {
           barangay: String(item?.barangay || 'Calamba'),
           latitude: Number(item?.latitude),
           longitude: Number(item?.longitude),
+          capacity: Number(item?.capacity || 0),
+          evacuees: Number(item?.evacuees || 0),
+          is_active: item?.is_active !== false,
+          created_at: String(item?.created_at || ''),
         }))
         .filter((item: EvacuationArea) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
+      setEvacuationAreas(activeAreas);
 
       if (activeAreas.length === 0) {
         setEtaMinutes(null);
         setDistanceKm(null);
+        setRouteCoordinates([]);
         setLoading(false);
         return;
       }
 
       const incidentPoint = { latitude: Number(normalized.latitude), longitude: Number(normalized.longitude) };
-      const nearest = activeAreas
-        .map((area) => ({ area, dist: distanceSquared(area, incidentPoint) }))
-        .sort((a, b) => a.dist - b.dist)[0]?.area;
+      const designatedArea = activeAreas.find((area) => area.id === normalized.evacuation_area_id)
+        || activeAreas.map((area) => ({ area, dist: distanceSquared(area, incidentPoint) })).sort((a, b) => a.dist - b.dist)[0]?.area;
+      const responderPoint = normalized.responder_acknowledged_at
+        && Number.isFinite(normalized.rescuer_latitude) && Number.isFinite(normalized.rescuer_longitude)
+        ? { latitude: Number(normalized.rescuer_latitude), longitude: Number(normalized.rescuer_longitude) }
+        : null;
+      const routeDestination = normalized.picked_up_at && designatedArea
+        ? { latitude: designatedArea.latitude, longitude: designatedArea.longitude }
+        : incidentPoint;
 
-      if (!nearest) {
+      if (!responderPoint) {
         setEtaMinutes(null);
         setDistanceKm(null);
+        setRouteCoordinates([]);
         setLoading(false);
         return;
       }
 
       try {
         const routeMetrics = await fetchRoadRoute(
-          { latitude: nearest.latitude, longitude: nearest.longitude },
-          incidentPoint,
-          false,
+          responderPoint,
+          routeDestination,
+          true,
           1,
         );
         setEtaMinutes(routeMetrics.etaMinutes);
         setDistanceKm(routeMetrics.distanceKm);
+        setRouteCoordinates(routeMetrics.routeCoordinates);
       } catch {
         setEtaMinutes(null);
         setDistanceKm(null);
+        setRouteCoordinates([responderPoint, routeDestination]);
       }
     } catch {
       setError('Unable to refresh rescue status.');
@@ -196,10 +248,10 @@ export default function RescueStatusScreen() {
 
   const statusLabel = useMemo(() => {
     if (status === 'accepted') {
-      return 'Confirmed';
+      return report?.assigned_team && !report?.responder_acknowledged_at ? 'Awaiting Responder Acknowledgment' : 'Responder En Route';
     }
     if (status === 'in_progress') {
-      return 'Team Dispatched';
+      return 'In Progress';
     }
     if (status === 'resolved') {
       return 'Resolved';
@@ -208,9 +260,33 @@ export default function RescueStatusScreen() {
       return 'Declined';
     }
     return 'Pending Validation';
-  }, [status]);
+  }, [report?.assigned_team, report?.responder_acknowledged_at, status]);
 
   const reportCode = report?.report_code || (report ? `RPT-${String(report.id).padStart(6, '0')}` : '-');
+  const responderLocation = report?.responder_acknowledged_at
+    && Number.isFinite(report?.rescuer_latitude) && Number.isFinite(report?.rescuer_longitude)
+    ? { latitude: Number(report?.rescuer_latitude), longitude: Number(report?.rescuer_longitude) }
+    : null;
+  const incidentLocation = Number.isFinite(report?.latitude) && Number.isFinite(report?.longitude)
+    ? { latitude: Number(report?.latitude), longitude: Number(report?.longitude) }
+    : null;
+  const routeDestination = report?.picked_up_at && Number.isFinite(report?.evacuation_latitude) && Number.isFinite(report?.evacuation_longitude)
+    ? { latitude: Number(report?.evacuation_latitude), longitude: Number(report?.evacuation_longitude) }
+    : incidentLocation;
+  const apiBaseUrl = String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '');
+  const mapHtml = useMemo(() => buildCalambaMapHtml(
+    evacuationAreas,
+    responderLocation,
+    routeCoordinates,
+    routeDestination,
+    reportCode,
+    [],
+    `${apiBaseUrl}/flood-risk/calamba/barangays`,
+    `${apiBaseUrl}/flood-risk/calamba/raster`,
+    `${apiBaseUrl}/flood-risk/calamba/rain-impact`,
+    { boundary: true, floodHazard: false, evacuationAreas: true, incidentMarkers: true, responderRoute: true, weatherOverlay: false },
+    report?.dispatch_type === 'cddrmd_backup' ? 'Live CDRRMD Rescuer location' : 'Live Barangay Rescuer location',
+  ), [apiBaseUrl, evacuationAreas, report?.dispatch_type, reportCode, responderLocation, routeCoordinates, routeDestination]);
 
   if (loading && !report) {
     return (
@@ -251,6 +327,12 @@ export default function RescueStatusScreen() {
           </View>
         </View>
 
+        {responderLocation ? (
+          <View style={st.mapCard}>
+            <PlatformMap html={mapHtml} baseUrl={apiBaseUrl} style={st.map} />
+          </View>
+        ) : null}
+
         <View style={st.infoCard}>
           <Text style={st.infoTitle}>Request Details</Text>
           <Text style={st.label}>Report ID</Text>
@@ -258,6 +340,9 @@ export default function RescueStatusScreen() {
 
           <Text style={st.label}>Assigned Team</Text>
           <Text style={st.value}>{report?.assigned_team || 'Waiting assignment'}</Text>
+
+          <Text style={st.label}>Responder Tracking</Text>
+          <Text style={st.value}>{responderLocation ? 'Live location and route active' : report?.assigned_team ? report?.responder_acknowledged_at ? 'Waiting for responder GPS' : 'Waiting for responder acknowledgment' : 'Waiting assignment'}</Text>
 
           <Text style={st.label}>Route Distance</Text>
           <Text style={st.value}>{distanceKm ? `${distanceKm.toFixed(2)} km` : '--'}</Text>
@@ -354,6 +439,16 @@ const st = StyleSheet.create({
     borderColor: editorial.border,
     padding: 14,
   },
+  mapCard: {
+    height: 320,
+    marginTop: 10,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: editorial.border,
+    backgroundColor: editorial.surface,
+  },
+  map: { flex: 1 },
   infoTitle: { color: editorial.ink, fontSize: 18, fontWeight: '400', marginBottom: 10 },
   label: { color: '#475569', fontSize: 12, fontWeight: '700', marginTop: 8 },
   value: { color: '#181818', fontSize: 14, fontWeight: '700', marginTop: 2 },

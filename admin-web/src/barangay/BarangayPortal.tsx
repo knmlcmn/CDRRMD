@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import MonitoringPage from './pages/MonitoringPage';
-import AccountPage from './pages/AccountPage';
+import PersonnelAccountsPage from './pages/PersonnelAccountsPage';
 import FloodMonitoringPage from './pages/FloodMonitoringPage';
+import EvacuationCenterPage from './pages/EvacuationCenterPage';
+import DashboardPage from './pages/DashboardPage';
 import WaterLevelAlert, { type WaterLevelNoticeKind } from './components/WaterLevelAlert';
 import BackupModal from './components/BackupModal';
 import { API_BASE_URL, api, setAuthToken } from '../services/apiClient';
 import { loadWaterLevelSensors, type WaterLevelSensor } from './services/waterLevelSensors';
 
-type View = 'monitoring' | 'flood-monitoring' | 'account';
+type View = 'dashboard' | 'monitoring' | 'flood-monitoring' | 'evacuation-center' | 'account';
 type RescueRequestNotice = {
   id: number;
   report_code?: string | null;
@@ -28,7 +30,7 @@ type Props = {
 };
 
 export default function BarangayPortal({ token, barangayName, onLogout, onAuthError }: Props) {
-  const [view, setView] = useState<View>('monitoring');
+  const [view, setView] = useState<View>('dashboard');
   const [pendingRescueRequests, setPendingRescueRequests] = useState<RescueRequestNotice[]>([]);
   const [dismissedRescueIds, setDismissedRescueIds] = useState<Set<number>>(() => new Set());
   const [focusReportId, setFocusReportId] = useState<number | null>(null);
@@ -55,8 +57,8 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
         setPendingRescueRequests((Array.isArray(data) ? data : []).filter((report) =>
           String(report.status || '').toLowerCase() === 'pending'
         ));
-      } catch (error: any) {
-        if (error?.response?.status === 401) onAuthError();
+      } catch (error: unknown) {
+        if ((error as { response?: { status?: number } })?.response?.status === 401) onAuthError();
       }
     };
     void checkRescueRequests();
@@ -148,14 +150,16 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
       </div>
     </BackupModal>
   ) : null;
-  const pageProps = { barangayName, onLogout, onAuthError };
+  const pageProps = { barangayName, onLogout, onAuthError, onOpenDashboard: () => setView('dashboard') };
 
   return (
     <>
       {rescuePopup || popup}
-      {view === 'account' ? <AccountPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenFloodMonitoring={() => setView('flood-monitoring')} /> : null}
-      {view === 'flood-monitoring' ? <FloodMonitoringPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenAccount={() => setView('account')} /> : null}
-      {view === 'monitoring' ? <MonitoringPage {...pageProps} focusReportId={focusReportId} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenAccount={() => setView('account')} /> : null}
+      {view === 'dashboard' ? <DashboardPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenEvacuationCenter={() => setView('evacuation-center')} onOpenAccount={() => setView('account')} /> : null}
+      {view === 'account' ? <PersonnelAccountsPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenEvacuationCenter={() => setView('evacuation-center')} /> : null}
+      {view === 'flood-monitoring' ? <FloodMonitoringPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenEvacuationCenter={() => setView('evacuation-center')} onOpenAccount={() => setView('account')} /> : null}
+      {view === 'evacuation-center' ? <EvacuationCenterPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenAccount={() => setView('account')} /> : null}
+      {view === 'monitoring' ? <MonitoringPage {...pageProps} focusReportId={focusReportId} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenEvacuationCenter={() => setView('evacuation-center')} onOpenAccount={() => setView('account')} /> : null}
     </>
   );
 }

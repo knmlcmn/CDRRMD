@@ -7,13 +7,12 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { AppProfile, getAccountById, updateAccountProfile } from '../services/appAccount';
 import { putAuthMe } from '../services/api';
+import { SUPPORTED_BARANGAYS } from '../constants/barangays';
 
 type Props = {
   appUserId: string;
   onLogout?: () => void | Promise<void>;
 };
-
-const SUPPORTED_BARANGAYS = ['Palingon', 'Sampiruhan', 'Lingga', 'Parian', 'Looc', 'Uwisan'];
 
 const EMPTY_PROFILE: AppProfile = {
     firstName: '',

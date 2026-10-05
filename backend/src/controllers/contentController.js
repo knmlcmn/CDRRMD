@@ -165,20 +165,20 @@ async function getEvacuationAreas(req, res) {
        ea.latitude,
        ea.longitude,
        ea.capacity,
-       COALESCE(stats.confirmed_total, 0)::int AS rescued_evacuees,
-       COALESCE(stats.confirmed_total, 0)::int AS evacuees,
-       GREATEST(ea.capacity - COALESCE(stats.confirmed_total, 0), 0)::int AS available_slots,
-       GREATEST(ea.capacity - COALESCE(stats.confirmed_total, 0), 0)::int AS rescued_available_slots,
+       ea.evacuees::int AS rescued_evacuees,
+       (ea.evacuees + COALESCE(stats.incoming_total, 0))::int AS evacuees,
+       GREATEST(ea.capacity - ea.evacuees - COALESCE(stats.incoming_total, 0), 0)::int AS available_slots,
+       GREATEST(ea.capacity - ea.evacuees, 0)::int AS rescued_available_slots,
        CASE
          WHEN ea.capacity <= 0 THEN 'full'
-         WHEN COALESCE(stats.confirmed_total, 0) >= ea.capacity THEN 'full'
-         WHEN COALESCE(stats.confirmed_total, 0) >= (ea.capacity * 0.85) THEN 'nearly_full'
+         WHEN ea.evacuees + COALESCE(stats.incoming_total, 0) >= ea.capacity THEN 'full'
+         WHEN ea.evacuees + COALESCE(stats.incoming_total, 0) >= (ea.capacity * 0.85) THEN 'nearly_full'
          ELSE 'available'
        END AS evacuation_status,
        CASE
          WHEN ea.capacity <= 0 THEN 'full'
-         WHEN COALESCE(stats.confirmed_total, 0) >= ea.capacity THEN 'full'
-         WHEN COALESCE(stats.confirmed_total, 0) >= (ea.capacity * 0.85) THEN 'nearly_full'
+         WHEN ea.evacuees >= ea.capacity THEN 'full'
+         WHEN ea.evacuees >= (ea.capacity * 0.85) THEN 'nearly_full'
          ELSE 'available'
        END AS rescued_evacuation_status,
        ea.is_active,
@@ -187,10 +187,12 @@ async function getEvacuationAreas(req, res) {
      LEFT JOIN (
        SELECT
          evacuation_area_id,
-         COALESCE(SUM(CASE WHEN status IN ('accepted', 'in_progress', 'resolved') THEN evacuees_reserved ELSE 0 END), 0)::int AS confirmed_total
+         COALESCE(SUM(evacuees_reserved), 0)::int AS incoming_total
        FROM incident_reports
        WHERE report_type = 'rescue'
          AND evacuation_area_id IS NOT NULL
+         AND status IN ('accepted', 'in_progress')
+         AND evacuation_arrived_at IS NULL
        GROUP BY evacuation_area_id
       ) stats ON stats.evacuation_area_id = ea.id
       ORDER BY ea.name ASC`,
@@ -322,10 +324,9 @@ async function getDashboardSummary(req, res) {
     ),
     pool.query('SELECT COUNT(*)::int AS count FROM evacuation_areas WHERE is_active = TRUE'),
     pool.query(
-      `SELECT COALESCE(SUM(evacuees_reserved), 0)::int AS total
-       FROM incident_reports
-       WHERE report_type = 'rescue'
-         AND status = 'resolved'`,
+      `SELECT COALESCE(SUM(evacuees), 0)::int AS total
+       FROM evacuation_areas
+       WHERE is_active = TRUE`,
     ),
     pool.query(
       `SELECT

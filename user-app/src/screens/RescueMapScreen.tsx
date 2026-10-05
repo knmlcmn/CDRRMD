@@ -31,6 +31,7 @@ type EvacuationArea = {
   locationText: string;
   capacity: number;
   evacuees: number;
+  status: 'available' | 'full';
   latitude: number;
   longitude: number;
 };
@@ -89,17 +90,21 @@ function normalizeRescueStatus(value: unknown): RescueRecord['status'] {
 }
 
 function normalizeEvacueesValue(item: any) {
-  const rescued = Number(item?.rescued_evacuees);
-  if (Number.isFinite(rescued)) {
-    return Math.max(0, rescued);
+  const currentAndIncoming = Number(item?.evacuees);
+  if (Number.isFinite(currentAndIncoming)) {
+    return Math.max(0, currentAndIncoming);
   }
 
-  const fallback = Number(item?.evacuees);
+  const fallback = Number(item?.rescued_evacuees);
   return Number.isFinite(fallback) ? Math.max(0, fallback) : 0;
 }
 
+function hasCapacityFor(area: EvacuationArea, peopleCount: number) {
+  return area.status !== 'full' && area.capacity - area.evacuees >= peopleCount;
+}
+
 function isAreaFull(area: EvacuationArea) {
-  return area.capacity > 0 && area.evacuees >= area.capacity;
+  return !hasCapacityFor(area, 1);
 }
 
 const CALAMBA_BOUNDS = {
@@ -148,8 +153,9 @@ function formatEtaText(etaMinutes: number) {
 async function resolveBestRoadPlan(
   userLocation: Coordinate,
   evacuationAreas: EvacuationArea[],
+  peopleCount = 1,
 ): Promise<RescuePlan | null> {
-  const availableAreas = evacuationAreas.filter((area) => !isAreaFull(area));
+  const availableAreas = evacuationAreas.filter((area) => hasCapacityFor(area, peopleCount));
   const bestRoute = await fetchBestRoadRoute(
     userLocation,
     availableAreas.map((area) => ({
@@ -186,6 +192,7 @@ function buildLeafletHtml(
   routeCoordinates: Coordinate[],
   apiBaseUrl: string,
   layerVisibility: UserMapLayerVisibility,
+  showForecastTimeline: boolean,
 ) {
   const serialized = JSON.stringify({
     userLocation,
@@ -197,6 +204,7 @@ function buildLeafletHtml(
     rainImpactUrl: `${apiBaseUrl}/flood-risk/calamba/rain-impact`,
     floodHazardUrl: `${apiBaseUrl}/flood-risk/calamba/barangays`,
     layerVisibility,
+    showForecastTimeline,
     boundaryGeoJson: CALAMBA_BOUNDARY_GEOJSON,
   });
 
@@ -246,6 +254,16 @@ function buildLeafletHtml(
       .flood-info table{border-collapse:collapse;width:100%}
       .flood-info td{border:1px solid #cbd5e1;padding:6px 8px}
       .flood-info td:first-child{background:#f8fafc;font-weight:700;width:42%}
+      .evacuation-popup .leaflet-popup-content{margin:10px 16px 12px;width:min(260px,calc(100vw - 64px))!important}
+      .evac-info{font:14px/1.3 Arial,sans-serif;min-width:0;width:100%}
+      .evac-info .head{background:#0f766e;color:#fff;font-size:15px;font-weight:800;line-height:1.2;margin:-10px -16px 8px;padding:8px 10px}
+      .evac-info .selected{color:#ccfbf1;display:block;font-size:11px;font-weight:700;letter-spacing:.02em;margin-top:2px;text-transform:uppercase}
+      .evac-info table{border-collapse:collapse;width:100%}
+      .evac-info td{border:1px solid #cbd5e1;padding:5px 7px;vertical-align:top}
+      .evac-info td:first-child{background:#f8fafc;font-weight:700;width:36%}
+      .evac-status{border-radius:999px;display:inline-block;font-size:12px;font-weight:800;padding:2px 7px}
+      .evac-status.available{background:#dcfce7;color:#166534}
+      .evac-status.full{background:#fee2e2;color:#991b1b}
       .map-rain-canvas{left:0;opacity:.5;pointer-events:none;position:absolute;top:0;z-index:429}.map-wind-canvas{left:0;opacity:.5;pointer-events:none;position:absolute;top:0;z-index:430}.forecast-timebar{backdrop-filter:blur(9px);background:rgba(7,17,24,.94);border:1px solid rgba(148,163,184,.35);border-radius:18px;bottom:10px;box-shadow:0 5px 18px rgba(0,0,0,.38);color:#fff;display:none;left:50%;max-width:calc(100% - 16px);padding:8px 10px 7px;pointer-events:auto;position:absolute;transform:translateX(-50%);width:calc(100% - 16px);z-index:700}.forecast-time-track{position:relative}.forecast-time-labels{display:flex;justify-content:space-between;margin:0 5px 3px}.forecast-time-label{color:#f8fafc;font:700 10px/1.1 Arial,sans-serif;text-align:center}.forecast-time-date{color:#cbd5e1;display:block;font:8px/1 Arial,sans-serif}.forecast-time-range{appearance:none;background:repeating-linear-gradient(90deg,rgba(203,213,225,.7) 0 1px,transparent 1px 9px);border:0;display:block;height:26px;margin:0;outline:none;width:100%}.forecast-time-range::-webkit-slider-thumb{appearance:none;background:#f97316;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px rgba(249,115,22,.3);cursor:grab;height:17px;width:5px}.forecast-time-range::-moz-range-thumb{background:#f97316;border:2px solid #fff;border-radius:50%;cursor:grab;height:17px;width:5px}.forecast-time-summary{color:#dbeafe;font:700 9px/1.3 Arial,sans-serif;overflow:hidden;text-align:center;text-overflow:ellipsis;white-space:nowrap}
       @media (max-width:420px){.forecast-timebar{bottom:6px;padding:6px 7px}.forecast-time-label{font-size:9px}.forecast-time-date{font-size:7px}.leaflet-control-zoom a{height:28px!important;line-height:28px!important;width:28px!important}}
     </style>
@@ -459,6 +477,12 @@ function buildLeafletHtml(
         return text.charAt(0).toUpperCase() + text.slice(1).toLowerCase();
       }
 
+      function escapeHtml(value) {
+        return String(value == null ? '' : value).replace(/[&<>"']/g, function(char) {
+          return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char];
+        });
+      }
+
       var boundaryLayer = L.layerGroup();
       var floodHazardLayer = L.layerGroup();
       var areaLayer = L.layerGroup();
@@ -626,7 +650,7 @@ function buildLeafletHtml(
 
       function updateForecastTimebar(){
         if(!forecastTimebar)return;
-        forecastTimebar.style.display=(Boolean(visibility.windOverlay)||isScalarWeatherVisible())?'block':'none';
+        forecastTimebar.style.display=Boolean(data.showForecastTimeline)&&(Boolean(visibility.windOverlay)||isScalarWeatherVisible())?'block':'none';
         var frame=activeForecastFrame();
         var range=forecastTimebar.querySelector('.forecast-time-range');
         if(range)range.value=String(Number(String(weatherTimeframe).slice(5))||0);
@@ -1202,6 +1226,7 @@ function buildLeafletHtml(
       });
 
       var fitBounds = L.latLngBounds([[data.userLocation.latitude, data.userLocation.longitude]]);
+      var selectedAreaMarker = null;
 
       if (data.showAreas) {
         data.allAreas.forEach(function(area){
@@ -1212,10 +1237,25 @@ function buildLeafletHtml(
           var marker = L.marker([area.latitude, area.longitude], {
             icon: isSelected ? selectedAreaPinIcon : areaPinIcon
           }).addTo(areaLayer).bindPopup(
-            '<strong>' + area.name + '</strong><br/>' +
-            'Type: ' + area.placeType + '<br/>' +
-            'Location: ' + area.locationText
+            '<div class="evac-info">' +
+              '<div class="head">' + escapeHtml(area.name) +
+                (isSelected ? '<span class="selected">Selected evacuation center</span>' : '') +
+              '</div>' +
+              '<table>' +
+                '<tr><td>Type</td><td>' + escapeHtml(area.placeType || 'Evacuation Site') + '</td></tr>' +
+                '<tr><td>Barangay</td><td>' + escapeHtml(area.barangay) + '</td></tr>' +
+                '<tr><td>Location</td><td>' + escapeHtml(area.locationText) + '</td></tr>' +
+                '<tr><td>Capacity</td><td>' + escapeHtml(area.capacity) + '</td></tr>' +
+                '<tr><td>Evacuees</td><td>' + escapeHtml(area.evacuees) + '</td></tr>' +
+                '<tr><td>Status</td><td><span class="evac-status ' + (area.status === 'full' ? 'full' : 'available') + '">' + (area.status === 'full' ? 'Full' : 'Available') + '</span></td></tr>' +
+              '</table>' +
+            '</div>',
+            { className: 'evacuation-popup', maxWidth: 292, minWidth: 0 }
           );
+
+          if (isSelected) {
+            selectedAreaMarker = marker;
+          }
 
           marker.on('click', function() {
             var message = JSON.stringify({ type: 'select-area', areaId: area.id });
@@ -1267,7 +1307,11 @@ function buildLeafletHtml(
         }
         identifyFloodAt(event.latlng);
       });
-      userMarker.openPopup();
+      if (selectedAreaMarker) {
+        window.setTimeout(function() { selectedAreaMarker.openPopup(); }, 200);
+      } else {
+        userMarker.openPopup();
+      }
       window.setTimeout(function() {
         map.invalidateSize();
         refreshWeatherCanvases();
@@ -1293,6 +1337,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [routingRecommendation, setRoutingRecommendation] = useState(false);
   const [rescueNotes, setRescueNotes] = useState('');
+  const [peopleCount, setPeopleCount] = useState(1);
   const [loading, setLoading] = useState(true);
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationArea[]>([]);
   const [recentRescueRecords, setRecentRescueRecords] = useState<RescueRecord[]>([]);
@@ -1327,6 +1372,13 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
             return null;
           }
 
+          const capacity = Math.max(0, Number(item?.capacity || 0));
+          const evacuees = normalizeEvacueesValue(item);
+          const reportedStatus = String(item?.evacuation_status || '').toLowerCase();
+          const status: EvacuationArea['status'] = reportedStatus === 'full' || capacity <= 0 || evacuees >= capacity
+            ? 'full'
+            : 'available';
+
           return {
             id: String(item?.id ?? `db-${index + 1}`),
             name: String(item?.name || 'Evacuation Area'),
@@ -1336,8 +1388,9 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
               item?.address ||
                 `${String(item?.name || 'Evacuation Area')}, Barangay ${String(item?.barangay || 'Calamba')}, Calamba City, Laguna, Philippines`,
             ),
-            capacity: Math.max(0, Number(item?.capacity || 0)),
-            evacuees: normalizeEvacueesValue(item),
+            capacity,
+            evacuees,
+            status,
             latitude: lat,
             longitude: lon,
           };
@@ -1368,6 +1421,12 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
     setRouteDistanceKm(null);
     setRouteEtaText(null);
     setRouteSource(null);
+    setLayerVisibility((current) => ({
+      ...current,
+      evacuationAreas: true,
+      userMarker: true,
+      route: true,
+    }));
     const latestAreas = await loadEvacuationAreas();
     if (!latestAreas.some((area) => !isAreaFull(area))) {
       showNotice('No available evacuation area', 'All evacuation areas are currently full. Please try again shortly.');
@@ -1559,8 +1618,9 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
       routeCoordinates,
       apiBaseUrl,
       layerVisibility,
+      isMapFullscreen,
     );
-  }, [evacuationAreas, layerVisibility, apiBaseUrl, requestStarted, routeCoordinates, selectedAreaId, userLocation]);
+  }, [evacuationAreas, layerVisibility, apiBaseUrl, isMapFullscreen, requestStarted, routeCoordinates, selectedAreaId, userLocation]);
 
   async function handleUploadProof() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -1605,13 +1665,13 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
           return;
         }
 
-        if (isAreaFull(chosen)) {
+        if (!hasCapacityFor(chosen, peopleCount)) {
           if (!userLocation) {
             return;
           }
           setRoutingRecommendation(true);
           try {
-            const plan = await resolveBestRoadPlan(userLocation, evacuationAreas);
+            const plan = await resolveBestRoadPlan(userLocation, evacuationAreas, peopleCount);
             if (plan) {
               applyRoadPlan(plan);
               showNotice(
@@ -1646,10 +1706,10 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
     const latestAreas = await loadEvacuationAreas();
     const refreshedSelected = latestAreas.find((area) => area.id === selectedArea.id) || selectedArea;
 
-    if (isAreaFull(refreshedSelected)) {
+    if (!hasCapacityFor(refreshedSelected, peopleCount)) {
       setRoutingRecommendation(true);
       try {
-        const plan = await resolveBestRoadPlan(userLocation, latestAreas);
+        const plan = await resolveBestRoadPlan(userLocation, latestAreas, peopleCount);
         if (plan) {
           applyRoadPlan(plan);
           showNotice(
@@ -1693,6 +1753,8 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
         longitude: userLocation.longitude,
         evacuationAreaId: selectedArea.id,
         evacuationAreaName: refreshedSelected.name,
+        arePeopleTrapped: true,
+        estimatedPeople: peopleCount,
         imageBase64: proofImageBase64,
         fullName,
         contactNumber,
@@ -1706,6 +1768,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
       setProofImageUri(null);
       setProofImageBase64(null);
       setRescueNotes('');
+      setPeopleCount(1);
       setRouteCoordinates([]);
       setRouteDistanceKm(null);
       setRouteEtaText(null);
@@ -1720,7 +1783,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
         setRoutingRecommendation(true);
         try {
           const refreshedAreas = await loadEvacuationAreas();
-          const replacementPlan = await resolveBestRoadPlan(userLocation, refreshedAreas);
+          const replacementPlan = await resolveBestRoadPlan(userLocation, refreshedAreas, peopleCount);
           if (replacementPlan) {
             applyRoadPlan(replacementPlan);
             showNotice(
@@ -1825,6 +1888,31 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
                 {submitting ? <ActivityIndicator color="#fff" /> : <Text style={st.submitBtnText}>Submit</Text>}
               </TouchableOpacity>
             </View>
+            <View style={st.peopleSelector}>
+              <View style={st.peopleSelectorCopy}>
+                <Text style={st.peopleSelectorLabel}>People needing rescue</Text>
+                <Text style={st.peopleSelectorHint}>This number will be transported to the evacuation site.</Text>
+              </View>
+              <View style={st.peopleSelectorControls}>
+                <TouchableOpacity
+                  style={[st.peopleSelectorButton, peopleCount <= 1 && st.peopleSelectorButtonDisabled]}
+                  onPress={() => setPeopleCount((count) => Math.max(1, count - 1))}
+                  disabled={peopleCount <= 1}
+                  accessibilityLabel="Decrease people count"
+                >
+                  <Text style={st.peopleSelectorButtonText}>−</Text>
+                </TouchableOpacity>
+                <Text style={st.peopleSelectorValue}>{peopleCount}</Text>
+                <TouchableOpacity
+                  style={[st.peopleSelectorButton, peopleCount >= 100 && st.peopleSelectorButtonDisabled]}
+                  onPress={() => setPeopleCount((count) => Math.min(100, count + 1))}
+                  disabled={peopleCount >= 100}
+                  accessibilityLabel="Increase people count"
+                >
+                  <Text style={st.peopleSelectorButtonText}>+</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
             <TextInput
               style={st.notesInput}
               value={rescueNotes}
@@ -1863,6 +1951,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
                   setProofImageUri(null);
                   setProofImageBase64(null);
                   setRescueNotes('');
+                  setPeopleCount(1);
                   setRouteCoordinates([]);
                   setRouteDistanceKm(null);
                   setRouteEtaText(null);
@@ -1883,8 +1972,8 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
 
           {requestStarted ? (
             <>
-              <Text style={st.areaSectionTitle}>Evacuation Areas</Text>
-              <Text style={st.areaCountText}>Tap a map marker to select an evacuation area.</Text>
+              <Text style={st.areaSectionTitle}>Nearest Evacuation Center</Text>
+              <Text style={st.areaCountText}>The nearest available center is selected automatically. Tap another map marker to review a different center.</Text>
 
               {selectedArea ? (
                 <View style={[st.areaCard, st.areaCardSelected]}>
@@ -1901,6 +1990,10 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
                     <Text style={st.areaAddr}>{selectedArea.capacity}</Text>
                     <Text style={st.areaMetaLabel}>Evacuees:</Text>
                     <Text style={st.areaAddr}>{selectedArea.evacuees}</Text>
+                    <Text style={st.areaMetaLabel}>Status:</Text>
+                    <Text style={[st.areaStatus, isAreaFull(selectedArea) ? st.areaStatusFull : st.areaStatusAvailable]}>
+                      {isAreaFull(selectedArea) ? 'Full' : 'Available'}
+                    </Text>
                     <Text style={st.areaMetaLabel}>Route Distance:</Text>
                     <Text style={st.areaAddr}>{routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : 'Calculating...'}</Text>
                     <Text style={st.areaMetaLabel}>ETA:</Text>
@@ -2017,6 +2110,9 @@ const st = StyleSheet.create({
   areaName: { color: '#181818', fontSize: 14, fontWeight: '700' },
   areaMetaLabel: { color: editorial.muted, fontSize: 11, marginTop: 5, fontWeight: '700' },
   areaAddr: { color: '#585858', fontSize: 12, marginTop: 2 },
+  areaStatus: { alignSelf: 'flex-start', borderRadius: 999, fontSize: 11, fontWeight: '800', marginTop: 3, overflow: 'hidden', paddingHorizontal: 8, paddingVertical: 3 },
+  areaStatusAvailable: { backgroundColor: '#dcfce7', color: '#166534' },
+  areaStatusFull: { backgroundColor: '#fee2e2', color: '#991b1b' },
   areaBestTag: { color: '#15803d', fontSize: 11, marginTop: 4, fontWeight: '700' },
   areaHintCard: {
     backgroundColor: editorial.surface,
@@ -2040,6 +2136,15 @@ const st = StyleSheet.create({
   actionText: { color: '#fff', fontSize: 18, fontWeight: '900' },
 
   bottomActionRow: { flexDirection: 'row', marginTop: 10, gap: 8 },
+  peopleSelector: { marginTop: 10, borderWidth: 1, borderColor: editorial.border, borderRadius: 12, backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  peopleSelectorCopy: { flex: 1, minWidth: 0 },
+  peopleSelectorLabel: { color: editorial.ink, fontSize: 13, fontWeight: '900' },
+  peopleSelectorHint: { color: editorial.muted, fontSize: 10, marginTop: 2, lineHeight: 14 },
+  peopleSelectorControls: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  peopleSelectorButton: { width: 34, height: 34, borderRadius: 9, backgroundColor: editorial.accent, alignItems: 'center', justifyContent: 'center' },
+  peopleSelectorButtonDisabled: { backgroundColor: '#cbd5e1' },
+  peopleSelectorButtonText: { color: '#fff', fontSize: 20, fontWeight: '900', lineHeight: 22 },
+  peopleSelectorValue: { minWidth: 28, color: editorial.ink, fontSize: 18, fontWeight: '900', textAlign: 'center' },
   uploadBtn: {
     flex: 1,
     backgroundColor: editorial.accent,
