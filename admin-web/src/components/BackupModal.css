@@ -1,0 +1,15 @@
+.backup-modal { position: fixed; inset: 0; margin: auto; box-sizing: border-box; width: min(440px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto; border: 2px solid #dc2626; border-radius: 16px; padding: 28px; background: #fff; color: #172033; box-shadow: 0 24px 80px #0006; }
+.backup-modal::backdrop { background: rgba(15,23,42,.55); backdrop-filter: blur(8px); }
+.backup-modal-square { aspect-ratio: 1; }
+.backup-modal h2 { margin: 0 0 18px; font-size: 24px; font-weight: 800; color: #b91c1c; }
+.backup-modal p { margin: 12px 0; line-height: 1.6; }
+.backup-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.backup-button { padding: 11px 18px; border: 1px solid #b91c1c; border-radius: 6px; background: #dc2626; color: white; font-weight: 700; cursor: pointer; }
+.backup-button:disabled { opacity: .55; cursor: wait; }
+.backup-button-secondary { background: white; color: #334155; border-color: #cbd5e1; }
+.backup-button:focus-visible { outline: 3px solid #2563eb; outline-offset: 3px; }
+.backup-error { color: #b91c1c; font-size: 14px; }
+.backup-tooltip-wrap { position: relative; display: inline-block; }
+.backup-tooltip { display: none; position: absolute; top: calc(100% + 8px); right: 0; width: 240px; padding: 9px 12px; background: #172033; color: white; border-radius: 6px; font-size: 13px; z-index: 10000; }
+.backup-tooltip-wrap:hover .backup-tooltip, .backup-tooltip-wrap:focus-within .backup-tooltip { display: block; }
+.backup-actions > .backup-button { flex: 1 1 140px; padding: 10px 12px; font-size: 14px; }
