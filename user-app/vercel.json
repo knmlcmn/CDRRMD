@@ -1,5 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "other",
+  "buildCommand": "npm run web:build",
+  "outputDirectory": "dist"
+}
+
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "buildCommand": "npm run web:build",
   "outputDirectory": "dist",
