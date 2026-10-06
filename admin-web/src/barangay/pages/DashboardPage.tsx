@@ -135,7 +135,9 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
     `${API_BASE_URL.replace(/\/$/, '')}/flood-risk/calamba/rain-impact`,
     `${API_BASE_URL.replace(/\/$/, '')}/weather/wind-field`,
     { boundary: true, floodHazard: false, evacuationAreas: true, incidentMarkers: true, responderRoute: false, weatherOverlay: false, temperatureOverlay: false, humidityOverlay: false, windOverlay: false },
-  ), [centers, incidents]);
+    'Closest responder base',
+    { jurisdictionBarangayName: barangayName },
+  ), [barangayName, centers, incidents]);
 
   return (
     <BarangayShell activeView="dashboard" title="Barangay Dashboard" subtitle={`Live operations overview for Barangay ${barangayName}`}

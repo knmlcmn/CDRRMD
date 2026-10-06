@@ -3,6 +3,7 @@ import RescuerShell from '../components/RescuerShell';
 import { d } from '../adminDesign';
 import { api } from '../services/apiClient';
 import { loadWaterLevelSensors, type WaterLevelSensor } from '../services/waterLevelSensors';
+import { HIGH_WATER_LEVEL_THRESHOLD as HIGH_WATER_THRESHOLD, MODERATE_WATER_LEVEL_THRESHOLD as FLOOD_REPORT_THRESHOLD } from '../services/waterLevelHazard';
 
 type Props = {
   responderRole: 'rescuer' | 'barangay_rescuer';
@@ -23,9 +24,6 @@ type FloodReport = {
   reporter_name: string | null;
   contact_number: string | null;
 };
-
-const FLOOD_REPORT_THRESHOLD = 40;
-const HIGH_WATER_THRESHOLD = 61;
 
 function temperatureStatus(value: number | null) {
   if (value === null) return { icon: '\u2014', className: 'climate-badge-unavailable' };

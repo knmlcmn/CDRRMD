@@ -1,37 +1,41 @@
 import type { ReactNode } from 'react';
-import { Image, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import { AppText as Text } from './Typography';
+import { useResponsiveLayout } from '../utils/responsive';
 
 export function DashboardHeader({ action, backAction }: { action?: ReactNode; backAction?: ReactNode }) {
-  const { width } = useWindowDimensions();
-  const scale = width / 216;
+  const { uiScale: scale, horizontalPadding } = useResponsiveLayout();
 
   return (
-    <View style={[styles.header, {
-      paddingTop: 28 * scale,
-      paddingBottom: 7 * scale,
-      paddingHorizontal: 10 * scale,
-      }]}>
-      <View style={styles.brand}>
-        {backAction}
-        <Image
-          source={require('../../assets/cdrrmd-logo.png')}
-          style={{
-            width: 23 * scale,
-            height: 23 * scale,
-            borderRadius: 11.5 * scale,
-            marginRight: 5 * scale,
-          }}
-        />
-        <Text style={[styles.title, { fontSize: 11 * scale }]}>CDRRMD</Text>
+    <View style={styles.shell}>
+      <View style={[styles.header, {
+        paddingTop: 28 * scale,
+        paddingBottom: 7 * scale,
+        paddingHorizontal: Math.max(horizontalPadding, 10 * scale),
+        }]}>
+        <View style={styles.brand}>
+          {backAction}
+          <Image
+            source={require('../../assets/cdrrmd-logo.png')}
+            style={{
+              width: 23 * scale,
+              height: 23 * scale,
+              borderRadius: 11.5 * scale,
+              marginRight: 5 * scale,
+            }}
+          />
+          <Text style={[styles.title, { fontSize: 11 * scale }]}>CDRRMD</Text>
+        </View>
+        {action}
       </View>
-      {action}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  shell: { width: '100%', backgroundColor: '#ffffff' },
   header: {
+    width: '100%', maxWidth: 760, alignSelf: 'center',
     backgroundColor: '#ffffff',
     flexDirection: 'row',
     alignItems: 'center',

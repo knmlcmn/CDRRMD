@@ -3,6 +3,7 @@ import BarangayShell from '../components/BarangayShell';
 import { d } from '../barangayDesign';
 import { loadFloodReportHistory, type FloodSensorReport } from '../../services/floodReportHistory';
 import { loadWaterLevelSensorStatuses, type WaterLevelSensorStatus } from '../services/waterLevelSensors';
+import { HIGH_WATER_LEVEL_THRESHOLD as HIGH_WATER_THRESHOLD, MODERATE_WATER_LEVEL_THRESHOLD as FLOOD_REPORT_THRESHOLD } from '../../services/waterLevelHazard';
 
 type Props = {
   barangayName: string;
@@ -54,9 +55,6 @@ const SENSOR_ASSIGNMENTS = [
 
 const FIREBASE_DATABASE_URL =
   'https://capstone-4de76-default-rtdb.asia-southeast1.firebasedatabase.app';
-
-const FLOOD_REPORT_THRESHOLD = 40;
-const HIGH_WATER_THRESHOLD = 61;
 
 function distanceToFillPct(distanceCm?: number | null) {
   if (typeof distanceCm !== 'number' || !Number.isFinite(distanceCm)) return 0;

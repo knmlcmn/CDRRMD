@@ -6,7 +6,6 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { AppText as Text } from '../components/Typography';
@@ -15,6 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HomeFeedArtwork, type HomeFeedIconName } from '../components/HomeFeedArtwork';
 import { NotificationArtwork } from '../components/NotificationArtwork';
+import { DashboardHeader } from '../components/DashboardHeader';
 import {
   MetricAccent,
   TemperatureArtwork,
@@ -26,6 +26,8 @@ import {
 import { api } from '../services/api';
 import { getCityCurrentWeather } from '../services/weatherService';
 import { getWeatherVisualByCode } from '../utils/weatherVisual';
+import { useResponsiveLayout } from '../utils/responsive';
+import { keepIfEqual } from '../utils/stableData';
 
 type AlertItem = { id: number; title: string; body: string; severity: string; category?: string; created_at?: string };
 type AnnouncementItem = { id: number; title: string; body: string; created_at?: string };
@@ -101,8 +103,7 @@ function newsIcon(item: AnnouncementItem, index: number): HomeFeedIconName {
 
 export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
   const navigation = useNavigation();
-  const { width: screenWidth } = useWindowDimensions();
-  const designScale = screenWidth / 216;
+  const { width: screenWidth, uiScale: designScale, horizontalPadding } = useResponsiveLayout();
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [news, setNews] = useState<AnnouncementItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -124,7 +125,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
     );
     knownNotificationIds.current = new Set(nextRows.map((item) => item.id));
     notificationsLoaded.current = true;
-    setNotifications(nextRows);
+    setNotifications((current) => keepIfEqual(current, nextRows));
 
     if (hasNewUnread) {
       setShowNewNotificationLabel(true);
@@ -145,10 +146,10 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
       api.get('/reports/notifications/mine'),
       getCityCurrentWeather(),
     ]);
-    setAlerts(a.status === 'fulfilled' ? a.value.data ?? [] : []);
-    setNews(n.status === 'fulfilled' ? n.value.data ?? [] : []);
+    if (a.status === 'fulfilled') setAlerts((current) => keepIfEqual(current, a.value.data ?? []));
+    if (n.status === 'fulfilled') setNews((current) => keepIfEqual(current, n.value.data ?? []));
     if (ntf.status === 'fulfilled') applyNotifications(ntf.value.data ?? []);
-    setWeather(w.status === 'fulfilled' ? (w.value as WeatherResponse) : null);
+    if (w.status === 'fulfilled') setWeather((current) => keepIfEqual(current, w.value as WeatherResponse));
   }, [applyNotifications]);
 
   useEffect(() => {
@@ -306,25 +307,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
 
   return (
       <View style={st.root}>
-      {/* Header */}
-      <View style={[st.header, {
-        paddingTop: 28 * designScale,
-        paddingBottom: 7 * designScale,
-        paddingHorizontal: 10 * designScale,
-      }]}>
-        <View style={st.headerLeft}>
-          <Image
-            source={require('../../assets/cdrrmd-logo.png')}
-            style={[st.logoImage, {
-              width: 23 * designScale,
-              height: 23 * designScale,
-              borderRadius: 11.5 * designScale,
-              marginRight: 5 * designScale,
-            }]}
-          />
-          <Text style={[st.headerTitle, { fontSize: 11 * designScale }]}>CDRRMD</Text>
-        </View>
-        <TouchableOpacity
+      <DashboardHeader action={<TouchableOpacity
           style={[st.headerIconBtn, {
             width: 29 * designScale,
             height: 29 * designScale,
@@ -338,8 +321,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
               <Text style={st.newNotificationLabelText}>New notification</Text>
             </View>
           ) : null}
-        </TouchableOpacity>
-      </View>
+        </TouchableOpacity>} />
 
       {showNotifications ? (
         <View style={st.notificationOverlay}>
@@ -350,7 +332,11 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
               setExpandedCaseKey(null);
             }}
           />
-          <View style={[st.notificationPanelFloating, { top: 47 * designScale }]}>
+          <View style={[st.notificationPanelFloating, {
+            top: 47 * designScale,
+            width: Math.min(screenWidth - (horizontalPadding * 2), 680),
+            right: horizontalPadding,
+          }]}>
             <View style={st.notificationPanelHeader}>
               <Text style={st.notificationPanelTitle}>Latest Notifications</Text>
               <Text style={st.notificationArchiveLabel}>Notification history</Text>
@@ -406,7 +392,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
       ) : null}
 
       <ScrollView
-        contentContainerStyle={st.scrollContent}
+        contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Barangay and current weather */}
@@ -509,14 +495,6 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
 
 const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: editorial.background },
-  header: {
-    backgroundColor: '#ffffff',
-    paddingTop: 27, paddingBottom: 9, paddingHorizontal: 14,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-  },
-  headerLeft: { flexDirection: 'row', alignItems: 'center' },
-  logoImage: { width: 29, height: 29, borderRadius: 15, marginRight: 8 },
-  headerTitle: { color: '#111111', fontFamily: 'Manrope_800ExtraBold', fontWeight: '800' },
   headerIconBtn: {
     width: 34, height: 34,
     alignItems: 'center', justifyContent: 'center',
@@ -548,8 +526,6 @@ const st = StyleSheet.create({
   notificationPanelFloating: {
     position: 'absolute',
     top: 68,
-    right: 14,
-    left: 14,
     maxHeight: 480,
     backgroundColor: editorial.background,
     borderColor: editorial.border,
@@ -600,11 +576,11 @@ const st = StyleSheet.create({
   notificationUpdateTitle: { color: editorial.ink, fontSize: 12, fontWeight: '700' },
   notificationUpdateBody: { color: editorial.muted, fontSize: 11, marginTop: 2 },
   notificationUpdateTime: { color: '#64748b', fontSize: 10, marginTop: 2 },
-  scrollContent: { flexGrow: 1, backgroundColor: editorial.background },
+  scrollContent: { flexGrow: 1, width: '100%', backgroundColor: editorial.background },
 
   barangayHero: {
+    width: '100%', maxWidth: 720, alignSelf: 'center',
     backgroundColor: editorial.surface,
-    marginHorizontal: 10,
     marginTop: 10,
     borderRadius: 14,
     overflow: 'hidden',
@@ -626,7 +602,7 @@ const st = StyleSheet.create({
   heroWeatherItem: { flexDirection: 'row', alignItems: 'center' },
   heroWeatherText: { color: editorial.ink, fontSize: 8, marginLeft: 3, fontWeight: '600' },
   heroAdvice: { color: editorial.muted, fontSize: 8, lineHeight: 10, marginTop: 8 },
-  contentPanel: { flexGrow: 1, backgroundColor: editorial.background },
+  contentPanel: { flexGrow: 1, width: '100%', maxWidth: 720, alignSelf: 'center', backgroundColor: editorial.background },
   sectionTitle: {
     color: editorial.ink,
     fontSize: 14,

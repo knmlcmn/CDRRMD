@@ -17,6 +17,7 @@ import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { api } from '../services/api';
 import { loadSession, SessionUser } from '../services/session';
+import { useResponsiveLayout } from '../utils/responsive';
 
 function generateReportId() {
   const num = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
@@ -27,6 +28,7 @@ const WATER_LEVELS = ['Ankle', 'Knee', 'Waist', 'Chest', 'Roof'];
 const FLOOD_TYPES = ['Flash Flood', 'River Overflow', 'Drainage Backflow', 'Storm Surge', 'Other'];
 
 export default function ReportFloodScreen() {
+  const { horizontalPadding } = useResponsiveLayout();
   const { showNotice, noticeModal } = useNoticeModal();
   const navigation = useNavigation();
   const [reportId] = useState(generateReportId);
@@ -154,7 +156,7 @@ export default function ReportFloodScreen() {
         </TouchableOpacity>
       } />
 
-      <ScrollView contentContainerStyle={st.content}>
+      <ScrollView contentContainerStyle={[st.content, { paddingHorizontal: horizontalPadding }]}>
         <Text style={st.pageTitle}>Flood Report</Text>
         <Text style={st.reportId}>Report ID: {reportId}</Text>
 
@@ -285,7 +287,7 @@ const st = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  content: { flexGrow: 1, padding: 14, paddingBottom: 30, backgroundColor: editorial.background },
+  content: { flexGrow: 1, width: '100%', maxWidth: 760, alignSelf: 'center', paddingTop: 14, paddingBottom: 30, backgroundColor: editorial.background },
   pageTitle: { color: editorial.ink, fontSize: 24, lineHeight: 28, marginBottom: 8 },
   reportId: { color: '#555555', fontSize: 12, fontWeight: '700', marginBottom: 10 },
   card: { backgroundColor: editorial.surface, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: editorial.border },

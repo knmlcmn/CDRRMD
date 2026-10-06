@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { BottomTabBarProps, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { ActivityIndicator, Animated, Pressable, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AppText as Text, TypographyProvider } from './src/components/Typography';
 import {
   NavigationIcon,
@@ -31,6 +31,7 @@ import {
 } from './src/services/api';
 import ResidentFloodAlert from './src/components/ResidentFloodAlert';
 import RequiredLocationModal from './src/components/RequiredLocationModal';
+import { useResponsiveLayout } from './src/utils/responsive';
 
 function isBlank(value?: string | null) {
   return !String(value ?? '').trim();
@@ -171,15 +172,14 @@ function NavigationTabButton({ name, focused, scale, onPress }: NavigationTabBut
 }
 
 function UserTabBar({ state, navigation }: BottomTabBarProps) {
-  const { width } = useWindowDimensions();
-  const scale = width / 216;
+  const { width, uiScale: scale } = useResponsiveLayout();
 
   if (state.routes[state.index]?.name === 'Rescue Status') return null;
 
   return (
     <View style={[styles.tabBarShell, {
-      left: 7 * scale,
-      right: 7 * scale,
+      width: Math.min(width - (14 * scale), 700),
+      alignSelf: 'center',
       bottom: 26 * scale,
       height: 29 * scale,
       borderRadius: 14.5 * scale,
@@ -219,8 +219,7 @@ export default function App() {
 
 function AppContent() {
   const RescueStatusScreen = require('./src/screens/RescueStatusScreen').default;
-  const { width: appWidth } = useWindowDimensions();
-  const uiScale = Math.min(appWidth / 216, 1.82);
+  const { uiScale } = useResponsiveLayout();
   const [booting, setBooting] = useState(true);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [session, setSession] = useState<SessionData | null>(null);

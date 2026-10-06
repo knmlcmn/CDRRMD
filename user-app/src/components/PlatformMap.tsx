@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   Platform,
   StyleProp,
@@ -13,6 +13,8 @@ type PlatformMapProps = {
   baseUrl?: string;
   style?: StyleProp<ViewStyle>;
   onMessage?: (data: string) => void;
+  preserveState?: boolean;
+  updateMessage?: object | null;
 };
 
 export default function PlatformMap({
@@ -20,8 +22,31 @@ export default function PlatformMap({
   baseUrl,
   style,
   onMessage,
+  preserveState = false,
+  updateMessage = null,
 }: PlatformMapProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+  const webViewRef = useRef<WebView>(null);
+  const initialHtmlRef = useRef(html);
+  const renderedHtml = preserveState ? initialHtmlRef.current : html;
+  const nativeSource = useMemo(
+    () => (baseUrl ? { html: renderedHtml, baseUrl } : { html: renderedHtml }),
+    [baseUrl, renderedHtml],
+  );
+
+  const postUpdate = useCallback(() => {
+    if (!updateMessage) return;
+    const message = JSON.stringify(updateMessage);
+    if (Platform.OS === 'web') {
+      iframeRef.current?.contentWindow?.postMessage(updateMessage, '*');
+    } else {
+      webViewRef.current?.postMessage(message);
+    }
+  }, [updateMessage]);
+
+  useEffect(() => {
+    if (preserveState) postUpdate();
+  }, [postUpdate, preserveState]);
 
   useEffect(() => {
     if (Platform.OS !== 'web') {
@@ -58,8 +83,9 @@ export default function PlatformMap({
         <iframe
           ref={iframeRef}
           title="Rescue Map"
-          srcDoc={html}
+          srcDoc={renderedHtml}
           allow="geolocation"
+          onLoad={postUpdate}
           style={{
             width: '100%',
             height: '100%',
@@ -74,8 +100,9 @@ export default function PlatformMap({
   return (
     <View style={[styles.container, style]}>
       <WebView
+        ref={webViewRef}
         originWhitelist={['*']}
-        source={baseUrl ? { html, baseUrl } : { html }}
+        source={nativeSource}
         javaScriptEnabled
         domStorageEnabled
         scrollEnabled={false}
@@ -83,6 +110,7 @@ export default function PlatformMap({
         setBuiltInZoomControls={false}
         mixedContentMode="always"
         onMessage={handleNativeMessage}
+        onLoadEnd={postUpdate}
         style={styles.webView}
       />
     </View>

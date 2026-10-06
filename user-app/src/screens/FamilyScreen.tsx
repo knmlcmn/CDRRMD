@@ -6,6 +6,7 @@ import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { AppAccount, getFamilyAccounts, inviteFamilyById } from '../services/appAccount';
+import { useResponsiveLayout } from '../utils/responsive';
 
 type FamilyStatus = 'Safe' | 'No Response';
 
@@ -29,6 +30,7 @@ function fmtTime(date = new Date()) {
 }
 
 export default function FamilyScreen({ appUserId }: Props) {
+  const { isSmall, horizontalPadding } = useResponsiveLayout();
   const [myStatus, setMyStatus] = useState<FamilyStatus>('Safe');
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [inviteId, setInviteId] = useState('');
@@ -102,7 +104,7 @@ export default function FamilyScreen({ appUserId }: Props) {
         </TouchableOpacity>
       } />
 
-      <ScrollView contentContainerStyle={st.scrollContent}>
+      <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
         <Text style={st.pageTitle}>Family Status</Text>
         {/* Counters */}
         <View style={st.counterRow}>
@@ -164,7 +166,7 @@ export default function FamilyScreen({ appUserId }: Props) {
         {/* Members */}
         {members.map((m) => (
           <View key={m.id} style={st.card}>
-            <View style={st.memberRow}>
+            <View style={[st.memberRow, isSmall && st.wrapOnSmall]}>
               <View style={st.memberIcon}>
                 <MaterialCommunityIcons name="account-outline" size={20} color="#64748b" />
               </View>
@@ -183,7 +185,7 @@ export default function FamilyScreen({ appUserId }: Props) {
                 </Text>
               </View>
             </View>
-            <View style={st.memberFooter}>
+            <View style={[st.memberFooter, isSmall && st.wrapOnSmall]}>
               <Text style={st.memberMeta}>Updated: {m.updatedAt}</Text>
               <Text style={st.memberMeta}>Family status is view only</Text>
             </View>
@@ -202,7 +204,7 @@ export default function FamilyScreen({ appUserId }: Props) {
 
 const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: editorial.background },
-  scrollContent: { flexGrow: 1, paddingHorizontal: 14, paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
+  scrollContent: { flexGrow: 1, width: '100%', maxWidth: 760, alignSelf: 'center', paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
   pageTitle: { color: editorial.ink, fontSize: 24, lineHeight: 28, marginBottom: 14 },
   addBtn: {
     width: 34, height: 34, borderRadius: 17,
@@ -212,7 +214,7 @@ const st = StyleSheet.create({
   },
 
   counterRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  counterCard: { width: '48%' as any, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border },
+  counterCard: { width: '48%', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border },
   counterLabel: { fontSize: 14, fontWeight: '600' },
   counterValue: { fontSize: 32, fontWeight: '900', lineHeight: 36 },
 
@@ -254,5 +256,6 @@ const st = StyleSheet.create({
   memberName: { color: '#181818', fontSize: 14, fontWeight: '700' },
   memberRelation: { color: '#585858', fontSize: 12, marginTop: 1 },
   memberFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
+  wrapOnSmall: { flexWrap: 'wrap', gap: 8 },
   memberMeta: { color: '#656565', fontSize: 11 },
 });

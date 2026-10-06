@@ -3,6 +3,7 @@ import AdminShell from '../components/AdminShell';
 import { d } from '../adminDesign';
 import { api } from '../services/apiClient';
 import { loadFloodReportHistory, type FloodSensorReport } from '../services/floodReportHistory';
+import { HIGH_WATER_LEVEL_THRESHOLD as HIGH_WATER_THRESHOLD, MODERATE_WATER_LEVEL_THRESHOLD as FLOOD_REPORT_THRESHOLD } from '../services/waterLevelHazard';
 
 type Props = {
   onLogout: () => void;
@@ -75,9 +76,6 @@ const FIREBASE_SENSOR_PATHS = [
 
 const FIREBASE_FLOOD_REPORTS_PATH = 'Flood Reports';
 const FIREBASE_SENSOR_STATUS_PATH = 'Sensor Status Settings';
-const FLOOD_REPORT_THRESHOLD = 40;
-const HIGH_WATER_THRESHOLD = 61;
-
 function distanceToFillPct(distanceCm?: number | null) {
   if (typeof distanceCm !== 'number' || !Number.isFinite(distanceCm)) {
     return 0;

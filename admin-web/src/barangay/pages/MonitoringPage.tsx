@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/apiClient';
+import { fetchRoadRoute } from '../../services/roadRouting';
 import BackupModal from '../components/BackupModal';
 import BackupRequest, { type BackupRequestState } from '../components/BackupRequest';
 import BarangayShell from '../components/BarangayShell';
@@ -117,34 +118,6 @@ function distanceSquared(a: Coordinate, b: Coordinate) {
   const dLat = a.latitude - b.latitude;
   const dLon = a.longitude - b.longitude;
   return dLat * dLat + dLon * dLon;
-}
-
-async function fetchRoadRoute(from: Coordinate, to: Coordinate) {
-  const url =
-    `https://router.project-osrm.org/route/v1/driving/${from.longitude},${from.latitude};` +
-    `${to.longitude},${to.latitude}?overview=full&geometries=geojson&alternatives=true&steps=false`;
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`OSRM ${response.status}`);
-  }
-
-  const data = (await response.json()) as {
-    routes?: Array<{ distance?: number; duration?: number; geometry?: { coordinates?: number[][] } }>;
-  };
-
-  const route = data.routes
-    ?.filter((candidate) => candidate.distance && candidate.duration && candidate.geometry?.coordinates?.length)
-    .sort((left, right) => Number(left.distance) - Number(right.distance))[0];
-  if (!route?.distance || !route?.duration || !route.geometry?.coordinates?.length) {
-    throw new Error('No route');
-  }
-
-  return {
-    distanceKm: route.distance / 1000,
-    etaMinutes: Math.max(1, Math.round(route.duration / 60)),
-    coordinates: route.geometry.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })),
-  };
 }
 
 function formatStatus(status?: string | null) {
@@ -511,20 +484,20 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/weather/wind-field`,
       layerVisibility,
       'Barangay Rescuer location',
-      { focusOnIncident: true, allowLiveRouteUpdates: true, responderKind: 'barangay', showForecastTimeline: isMapFullscreen },
+      { focusOnIncident: true, allowLiveRouteUpdates: true, responderKind: 'barangay', showForecastTimeline: isMapFullscreen, jurisdictionBarangayName: barangayName },
     ),
-    [evacuationAreas, incidentPoints, isMapFullscreen, layerVisibility],
+    [barangayName, evacuationAreas, incidentPoints, isMapFullscreen, layerVisibility],
   );
 
   const postMapUpdate = useCallback((recenter = false) => {
     if (!mapReady) return;
     mapFrameRef.current?.contentWindow?.postMessage({
       type: 'rescue-map-update', responderLocation, routeCoordinates,
-      incidentLocation: routeDestination?.location || selectedResidentLocation,
+      incidentLocation: selectedReport?.picked_up_at ? null : (routeDestination?.location || selectedResidentLocation),
       selectedReportCode: selectedReport?.report_code || null,
-      incidentPoints, recenter,
+      incidentPoints, pickedUp: Boolean(selectedReport?.picked_up_at), recenter,
     }, '*');
-  }, [incidentPoints, mapReady, responderLocation, routeCoordinates, routeDestination, selectedReport?.report_code, selectedResidentLocation]);
+  }, [incidentPoints, mapReady, responderLocation, routeCoordinates, routeDestination, selectedReport?.picked_up_at, selectedReport?.report_code, selectedResidentLocation]);
 
   const focusKey = selectedReport?.assigned_rescuer_id ? `${selectedReport.id}:${selectedReport.assigned_rescuer_id}:${Boolean(selectedReport.responder_acknowledged_at)}:${Boolean(selectedReport.picked_up_at)}` : '';
   useEffect(() => {

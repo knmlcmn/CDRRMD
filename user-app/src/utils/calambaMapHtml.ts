@@ -1,4 +1,5 @@
 import type { EvacuationAreaItem } from '../types';
+import { buildHardwareFloodRuntimeScript } from './waterLevelHazard';
 
 export type Coordinate = { latitude: number; longitude: number };
 export type MonitoringLayerVisibility = {
@@ -23,6 +24,7 @@ export function buildCalambaMapHtml(
   rainImpactUrl: string,
   layerVisibility: MonitoringLayerVisibility,
   responderLabel = 'Closest responder base',
+  pickedUp = false,
 ) {
   const payload = JSON.stringify({
     areas,
@@ -36,6 +38,7 @@ export function buildCalambaMapHtml(
     rainImpactUrl,
     layerVisibility,
     responderLabel,
+    pickedUp,
     boundaryGeoJson: {
       type: 'FeatureCollection',
       features: [
@@ -183,6 +186,7 @@ export function buildCalambaMapHtml(
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script>
       var payload = ${payload};
+      ${buildHardwareFloodRuntimeScript()}
       var visibility = Object.assign({
         boundary: true,
         floodHazard: true,
@@ -740,26 +744,26 @@ export function buildCalambaMapHtml(
           .toLowerCase()
           .trim()
           .replace(/[^a-z0-9]+/g, ' ')
+          .replace(/^(barangay|brgy)\s+/, '')
           .trim();
       }
 
+      function onHardwareFloodLevelsUpdated() {
+        renderBarangayBoundaryLayer();
+        renderLegendControl();
+      }
+
       function buildLegendHtml() {
-        var updated = lastLegendUpdatedAt
-          ? new Date(lastLegendUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        var legendUpdatedAt = Boolean(visibility.floodHazard) ? hardwareFloodUpdatedAt : lastLegendUpdatedAt;
+        var updated = legendUpdatedAt
+          ? new Date(legendUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           : '-';
         var weatherOn = Boolean(visibility.weatherOverlay);
         var floodOn = Boolean(visibility.floodHazard);
 
         var floodSection = '';
         if (floodOn) {
-          floodSection =
-            '<div class="legend-section-label">' +
-              '<span class="legend-section-dot" style="background:#2563eb;"></span>' +
-              'Flood Hazard Zones' +
-            '</div>' +
-            '<div class="row"><span class="swatch" style="background:#dc2626;"></span>High Risk</div>' +
-            '<div class="row"><span class="swatch" style="background:#eab308;"></span>Medium Risk</div>' +
-            '<div class="row"><span class="swatch" style="background:#16a34a;"></span>Low Risk</div>';
+          floodSection = hardwareFloodLegendHtml();
         }
 
         var rainSection = '';
@@ -873,7 +877,10 @@ export function buildCalambaMapHtml(
       }
 
       function buildBoundaryPopupHtml(props, weatherImpact) {
-        var name = props.barangay_name || 'Barangay';
+        var name = props.barangay_name || props.barangayName || props.name || 'Barangay';
+        if (Boolean(visibility.floodHazard)) {
+          return hardwareFloodPopupHtml(name);
+        }
         var baseRisk = String(props.flood_risk_level || 'LOW').toUpperCase();
         if (!Boolean(visibility.weatherOverlay)) {
           return '<strong>' + name + '</strong><br/>' +
@@ -902,11 +909,15 @@ export function buildCalambaMapHtml(
 
       function resolveBarangayBoundaryStyle(feature) {
         var props = feature && feature.properties ? feature.properties : {};
-        var key = normalizeBarangayName(props.barangay_name);
+        var key = normalizeBarangayName(props.barangay_name || props.barangayName || props.name);
         var weatherImpact = weatherImpactByBarangay[key] || null;
         var floodHazardVisible = Boolean(visibility.floodHazard);
         var selected = Boolean(selectedBarangayKey) && selectedBarangayKey === key;
         var focusColor = resolveBarangayRiskColor(focusedBarangayRiskLevel || props.flood_risk_level);
+
+        if (floodHazardVisible) {
+          return hardwareFloodBoundaryStyle(key, selected);
+        }
 
         if (focusModeActive) {
           return {
@@ -963,7 +974,7 @@ export function buildCalambaMapHtml(
               return true;
             }
             var props = feature && feature.properties ? feature.properties : {};
-            return normalizeBarangayName(props.barangay_name) === focusedBarangayKey;
+            return normalizeBarangayName(props.barangay_name || props.barangayName || props.name) === focusedBarangayKey;
           })
           : [];
 
@@ -978,10 +989,12 @@ export function buildCalambaMapHtml(
           },
           onEachFeature: function(feature, layer) {
             var props = feature && feature.properties ? feature.properties : {};
-            var name = props.barangay_name || 'Barangay';
+            var name = props.barangay_name || props.barangayName || props.name || 'Barangay';
             var key = normalizeBarangayName(name);
             var weatherImpact = weatherImpactByBarangay[key] || null;
-            var risk = weatherImpact
+            var risk = Boolean(visibility.floodHazard)
+              ? hardwareFloodState(key).level
+              : weatherImpact
               ? String(weatherImpact.rainLevel || 'Light').toUpperCase()
               : String(props.flood_risk_level || 'LOW').toUpperCase();
             var temperatureText = weatherImpact && Number.isFinite(Number(weatherImpact.temperatureCelsius))
@@ -1324,6 +1337,48 @@ export function buildCalambaMapHtml(
         iconAnchor: [11, 11],
       });
 
+      var pickupIcon = L.divIcon({
+        className: '',
+        html: '<div style="position:relative;width:38px;height:38px">' +
+          '<div style="align-items:center;background:#0ea5e9;border:3px solid #fff;border-radius:999px;box-shadow:0 3px 9px rgba(15,23,42,.38);display:flex;height:30px;justify-content:center;width:30px"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" style="filter:brightness(0) invert(1);height:19px;width:19px" /></div>' +
+          '<div style="align-items:center;background:#16a34a;border:2px solid #fff;border-radius:999px;bottom:0;display:flex;height:19px;justify-content:center;position:absolute;right:0;width:19px"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-user.svg" style="filter:brightness(0) invert(1);height:12px;width:12px" /></div>' +
+        '</div>',
+        iconSize: [38, 38],
+        iconAnchor: [19, 19],
+        popupAnchor: [0, -19],
+      });
+
+      function renderRescueRoute(extendInitialBounds) {
+        responderRouteLayer.clearLayers();
+        if (!payload.pickedUp && payload.incidentLocation && inCalamba(Number(payload.incidentLocation.latitude), Number(payload.incidentLocation.longitude))) {
+          if (extendInitialBounds) fitBounds.extend([payload.incidentLocation.latitude, payload.incidentLocation.longitude]);
+          L.circleMarker([payload.incidentLocation.latitude, payload.incidentLocation.longitude], {
+            radius: 9, color: '#ffffff', weight: 2, fillColor: '#dc2626', fillOpacity: 0.95,
+          }).addTo(responderRouteLayer).bindPopup('<strong>Selected incident</strong><br/>' + (payload.selectedReportCode || 'Rescue report'));
+        }
+        if (payload.responderLocation && inCalamba(Number(payload.responderLocation.latitude), Number(payload.responderLocation.longitude))) {
+          if (extendInitialBounds) fitBounds.extend([payload.responderLocation.latitude, payload.responderLocation.longitude]);
+          var marker = payload.pickedUp
+            ? L.marker([payload.responderLocation.latitude, payload.responderLocation.longitude], { icon: pickupIcon })
+            : L.circleMarker([payload.responderLocation.latitude, payload.responderLocation.longitude], {
+                radius: 8, color: '#fff', weight: 2, fillColor: '#0ea5e9', fillOpacity: 1,
+              });
+          marker.addTo(responderRouteLayer).bindPopup(payload.pickedUp
+            ? '<strong>Responder and resident together</strong><br/>En route to the evacuation center'
+            : '<strong>' + String(payload.responderLabel || 'Closest responder base').replace(/[&<>"']/g, function(char) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char]; }) + '</strong>');
+        }
+        if ((payload.routeCoordinates || []).length > 1) {
+          var line = payload.routeCoordinates
+            .map(function(point) { return [Number(point.latitude), Number(point.longitude)]; })
+            .filter(function(point) { return Number.isFinite(point[0]) && Number.isFinite(point[1]) && inCalamba(point[0], point[1]); });
+          if (line.length > 1) {
+            if (extendInitialBounds) line.forEach(function(point) { fitBounds.extend(point); });
+            L.polyline(line, { color: '#22c55e', weight: 6, opacity: 0.8 }).addTo(responderRouteLayer);
+          }
+        }
+        applyLayerVisibility();
+      }
+
       (payload.areas || []).forEach(function(area) {
         var lat = Number(area.latitude);
         var lon = Number(area.longitude);
@@ -1342,37 +1397,7 @@ export function buildCalambaMapHtml(
           );
       });
 
-      if (payload.incidentLocation && inCalamba(Number(payload.incidentLocation.latitude), Number(payload.incidentLocation.longitude))) {
-        fitBounds.extend([payload.incidentLocation.latitude, payload.incidentLocation.longitude]);
-        L.circleMarker([payload.incidentLocation.latitude, payload.incidentLocation.longitude], {
-          radius: 9,
-          color: '#ffffff',
-          weight: 2,
-          fillColor: '#dc2626',
-          fillOpacity: 0.95,
-        }).addTo(responderRouteLayer).bindPopup('<strong>Selected incident</strong><br/>' + (payload.selectedReportCode || 'Rescue report'));
-      }
-
-      if (payload.responderLocation && inCalamba(Number(payload.responderLocation.latitude), Number(payload.responderLocation.longitude))) {
-        fitBounds.extend([payload.responderLocation.latitude, payload.responderLocation.longitude]);
-        L.circleMarker([payload.responderLocation.latitude, payload.responderLocation.longitude], {
-          radius: 8,
-          color: '#fff',
-          weight: 2,
-          fillColor: '#0ea5e9',
-          fillOpacity: 1,
-        }).addTo(responderRouteLayer).bindPopup('<strong>' + String(payload.responderLabel || 'Closest responder base').replace(/[&<>"']/g, function(char) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char]; }) + '</strong>');
-      }
-
-      if ((payload.routeCoordinates || []).length > 1) {
-        var line = payload.routeCoordinates
-          .map(function(point) { return [Number(point.latitude), Number(point.longitude)]; })
-          .filter(function(point) { return Number.isFinite(point[0]) && Number.isFinite(point[1]) && inCalamba(point[0], point[1]); });
-        if (line.length > 1) {
-          line.forEach(function(p) { fitBounds.extend(p); });
-          L.polyline(line, { color: '#22c55e', weight: 6, opacity: 0.8 }).addTo(responderRouteLayer);
-        }
-      }
+      renderRescueRoute(true);
 
       loadOsmWaterways();
       renderBoundary();
@@ -1382,8 +1407,12 @@ export function buildCalambaMapHtml(
       refreshRainImpactData();
       setInterval(renderFloodHazardLayer, 30000);
       setInterval(refreshRainImpactData, 10000);
+      setInterval(function() {
+        if (Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
+      }, 10000);
       renderIncidents();
       applyLayerVisibility();
+      if (Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
       renderLegendControl();
       map.on('click', function(event) { identifyFloodAt(event.latlng); });
       map.on('resize', refreshRainCanvasSize);
@@ -1391,9 +1420,22 @@ export function buildCalambaMapHtml(
 
       window.addEventListener('message', function(event) {
         var data = event && event.data ? event.data : null;
-        if (!data || data.type !== 'dashboard-focus-barangay') {
+        if (!data) {
           return;
         }
+
+        if (data.type === 'rescue-map-update') {
+          payload.responderLocation = data.responderLocation || null;
+          payload.routeCoordinates = Array.isArray(data.routeCoordinates) ? data.routeCoordinates : [];
+          payload.incidentLocation = data.incidentLocation || null;
+          payload.selectedReportCode = data.selectedReportCode || null;
+          payload.responderLabel = data.responderLabel || payload.responderLabel;
+          payload.pickedUp = Boolean(data.pickedUp);
+          renderRescueRoute(false);
+          return;
+        }
+
+        if (data.type !== 'dashboard-focus-barangay') return;
 
         var key = normalizeBarangayName(data.barangayKey);
         if (!key) {

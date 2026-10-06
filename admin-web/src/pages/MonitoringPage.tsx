@@ -1,5 +1,6 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/apiClient';
+import { fetchRoadRoute } from '../services/roadRouting';
 import AdminShell from '../components/AdminShell';
 import IncidentHistoryModal from '../components/IncidentHistoryModal';
 import { d } from '../adminDesign';
@@ -75,34 +76,6 @@ function extractCoordinate(value?: string | null, lat?: number | null, lon?: num
   }
 
   return { latitude, longitude };
-}
-
-async function fetchRoadRoute(from: Coordinate, to: Coordinate) {
-  const url =
-    `https://router.project-osrm.org/route/v1/driving/${from.longitude},${from.latitude};` +
-    `${to.longitude},${to.latitude}?overview=full&geometries=geojson&alternatives=true&steps=false`;
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`OSRM ${response.status}`);
-  }
-
-  const data = (await response.json()) as {
-    routes?: Array<{ distance?: number; duration?: number; geometry?: { coordinates?: number[][] } }>;
-  };
-
-  const route = data.routes
-    ?.filter((candidate) => Number.isFinite(candidate.distance) && candidate.geometry?.coordinates?.length)
-    .sort((left, right) => Number(left.distance) - Number(right.distance))[0];
-  if (!route?.distance || !route?.duration || !route.geometry?.coordinates?.length) {
-    throw new Error('No route');
-  }
-
-  return {
-    distanceKm: route.distance / 1000,
-    etaMinutes: Math.max(1, Math.round(route.duration / 60)),
-    coordinates: route.geometry.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })),
-  };
 }
 
 function formatStatus(status?: string | null) {
@@ -425,7 +398,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       evacuationAreas,
       responderLocation,
       routeCoordinates,
-      selectedIncidentLocation,
+      selectedBackup?.picked_up_at ? null : selectedIncidentLocation,
       selectedReport && isActiveRescueStatus(selectedReport.status)
         ? (selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`)
         : null,
@@ -449,9 +422,10 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       {
         responderKind: isBackupResponse || liveResponderLocation ? 'cddrmd' : 'barangay',
         showForecastTimeline: isMapFullscreen,
+        pickedUp: Boolean(selectedBackup?.picked_up_at),
       },
     ),
-    [activeRescueReports, evacuationAreas, isBackupResponse, isMapFullscreen, layerVisibility, liveResponderLocation, responderLocation, routeCoordinates, selectedIncidentLocation, selectedReport],
+    [activeRescueReports, evacuationAreas, isBackupResponse, isMapFullscreen, layerVisibility, liveResponderLocation, responderLocation, routeCoordinates, selectedBackup?.picked_up_at, selectedIncidentLocation, selectedReport],
   );
 
   const stats = useMemo(() => {

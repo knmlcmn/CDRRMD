@@ -16,6 +16,7 @@ import { postAuth } from '../services/api';
 import { SessionData } from '../services/session';
 import { AppProfile } from '../services/appAccount';
 import { SUPPORTED_BARANGAYS } from '../constants/barangays';
+import { useResponsiveLayout } from '../utils/responsive';
 
 type Props = {
   onRegisterSuccess: (session: SessionData, profile?: AppProfile) => Promise<void>;
@@ -44,6 +45,7 @@ function Field({ icon, trailing, ...props }: FieldProps) {
 }
 
 export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props) {
+  const { isSmall } = useResponsiveLayout();
   const [username, setUsername] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -116,7 +118,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
             <Text style={styles.sectionLabel}>Register</Text>
 
             <Field icon="account-outline" value={username} onChangeText={setUsername} placeholder="Username" autoCapitalize="none" />
-            <View style={styles.nameRow}>
+            <View style={[styles.nameRow, isSmall && styles.nameRowSmall]}>
               <View style={styles.nameField}><Field icon="account-outline" value={firstName} onChangeText={setFirstName} placeholder="First Name *" autoCapitalize="words" /></View>
               <View style={styles.nameField}><Field icon="account-outline" value={lastName} onChangeText={setLastName} placeholder="Last Name *" autoCapitalize="words" /></View>
             </View>
@@ -179,6 +181,7 @@ const styles = StyleSheet.create({
   },
   input: { flex: 1, color: '#111111', fontSize: 12, marginLeft: 7, paddingVertical: 0, minWidth: 0 },
   nameRow: { flexDirection: 'row', gap: 7 },
+  nameRowSmall: { flexDirection: 'column', gap: 0 },
   nameField: { flex: 1, minWidth: 0 },
   barangayLabel: { color: editorial.ink, fontSize: 11, fontWeight: '800', marginHorizontal: 8, marginTop: 2, marginBottom: 6 },
   barangayChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 9 },

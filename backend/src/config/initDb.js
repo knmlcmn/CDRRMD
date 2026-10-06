@@ -130,6 +130,43 @@ async function initDb() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS evacuation_admissions (
+      id SERIAL PRIMARY KEY,
+      report_id INTEGER NOT NULL UNIQUE REFERENCES incident_reports(id) ON DELETE RESTRICT,
+      evacuation_area_id INTEGER NOT NULL REFERENCES evacuation_areas(id) ON DELETE RESTRICT,
+      confirmed_by INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      admitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS evacuation_count_logs (
+      id SERIAL PRIMARY KEY,
+      evacuation_area_id INTEGER NOT NULL REFERENCES evacuation_areas(id) ON DELETE RESTRICT,
+      old_count INTEGER NOT NULL,
+      new_count INTEGER NOT NULL,
+      reason VARCHAR(40) NOT NULL,
+      reference_id INTEGER,
+      changed_by INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS evacuation_departures (
+      id SERIAL PRIMARY KEY,
+      evacuation_area_id INTEGER NOT NULL REFERENCES evacuation_areas(id) ON DELETE RESTRICT,
+      evacuee_name VARCHAR(200) NOT NULL,
+      notes TEXT,
+      recorded_by INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      departed_at TIMESTAMPTZ,
+      cancelled_at TIMESTAMPTZ
+    );
+
+    CREATE INDEX IF NOT EXISTS evacuation_admissions_area_idx
+    ON evacuation_admissions (evacuation_area_id, admitted_at DESC);
+
+    CREATE INDEX IF NOT EXISTS evacuation_departures_area_status_idx
+    ON evacuation_departures (evacuation_area_id, status, requested_at DESC);
+
     CREATE TABLE IF NOT EXISTS report_status_logs (
       id SERIAL PRIMARY KEY,
       report_id INTEGER NOT NULL REFERENCES incident_reports(id) ON DELETE CASCADE,

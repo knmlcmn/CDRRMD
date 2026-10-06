@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import RescuerShell from '../components/RescuerShell';
 import { api } from '../services/apiClient';
+import { fetchRoadRoute } from '../services/roadRouting';
 import type { EvacuationAreaItem } from '../types';
 import { buildCalambaMapHtml, type Coordinate } from '../utils/calambaMapHtml';
 
@@ -60,21 +61,6 @@ type LocationUpdate = {
 
 function sameData(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
-}
-
-async function fetchShortestRoute(from: Coordinate, to: Coordinate) {
-  const response = await fetch(
-    `https://router.project-osrm.org/route/v1/driving/${from.longitude},${from.latitude};${to.longitude},${to.latitude}?overview=full&geometries=geojson&alternatives=true&steps=false`,
-  );
-  if (!response.ok) throw new Error('Route service unavailable.');
-  const data = await response.json() as { routes?: Array<{ distance: number; duration: number; geometry: { coordinates: number[][] } }> };
-  const route = data.routes?.filter((item) => item.geometry?.coordinates?.length).sort((a, b) => a.distance - b.distance)[0];
-  if (!route) throw new Error('No road route found.');
-  return {
-    coordinates: route.geometry.coordinates.map(([longitude, latitude]) => ({ latitude, longitude })),
-    distanceKm: route.distance / 1000,
-    etaMinutes: Math.max(1, Math.round(route.duration / 60)),
-  };
 }
 
 export default function RescuerDashboardPage({ responderRole, onLogout, onAuthError, onOpenIncidents, onOpenFloodMonitoring, onOpenAccount }: Props) {
@@ -147,9 +133,16 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
         setLocation(point);
         api.patch<LocationUpdate>('/rescuers/location', { ...point, accuracy: coords.accuracy })
           .then(({ data }) => {
-            if (data.pickupConfirmed) void loadData();
+            if (data.pickupConfirmed) {
+              setError('');
+              void loadData();
+            }
           })
-          .catch(() => {});
+          .catch((error: unknown) => {
+            const err = error as ApiError;
+            if (err.response?.status === 401) return onAuthError();
+            if (err.response?.data?.message) setError(err.response.data.message);
+          });
       },
       () => setError('Allow device location so the live rescue route can be displayed.'),
       { enableHighAccuracy: true, maximumAge: 1_000, timeout: 12_000 },
@@ -163,7 +156,7 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
   );
 
   const destination = useMemo<Coordinate | null>(() => {
-    if (!selected?.responder_acknowledged_at) return null;
+    if (!selected) return null;
     if (selected.picked_up_at) {
       const latitude = Number(selected.evacuation_latitude);
       const longitude = Number(selected.evacuation_longitude);
@@ -182,7 +175,7 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
       setEtaMinutes(null);
       return undefined;
     }
-    void fetchShortestRoute(location, destination)
+    void fetchRoadRoute(location, destination)
       .then((result) => {
         if (cancelled) return;
         setRoute(result.coordinates);
@@ -228,12 +221,13 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
       type: 'rescue-map-update',
       responderLocation: location,
       routeCoordinates: route,
-      incidentLocation: destination,
+      incidentLocation: selected?.picked_up_at ? null : destination,
       selectedReportCode: selected?.report_code || null,
       incidentPoints,
+      pickedUp: Boolean(selected?.picked_up_at),
       recenter,
     }, '*');
-  }, [destination, incidentPoints, location, mapReady, route, selected?.report_code]);
+  }, [destination, incidentPoints, location, mapReady, route, selected?.picked_up_at, selected?.report_code]);
 
   const focusKey = selected ? `${selected.backup_request_id}:${Boolean(selected.responder_acknowledged_at)}:${Boolean(selected.picked_up_at)}` : '';
   useEffect(() => {
@@ -244,7 +238,7 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
     if (!focusKey) lastFocusedRescue.current = '';
   }, [focusKey, mapReady, postMapUpdate]);
 
-  async function acknowledgeDispatch() {
+  async function dispatchAssignment() {
     if (!selected || selected.responder_acknowledged_at || busy) return;
     setBusy(true);
     setError('');
@@ -254,7 +248,7 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
     } catch (error: unknown) {
       const err = error as ApiError;
       if (err.response?.status === 401) return onAuthError();
-      setError(err.response?.data?.message || 'Failed to acknowledge the dispatch.');
+      setError(err.response?.data?.message || 'Failed to dispatch this assignment.');
     } finally {
       setBusy(false);
     }
@@ -278,7 +272,7 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
                 <tbody>
                   {assignments.map((item) => (
                     <tr key={item.backup_request_id} onClick={() => setSelectedId(item.backup_request_id)} className={`cursor-pointer border-t border-slate-200 ${selected?.backup_request_id === item.backup_request_id ? 'bg-blue-100' : 'hover:bg-slate-50'}`}>
-                      <td className="px-3 py-2 font-bold">{item.report_code}</td><td className="px-3 py-2">{item.assigned_barangay}</td><td className="px-3 py-2 text-xs font-bold text-blue-700">{!item.responder_acknowledged_at ? 'Awaiting acknowledgment' : item.picked_up_at ? 'Evacuation' : 'Response'}</td>
+                      <td className="px-3 py-2 font-bold">{item.report_code}</td><td className="px-3 py-2">{item.assigned_barangay}</td><td className="px-3 py-2 text-xs font-bold text-blue-700">{!item.responder_acknowledged_at ? 'Ready to dispatch' : item.picked_up_at ? 'Evacuation' : 'Response'}</td>
                     </tr>
                   ))}
                   {!assignments.length ? <tr><td colSpan={3} className="px-3 py-6 text-center text-sm text-emerald-700">No active incident assigned.</td></tr> : null}
@@ -290,9 +284,9 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
           {selected ? (
             <section className="rounded-xl bg-white p-4 text-sm shadow">
               <h2 className="font-black text-[#19374f]">{selected.report_code}</h2>
-              <div className="mt-3 space-y-1.5"><p><strong>Status:</strong> {selected.status.replace(/_/g, ' ')}</p><p><strong>Resident:</strong> {selected.reporter_name || '-'}</p><p><strong>Contact:</strong> {selected.reporter_contact || '-'}</p><p><strong>People to rescue:</strong> {selected.estimated_people ?? selected.evacuees_reserved ?? 1}</p><p><strong>Incident:</strong> {selected.incident_type.replace(/_/g, ' ')}</p><p><strong>Location:</strong> {selected.location}</p><p><strong>Barangay team:</strong> Barangay {selected.assigned_barangay}</p><p><strong>Evacuation center:</strong> {selected.evacuation_area_name || '-'}</p><p><strong>Distance:</strong> {distanceKm ? `${distanceKm.toFixed(2)} km` : 'Calculating...'}</p><p><strong>ETA:</strong> {etaMinutes ? `${etaMinutes} minutes` : 'Calculating...'}</p></div>
-              <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">{!selected.responder_acknowledged_at ? 'Acknowledge this dispatch to activate live routing to the resident.' : selected.picked_up_at ? `Navigate the resident to ${selected.evacuation_area_name}. Barangay Evacuation Personnel will confirm arrival and resolve the report.` : responderRole === 'barangay_rescuer' ? 'Follow the shortest road route to the resident. GPS proximity will start the rescue automatically.' : 'Follow the shortest road route to the resident as CDRRMD backup. GPS proximity will start the rescue automatically.'}</div>
-              {!selected.responder_acknowledged_at ? <button disabled={busy} onClick={() => void acknowledgeDispatch()} className="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-3 font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Confirming...' : 'Acknowledge Dispatch'}</button> : null}
+              <div className="mt-3 space-y-1.5"><p><strong>Status:</strong> {selected.status.replace(/_/g, ' ')}</p><p><strong>Resident:</strong> {selected.reporter_name || '-'}</p><p><strong>Contact:</strong> {selected.reporter_contact || '-'}</p><p><strong>People to rescue:</strong> {selected.estimated_people ?? selected.evacuees_reserved ?? 1}</p><p><strong>Incident:</strong> {selected.incident_type.replace(/_/g, ' ')}</p><p><strong>Location:</strong> {selected.location}</p><p><strong>Your current position:</strong> {location ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` : 'Waiting for GPS...'}</p><p><strong>Route destination:</strong> {selected.picked_up_at ? selected.evacuation_area_name || 'Nearest available evacuation center' : 'Resident pinned location'}</p><p><strong>Barangay team:</strong> Barangay {selected.assigned_barangay}</p><p><strong>Distance:</strong> {distanceKm != null ? `${distanceKm.toFixed(2)} km` : 'Calculating...'}</p><p><strong>ETA:</strong> {etaMinutes != null ? `${etaMinutes} minutes` : 'Calculating...'}</p></div>
+              <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">{!selected.responder_acknowledged_at ? 'Review your live location and the road route to the resident, then press Dispatch when you are ready to proceed.' : selected.picked_up_at ? `You reached the resident. Follow the updated road route to ${selected.evacuation_area_name}. Barangay Evacuation Personnel will confirm arrival.` : 'Dispatch active. Follow the road route to the resident; arrival is confirmed automatically within 50 meters of the pinned location.'}</div>
+              {!selected.responder_acknowledged_at ? <button disabled={busy || !location} onClick={() => void dispatchAssignment()} className="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-3 font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Dispatching...' : location ? 'Dispatch' : 'Waiting for GPS...'}</button> : null}
             </section>
           ) : null}
         </aside>

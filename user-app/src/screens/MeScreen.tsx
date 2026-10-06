@@ -8,6 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { AppProfile, getAccountById, updateAccountProfile } from '../services/appAccount';
 import { putAuthMe } from '../services/api';
 import { SUPPORTED_BARANGAYS } from '../constants/barangays';
+import { useResponsiveLayout } from '../utils/responsive';
 
 type Props = {
   appUserId: string;
@@ -24,6 +25,7 @@ const EMPTY_PROFILE: AppProfile = {
   };
 
 export default function MeScreen({ appUserId, onLogout }: Props) {
+  const { isSmall, horizontalPadding } = useResponsiveLayout();
   const [profile, setProfile] = useState<AppProfile>(EMPTY_PROFILE);
   const [draftProfile, setDraftProfile] = useState<AppProfile>(EMPTY_PROFILE);
   const [saving, setSaving] = useState(false);
@@ -126,7 +128,7 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
         </TouchableOpacity>
       ) : null} />
 
-      <ScrollView contentContainerStyle={st.scrollContent}>
+      <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
         <Text style={st.pageTitle}>Me</Text>
         {/* Profile Card */}
         <View style={st.card}>
@@ -224,7 +226,7 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
         )}
 
         <View style={st.card}>
-          <View style={st.areaHeaderRow}>
+            <View style={[st.areaHeaderRow, isSmall && st.areaHeaderSmall]}>
             <View style={st.areaIcon}>
               <MaterialCommunityIcons name="map-marker-radius" size={21} color="#0d3558" />
             </View>
@@ -275,7 +277,7 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
 
 const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: editorial.background },
-  scrollContent: { flexGrow: 1, paddingHorizontal: 14, paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
+  scrollContent: { flexGrow: 1, width: '100%', maxWidth: 760, alignSelf: 'center', paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
   pageTitle: { color: editorial.ink, fontSize: 24, lineHeight: 28, marginBottom: 14 },
   editHeaderBtn: {
     borderWidth: 1,
@@ -295,6 +297,7 @@ const st = StyleSheet.create({
   barangayChoiceText: { color: '#475569', fontSize: 12, fontWeight: '700' },
   barangayChoiceTextActive: { color: '#fff' },
   areaHeaderRow: { flexDirection: 'row', alignItems: 'center' },
+  areaHeaderSmall: { flexWrap: 'wrap', gap: 8 },
   areaIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: editorial.accentSoft, alignItems: 'center', justifyContent: 'center' },
   areaCopy: { flex: 1, marginLeft: 10 },
   areaTitle: { color: editorial.muted, fontSize: 11, fontWeight: '700' },
@@ -340,7 +343,7 @@ const st = StyleSheet.create({
     paddingVertical: 10,
   },
   infoLabel: { color: editorial.muted, fontSize: 13, fontWeight: '700' },
-  infoValue: { color: '#181818', fontSize: 13, fontWeight: '700', maxWidth: '60%' },
+  infoValue: { color: '#181818', fontSize: 13, fontWeight: '700', maxWidth: '60%', flexShrink: 1, textAlign: 'right' },
 
   inputRow: {
     borderWidth: 1, borderColor: editorial.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,

@@ -21,6 +21,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { api, setApiAuthorizationToken } from '../services/api';
 import { fetchBestRoadRoute, fetchRoadRoute } from '../services/routingService';
 import { loadSession } from '../services/session';
+import { MAX_MAP_CONTENT_WIDTH, useResponsiveLayout } from '../utils/responsive';
+import { keepIfEqual } from '../utils/stableData';
+import { buildHardwareFloodRuntimeScript } from '../utils/waterLevelHazard';
 
 type Coordinate = { latitude: number; longitude: number };
 type EvacuationArea = {
@@ -273,6 +276,7 @@ function buildLeafletHtml(
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script>
       var data = ${serialized};
+      ${buildHardwareFloodRuntimeScript()}
       var visibility = Object.assign({
         boundary: true,
         evacuationAreas: true,
@@ -347,14 +351,7 @@ function buildLeafletHtml(
 
         var floodSection = '';
         if (floodOn) {
-          floodSection =
-            '<div class="legend-section-label">' +
-              '<span class="legend-section-dot" style="background:#2563eb;"></span>' +
-              'Flood Hazard Zones' +
-            '</div>' +
-            '<div class="row"><span class="swatch" style="background:#dc2626;"></span>High Risk</div>' +
-            '<div class="row"><span class="swatch" style="background:#eab308;"></span>Medium Risk</div>' +
-            '<div class="row"><span class="swatch" style="background:#16a34a;"></span>Low Risk</div>';
+          floodSection = hardwareFloodLegendHtml();
         }
 
         var windSection = '';
@@ -1023,11 +1020,9 @@ function buildLeafletHtml(
         }).addTo(boundaryLayer);
       }
 
-      function resolveFloodRiskColor(level) {
-        var risk = String(level || '').trim().toUpperCase();
-        if (risk === 'HIGH') { return '#dc2626'; }
-        if (risk === 'MEDIUM' || risk === 'MODERATE') { return '#eab308'; }
-        return '#16a34a';
+      function onHardwareFloodLevelsUpdated() {
+        if (barangayGeoJsonData) renderFloodHazardLayer(barangayGeoJsonData);
+        renderLegendControl();
       }
 
       function renderFloodHazardLayer(geojsonData) {
@@ -1036,30 +1031,14 @@ function buildLeafletHtml(
         L.geoJSON(geojsonData, {
           style: function(feature) {
             var props = (feature && feature.properties) ? feature.properties : {};
-            var level = props.flood_risk_level || props.base_hazard || 'LOW';
-            return {
-              color: resolveFloodRiskColor(level),
-              weight: 2.5,
-              opacity: 0.9,
-              fill: true,
-              fillColor: resolveFloodRiskColor(level),
-              fillOpacity: 0.18,
-            };
+            var name = props.barangay_name || props.barangayName || props.name || 'Barangay';
+            return hardwareFloodBoundaryStyle(name, false);
           },
           interactive: true,
           onEachFeature: function(feature, layer) {
             var props = (feature && feature.properties) ? feature.properties : {};
-            var name = props.barangay_name || 'Barangay';
-            var level = String(props.flood_risk_level || props.base_hazard || 'LOW').toUpperCase();
-            layer.bindPopup(
-              '<div class="flood-info">' +
-                '<div class="head">FLOOD HAZARD LAYER</div>' +
-                '<table>' +
-                  '<tr><td>Barangay</td><td>' + name + '</td></tr>' +
-                  '<tr><td>Flood Risk</td><td>' + level + '</td></tr>' +
-                '</table>' +
-              '</div>'
-            );
+            var name = props.barangay_name || props.barangayName || props.name || 'Barangay';
+            layer.bindPopup(hardwareFloodPopupHtml(name));
           }
         }).addTo(floodHazardLayer);
       }
@@ -1171,6 +1150,7 @@ function buildLeafletHtml(
                 visibility.rainOverlay = false;
                 visibility.temperatureOverlay = false;
                 visibility.humidityOverlay = false;
+                refreshHardwareFloodLevels();
               }
               panel.querySelectorAll('input').forEach(function(input, index) {
                 input.checked = Boolean(visibility[rows[index][0]]);
@@ -1295,6 +1275,10 @@ function buildLeafletHtml(
       }
 
       loadBarangayFloodLayer();
+      if (Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
+      setInterval(function() {
+        if (Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
+      }, 10000);
       loadOsmWaterways();
       loadWeatherTimeline();
       loadRainImpact();
@@ -1325,6 +1309,7 @@ function buildLeafletHtml(
 export default function RescueMapScreen({ testModeEnabled = false }: Props) {
   const { showNotice, noticeModal } = useNoticeModal();
   const navigation = useNavigation<any>();
+  const { isSmall, horizontalPadding } = useResponsiveLayout(MAX_MAP_CONTENT_WIDTH);
   const [userLocation, setUserLocation] = useState<Coordinate | null>(null);
   const [requestStarted, setRequestStarted] = useState(false);
   const [selectedAreaId, setSelectedAreaId] = useState<EvacuationArea['id'] | null>(null);
@@ -1340,8 +1325,9 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
   const [peopleCount, setPeopleCount] = useState(1);
   const [loading, setLoading] = useState(true);
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationArea[]>([]);
+  const [mapEvacuationAreas, setMapEvacuationAreas] = useState<EvacuationArea[]>([]);
   const [recentRescueRecords, setRecentRescueRecords] = useState<RescueRecord[]>([]);
-  const [layerVisibility, setLayerVisibility] = useState<UserMapLayerVisibility>({
+  const layerVisibilityRef = useRef<UserMapLayerVisibility>({
     boundary: true,
     evacuationAreas: true,
     userMarker: true,
@@ -1356,11 +1342,12 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
   const recordSyncInFlightRef = useRef(false);
   const appliedRoadPlanAreaIdRef = useRef<EvacuationArea['id'] | null>(null);
 
-  const loadEvacuationAreas = useCallback(async () => {
+  const loadEvacuationAreas = useCallback(async (updateMap = false) => {
     try {
       const areasResult = await api.get('/content/evacuation-areas').then((res) => res.data);
       if (!Array.isArray(areasResult) || areasResult.length === 0) {
-        setEvacuationAreas([]);
+        setEvacuationAreas((current) => keepIfEqual(current, []));
+        if (updateMap) setMapEvacuationAreas((current) => keepIfEqual(current, []));
         return [];
       }
 
@@ -1398,14 +1385,15 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
         .filter((item: EvacuationArea | null): item is EvacuationArea => Boolean(item));
 
       if (normalized.length > 0) {
-        setEvacuationAreas(normalized);
+        setEvacuationAreas((current) => keepIfEqual(current, normalized));
+        if (updateMap) setMapEvacuationAreas((current) => keepIfEqual(current, normalized));
         return normalized;
       }
 
-      setEvacuationAreas([]);
+      setEvacuationAreas((current) => keepIfEqual(current, []));
+      if (updateMap) setMapEvacuationAreas((current) => keepIfEqual(current, []));
       return [];
     } catch {
-      setEvacuationAreas([]);
       return [];
     }
   }, []);
@@ -1421,13 +1409,13 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
     setRouteDistanceKm(null);
     setRouteEtaText(null);
     setRouteSource(null);
-    setLayerVisibility((current) => ({
-      ...current,
+    layerVisibilityRef.current = {
+      ...layerVisibilityRef.current,
       evacuationAreas: true,
       userMarker: true,
       route: true,
-    }));
-    const latestAreas = await loadEvacuationAreas();
+    };
+    const latestAreas = await loadEvacuationAreas(true);
     if (!latestAreas.some((area) => !isAreaFull(area))) {
       showNotice('No available evacuation area', 'All evacuation areas are currently full. Please try again shortly.');
       return;
@@ -1477,9 +1465,9 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
           decline_explanation: item.decline_explanation || null,
         }));
 
-      setRecentRescueRecords(rescueRows);
+      setRecentRescueRecords((current) => keepIfEqual(current, rescueRows));
     } catch {
-      setRecentRescueRecords([]);
+      // Preserve the last successful snapshot during background refresh failures.
     } finally {
       recordSyncInFlightRef.current = false;
     }
@@ -1488,7 +1476,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
   useEffect(() => {
     async function bootstrap() {
       setLoading(true);
-      await loadEvacuationAreas();
+      await loadEvacuationAreas(true);
 
       try {
         const permission = await Location.requestForegroundPermissionsAsync();
@@ -1612,15 +1600,15 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
 
     return buildLeafletHtml(
       userLocation,
-      evacuationAreas,
+      mapEvacuationAreas,
       selectedAreaId,
       requestStarted,
       routeCoordinates,
       apiBaseUrl,
-      layerVisibility,
+      layerVisibilityRef.current,
       isMapFullscreen,
     );
-  }, [evacuationAreas, layerVisibility, apiBaseUrl, isMapFullscreen, requestStarted, routeCoordinates, selectedAreaId, userLocation]);
+  }, [mapEvacuationAreas, apiBaseUrl, isMapFullscreen, requestStarted, routeCoordinates, selectedAreaId, userLocation]);
 
   async function handleUploadProof() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -1656,7 +1644,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
         visibility?: Partial<UserMapLayerVisibility>;
       };
       if (payload.type === 'layer-visibility' && payload.visibility) {
-        setLayerVisibility((current) => ({ ...current, ...payload.visibility }));
+        layerVisibilityRef.current = { ...layerVisibilityRef.current, ...payload.visibility };
         return;
       }
       if (payload.type === 'select-area' && payload.areaId) {
@@ -1703,7 +1691,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
       return;
     }
 
-    const latestAreas = await loadEvacuationAreas();
+    const latestAreas = await loadEvacuationAreas(true);
     const refreshedSelected = latestAreas.find((area) => area.id === selectedArea.id) || selectedArea;
 
     if (!hasCapacityFor(refreshedSelected, peopleCount)) {
@@ -1782,7 +1770,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
       if (errorCode === 'NO_AVAILABLE_EVACUATION_AREA' && userLocation) {
         setRoutingRecommendation(true);
         try {
-          const refreshedAreas = await loadEvacuationAreas();
+          const refreshedAreas = await loadEvacuationAreas(true);
           const replacementPlan = await resolveBestRoadPlan(userLocation, refreshedAreas, peopleCount);
           if (replacementPlan) {
             applyRoadPlan(replacementPlan);
@@ -1836,7 +1824,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
       {noticeModal}
       <DashboardHeader />
 
-      <ScrollView contentContainerStyle={st.scrollContent}>
+      <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
         <Text style={st.pageTitle}>Request Rescue</Text>
         {/* Fullscreen map modal */}
         <Modal visible={isMapFullscreen} animationType="fade" statusBarTranslucent onRequestClose={() => setIsMapFullscreen(false)}>
@@ -1870,13 +1858,14 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={st.mapBottomActionsWrap}
           >
-            <View style={st.bottomActionRow}>
-              <TouchableOpacity style={st.uploadBtn} activeOpacity={0.88} onPress={handleUploadProof}>
+            <View style={[st.bottomActionRow, isSmall && st.stackOnSmall]}>
+              <TouchableOpacity style={[st.uploadBtn, isSmall && st.fullWidthButton]} activeOpacity={0.88} onPress={handleUploadProof}>
                 <Text style={st.uploadBtnText}>{proofImageUri ? '✓ Image Uploaded' : 'Upload Image'}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
                   st.submitBtn,
+                  isSmall && st.fullWidthButton,
                   !proofImageUri || !proofImageBase64 || !selectedArea || routeSource !== 'osrm' || routingRecommendation || submitting
                     ? st.submitBtnDisabled
                     : null,
@@ -1888,7 +1877,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
                 {submitting ? <ActivityIndicator color="#fff" /> : <Text style={st.submitBtnText}>Submit</Text>}
               </TouchableOpacity>
             </View>
-            <View style={st.peopleSelector}>
+            <View style={[st.peopleSelector, isSmall && st.stackOnSmall]}>
               <View style={st.peopleSelectorCopy}>
                 <Text style={st.peopleSelectorLabel}>People needing rescue</Text>
                 <Text style={st.peopleSelectorHint}>This number will be transported to the evacuation site.</Text>
@@ -2062,11 +2051,11 @@ const st = StyleSheet.create({
   loadingWrap: { flex: 1, backgroundColor: editorial.background, alignItems: 'center', justifyContent: 'center' },
   loadingText: { color: '#475569', marginTop: 10, fontSize: 13, fontWeight: '600' },
 
-  scrollContent: { flexGrow: 1, paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
-  pageTitle: { color: editorial.ink, fontSize: 24, lineHeight: 28, marginHorizontal: 14, marginBottom: 6 },
+  scrollContent: { flexGrow: 1, width: '100%', maxWidth: 920, alignSelf: 'center', paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
+  pageTitle: { color: editorial.ink, fontSize: 24, lineHeight: 28, marginBottom: 6 },
 
   mapContainer: {
-    marginHorizontal: 14, marginTop: 10, borderRadius: 12, overflow: 'hidden',
+    marginTop: 10, borderRadius: 12, overflow: 'hidden',
     borderWidth: 1, borderColor: editorial.border, aspectRatio: 1.08, minHeight: 280, maxHeight: 420, backgroundColor: editorial.surface,
   },
   map: { flex: 1 },
@@ -2082,7 +2071,7 @@ const st = StyleSheet.create({
     padding: 10, zIndex: 9999,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.4, shadowRadius: 5, elevation: 8,
   },
-  mapBottomActionsWrap: { paddingHorizontal: 14, marginTop: 8 },
+  mapBottomActionsWrap: { marginTop: 8 },
 
   notesInput: {
     marginTop: 10,
@@ -2098,7 +2087,7 @@ const st = StyleSheet.create({
     lineHeight: 19,
   },
 
-  listWrap: { paddingHorizontal: 14, marginTop: 12 },
+  listWrap: { marginTop: 12 },
   areaSectionTitle: { color: editorial.ink, fontSize: 18, fontWeight: '400', marginBottom: 8 },
   areaCountText: { color: '#475569', fontSize: 11, fontWeight: '600', marginBottom: 8 },
   areaCard: {
@@ -2136,6 +2125,8 @@ const st = StyleSheet.create({
   actionText: { color: '#fff', fontSize: 18, fontWeight: '900' },
 
   bottomActionRow: { flexDirection: 'row', marginTop: 10, gap: 8 },
+  stackOnSmall: { flexDirection: 'column', alignItems: 'stretch' },
+  fullWidthButton: { flex: 0, width: '100%' },
   peopleSelector: { marginTop: 10, borderWidth: 1, borderColor: editorial.border, borderRadius: 12, backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 12 },
   peopleSelectorCopy: { flex: 1, minWidth: 0 },
   peopleSelectorLabel: { color: editorial.ink, fontSize: 13, fontWeight: '900' },

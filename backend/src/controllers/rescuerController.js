@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const pool = require('../config/db');
 const { httpError } = require('../utils/httpError');
 const { isSupportedBarangay } = require('../services/supportedBarangays');
+const { findNearestAvailableEvacuationArea } = require('../services/evacuationRoutingService');
 
 function requireRole(req, role) {
   if (req.user?.role !== role) {
@@ -321,7 +322,8 @@ async function updateMyLocation(req, res) {
 
     const assignmentResult = await client.query(
       `SELECT br.id AS backup_request_id, br.report_id, br.responder_acknowledged_at, br.picked_up_at,
-              ir.status, ir.reported_by, ir.report_code, ir.evacuation_area_id, ir.evacuation_area_name,
+              ir.status, ir.reported_by, ir.report_code, ir.evacuees_reserved,
+              ir.evacuation_area_id, ir.evacuation_area_name,
               CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
                   AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
                 THEN reporter.current_latitude ELSE ir.latitude END AS incident_latitude,
@@ -358,9 +360,29 @@ async function updateMyLocation(req, res) {
     // The server performs the transition atomically with the GPS update. A
     // browser accuracy estimate must not block two markers that have met.
     if (!assignment.picked_up_at && incidentDistanceMeters <= 50) {
-      if (!assignment.evacuation_area_id || assignment.evacuation_latitude == null || assignment.evacuation_longitude == null) {
-        throw httpError(409, 'This rescue has no designated evacuation center.');
+      const destinationArea = await findNearestAvailableEvacuationArea(
+        client,
+        Number(assignment.incident_latitude),
+        Number(assignment.incident_longitude),
+        {
+          requiredSlots: Math.max(1, Number(assignment.evacuees_reserved || 1)),
+          excludeReportId: assignment.report_id,
+        },
+      );
+      if (!destinationArea) {
+        throw httpError(409, 'No reachable evacuation center currently has enough available capacity.');
       }
+      assignment.evacuation_area_id = Number(destinationArea.id);
+      assignment.evacuation_area_name = destinationArea.name;
+      assignment.evacuation_latitude = Number(destinationArea.latitude);
+      assignment.evacuation_longitude = Number(destinationArea.longitude);
+      await client.query(
+        `UPDATE incident_reports
+         SET evacuation_area_id = $1, evacuation_area_name = $2,
+             status = 'in_progress', updated_at = NOW(), updated_by = $3
+         WHERE id = $4`,
+        [destinationArea.id, destinationArea.name, req.user.userId, assignment.report_id],
+      );
       const pickupResult = await client.query(
         `UPDATE backup_requests SET picked_up_at = COALESCE(picked_up_at, NOW())
          WHERE id = $1 RETURNING picked_up_at`,
@@ -368,14 +390,9 @@ async function updateMyLocation(req, res) {
       );
       assignment.picked_up_at = pickupResult.rows[0].picked_up_at;
       await client.query(
-        `UPDATE incident_reports SET status = 'in_progress', updated_at = NOW(), updated_by = $2
-         WHERE id = $1`,
-        [assignment.report_id, req.user.userId],
-      );
-      await client.query(
         `INSERT INTO report_status_logs (report_id, old_status, new_status, changed_by, action_note, metadata)
          VALUES ($1, $2, 'in_progress', $3, $4, $5::jsonb)`,
-        [assignment.report_id, assignment.status, req.user.userId, `Responder reached the resident. Routing to ${assignment.evacuation_area_name}.`, JSON.stringify({ backupRequestId: assignment.backup_request_id, pickedUp: true, automatic: true })],
+        [assignment.report_id, assignment.status, req.user.userId, `Responder reached the resident. Routing to ${assignment.evacuation_area_name}.`, JSON.stringify({ backupRequestId: assignment.backup_request_id, evacuationAreaId: assignment.evacuation_area_id, pickedUp: true, automatic: true })],
       );
       await client.query(
         `INSERT INTO user_notifications (user_id, report_id, title, body)

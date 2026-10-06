@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   ScrollView,
   StyleSheet,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppText as Text } from '../components/Typography';
 import { editorial } from '../components/EditorialTheme';
+import { DashboardHeader } from '../components/DashboardHeader';
 import {
   MetricAccent,
   TemperatureArtwork,
@@ -20,6 +19,8 @@ import {
 } from '../components/WeatherMetricArtwork';
 import { getCityForecastWeather } from '../services/weatherService';
 import { getWeatherVisualByCode } from '../utils/weatherVisual';
+import { useResponsiveLayout } from '../utils/responsive';
+import { keepIfEqual } from '../utils/stableData';
 
 type WeatherResponse = {
   current?: {
@@ -59,8 +60,7 @@ function formatDay(value: string) {
 }
 
 export default function WeatherScreen() {
-  const { width } = useWindowDimensions();
-  const scale = width / 216;
+  const { uiScale: scale, horizontalPadding } = useResponsiveLayout();
   const timelineHourWidth = 30 * scale;
   const [data, setData] = useState<WeatherResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -70,7 +70,7 @@ export default function WeatherScreen() {
   const fetchWeather = useCallback(async () => {
     try {
       const next = await getCityForecastWeather();
-      setData(next ?? null);
+      if (next) setData((current) => keepIfEqual(current, next));
       setHasError(!next?.current);
     } catch {
       setHasError(true);
@@ -137,21 +137,9 @@ export default function WeatherScreen() {
 
   return (
     <View style={st.root}>
-      <View style={[st.header, {
-        paddingTop: 28 * scale,
-        paddingBottom: 7 * scale,
-        paddingHorizontal: 10 * scale,
-      }]}>
-        <Image source={require('../../assets/cdrrmd-logo.png')} style={{
-          width: 23 * scale,
-          height: 23 * scale,
-          borderRadius: 11.5 * scale,
-          marginRight: 5 * scale,
-        }} />
-        <Text style={[st.headerTitle, { fontSize: 11 * scale }]}>CDRRMD</Text>
-      </View>
+      <DashboardHeader />
 
-      <ScrollView contentContainerStyle={st.scrollContent}>
+      <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
         <View style={[st.hero, { minHeight: 126 * scale, paddingHorizontal: 13 * scale, paddingTop: 13 * scale }]}>
           <View style={st.heroCopy}>
             <Text style={[st.heroTitle, { fontSize: 10 * scale, lineHeight: 12 * scale }]}>Weather</Text>
@@ -316,10 +304,8 @@ const st = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: editorial.background, paddingHorizontal: 24 },
   errorTitle: { color: '#181818', fontSize: 18, fontWeight: '800', marginTop: 12 },
   errorBody: { color: '#585858', fontSize: 14, textAlign: 'center', marginTop: 6 },
-  header: { backgroundColor: '#ffffff', flexDirection: 'row', alignItems: 'center' },
-  headerTitle: { color: '#111111', fontFamily: 'Manrope_800ExtraBold', fontWeight: '800' },
-  scrollContent: { flexGrow: 1, backgroundColor: editorial.background },
-  hero: { backgroundColor: editorial.surface, flexDirection: 'row', marginHorizontal: 10, marginTop: 10, borderRadius: 14, overflow: 'hidden' },
+  scrollContent: { flexGrow: 1, width: '100%', backgroundColor: editorial.background },
+  hero: { width: '100%', maxWidth: 720, alignSelf: 'center', backgroundColor: editorial.surface, flexDirection: 'row', marginTop: 10, borderRadius: 14, overflow: 'hidden' },
   heroCopy: { zIndex: 1, maxWidth: '68%' },
   heroTitle: { color: editorial.ink, includeFontPadding: false },
   heroLocation: { color: editorial.muted, fontWeight: '700', includeFontPadding: false },
@@ -329,7 +315,7 @@ const st = StyleSheet.create({
   metric: { alignItems: 'flex-start' },
   metricValue: { flexDirection: 'row', alignItems: 'center', minHeight: 18 },
   metricText: { color: editorial.muted, marginLeft: 3, fontWeight: '600' },
-  contentPanel: { flexGrow: 1, backgroundColor: editorial.background },
+  contentPanel: { flexGrow: 1, width: '100%', maxWidth: 720, alignSelf: 'center', backgroundColor: editorial.background },
   sectionTitle: { color: editorial.ink, fontWeight: '400', paddingHorizontal: 11 },
   adviceCard: { backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border },
   adviceText: { color: editorial.muted },

@@ -1,3 +1,5 @@
+import { HIGH_WATER_LEVEL_THRESHOLD as HIGH_WATER_THRESHOLD, MODERATE_WATER_LEVEL_THRESHOLD as FLOOD_REPORT_THRESHOLD } from '../services/waterLevelHazard';
+
 export type SensorMetric = 'water' | 'temperature' | 'humidity';
 
 export const SENSOR_METRIC_LABELS: Record<SensorMetric, string> = {
@@ -26,9 +28,6 @@ type SensorMetricSelectorProps = {
   value: SensorMetric;
   onChange: (metric: SensorMetric) => void;
 };
-
-const FLOOD_REPORT_THRESHOLD = 40;
-const HIGH_WATER_THRESHOLD = 61;
 
 function readingStyle(metric: Exclude<SensorMetric, 'water'>, value?: number | null) {
   if (typeof value !== 'number') {

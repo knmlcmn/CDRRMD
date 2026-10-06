@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AppText as Text } from '../components/Typography';
 import { DashboardHeader } from '../components/DashboardHeader';
@@ -9,6 +9,8 @@ import { api } from '../services/api';
 import { fetchRoadRoute } from '../services/routingService';
 import PlatformMap from '../components/PlatformMap';
 import { buildCalambaMapHtml } from '../utils/calambaMapHtml';
+import { useResponsiveLayout } from '../utils/responsive';
+import { keepIfEqual } from '../utils/stableData';
 
 type Coordinate = { latitude: number; longitude: number };
 
@@ -86,6 +88,7 @@ export default function RescueStatusScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const reportId = Number(route.params?.reportId || 0);
+  const { isSmall, horizontalPadding } = useResponsiveLayout();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,6 +98,9 @@ export default function RescueStatusScreen() {
   const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationArea[]>([]);
   const [routeCoordinates, setRouteCoordinates] = useState<Coordinate[]>([]);
+  const hasReportRef = useRef(false);
+  const lastRouteKeyRef = useRef('');
+  const syncInFlightRef = useRef(false);
 
   const loadStatus = useCallback(async () => {
     if (!reportId) {
@@ -102,13 +108,15 @@ export default function RescueStatusScreen() {
       setLoading(false);
       return;
     }
+    if (syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
 
     try {
       const rows = await api.get('/reports/mine').then((res) => (Array.isArray(res.data) ? res.data : []));
       const selected = rows.find((item: any) => Number(item?.id) === reportId);
       if (!selected) {
         setError('Rescue report not found.');
-        setReport(null);
+        if (!hasReportRef.current) setReport(null);
         setLoading(false);
         return;
       }
@@ -136,15 +144,17 @@ export default function RescueStatusScreen() {
         rescuer_location_updated_at: selected.rescuer_location_updated_at || null,
       };
 
-      setReport(normalized);
+      hasReportRef.current = true;
+      setReport((current) => keepIfEqual(current, normalized));
       setError(null);
       setLastSyncAt(new Date());
 
       const nextStatus = normalizeStatus(normalized.status);
       if (!Number.isFinite(normalized.latitude) || !Number.isFinite(normalized.longitude) || nextStatus === 'pending' || nextStatus === 'declined') {
+        lastRouteKeyRef.current = '';
         setEtaMinutes(null);
         setDistanceKm(null);
-        setRouteCoordinates([]);
+        setRouteCoordinates((current) => keepIfEqual(current, []));
         setLoading(false);
         return;
       }
@@ -163,12 +173,13 @@ export default function RescueStatusScreen() {
           created_at: String(item?.created_at || ''),
         }))
         .filter((item: EvacuationArea) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude));
-      setEvacuationAreas(activeAreas);
+      setEvacuationAreas((current) => keepIfEqual(current, activeAreas));
 
       if (activeAreas.length === 0) {
+        lastRouteKeyRef.current = '';
         setEtaMinutes(null);
         setDistanceKm(null);
-        setRouteCoordinates([]);
+        setRouteCoordinates((current) => keepIfEqual(current, []));
         setLoading(false);
         return;
       }
@@ -185,13 +196,19 @@ export default function RescueStatusScreen() {
         : incidentPoint;
 
       if (!responderPoint) {
+        lastRouteKeyRef.current = '';
         setEtaMinutes(null);
         setDistanceKm(null);
-        setRouteCoordinates([]);
+        setRouteCoordinates((current) => keepIfEqual(current, []));
         setLoading(false);
         return;
       }
 
+      const routeKey = `${responderPoint.latitude}:${responderPoint.longitude}:${routeDestination.latitude}:${routeDestination.longitude}`;
+      if (lastRouteKeyRef.current === routeKey) {
+        setLoading(false);
+        return;
+      }
       try {
         const routeMetrics = await fetchRoadRoute(
           responderPoint,
@@ -201,15 +218,18 @@ export default function RescueStatusScreen() {
         );
         setEtaMinutes(routeMetrics.etaMinutes);
         setDistanceKm(routeMetrics.distanceKm);
-        setRouteCoordinates(routeMetrics.routeCoordinates);
+        setRouteCoordinates((current) => keepIfEqual(current, routeMetrics.routeCoordinates));
+        lastRouteKeyRef.current = routeKey;
       } catch {
+        lastRouteKeyRef.current = '';
         setEtaMinutes(null);
         setDistanceKm(null);
-        setRouteCoordinates([responderPoint, routeDestination]);
+        setRouteCoordinates((current) => keepIfEqual(current, [responderPoint, routeDestination]));
       }
     } catch {
-      setError('Unable to refresh rescue status.');
+      if (!hasReportRef.current) setError('Unable to load rescue status.');
     } finally {
+      syncInFlightRef.current = false;
       setLoading(false);
     }
   }, [reportId]);
@@ -263,22 +283,28 @@ export default function RescueStatusScreen() {
   }, [report?.assigned_team, report?.responder_acknowledged_at, status]);
 
   const reportCode = report?.report_code || (report ? `RPT-${String(report.id).padStart(6, '0')}` : '-');
-  const responderLocation = report?.responder_acknowledged_at
-    && Number.isFinite(report?.rescuer_latitude) && Number.isFinite(report?.rescuer_longitude)
-    ? { latitude: Number(report?.rescuer_latitude), longitude: Number(report?.rescuer_longitude) }
-    : null;
-  const incidentLocation = Number.isFinite(report?.latitude) && Number.isFinite(report?.longitude)
-    ? { latitude: Number(report?.latitude), longitude: Number(report?.longitude) }
-    : null;
-  const routeDestination = report?.picked_up_at && Number.isFinite(report?.evacuation_latitude) && Number.isFinite(report?.evacuation_longitude)
-    ? { latitude: Number(report?.evacuation_latitude), longitude: Number(report?.evacuation_longitude) }
-    : incidentLocation;
+  const responderLocation = useMemo(() => (
+    report?.responder_acknowledged_at
+      && Number.isFinite(report?.rescuer_latitude) && Number.isFinite(report?.rescuer_longitude)
+      ? { latitude: Number(report?.rescuer_latitude), longitude: Number(report?.rescuer_longitude) }
+      : null
+  ), [report?.rescuer_latitude, report?.rescuer_longitude, report?.responder_acknowledged_at]);
+  const incidentLocation = useMemo(() => (
+    Number.isFinite(report?.latitude) && Number.isFinite(report?.longitude)
+      ? { latitude: Number(report?.latitude), longitude: Number(report?.longitude) }
+      : null
+  ), [report?.latitude, report?.longitude]);
+  const routeDestination = useMemo(() => (
+    report?.picked_up_at && Number.isFinite(report?.evacuation_latitude) && Number.isFinite(report?.evacuation_longitude)
+      ? { latitude: Number(report?.evacuation_latitude), longitude: Number(report?.evacuation_longitude) }
+      : incidentLocation
+  ), [incidentLocation, report?.evacuation_latitude, report?.evacuation_longitude, report?.picked_up_at]);
   const apiBaseUrl = String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '');
   const mapHtml = useMemo(() => buildCalambaMapHtml(
     evacuationAreas,
     responderLocation,
     routeCoordinates,
-    routeDestination,
+    report?.picked_up_at ? null : incidentLocation,
     reportCode,
     [],
     `${apiBaseUrl}/flood-risk/calamba/barangays`,
@@ -286,7 +312,18 @@ export default function RescueStatusScreen() {
     `${apiBaseUrl}/flood-risk/calamba/rain-impact`,
     { boundary: true, floodHazard: false, evacuationAreas: true, incidentMarkers: true, responderRoute: true, weatherOverlay: false },
     report?.dispatch_type === 'cddrmd_backup' ? 'Live CDRRMD Rescuer location' : 'Live Barangay Rescuer location',
-  ), [apiBaseUrl, evacuationAreas, report?.dispatch_type, reportCode, responderLocation, routeCoordinates, routeDestination]);
+    Boolean(report?.picked_up_at),
+  ), [apiBaseUrl, evacuationAreas, incidentLocation, report?.dispatch_type, report?.picked_up_at, reportCode, responderLocation, routeCoordinates]);
+
+  const mapUpdate = useMemo(() => ({
+    type: 'rescue-map-update',
+    responderLocation,
+    routeCoordinates,
+    incidentLocation: report?.picked_up_at ? null : incidentLocation,
+    selectedReportCode: reportCode,
+    responderLabel: report?.dispatch_type === 'cddrmd_backup' ? 'Live CDRRMD Rescuer location' : 'Live Barangay Rescuer location',
+    pickedUp: Boolean(report?.picked_up_at),
+  }), [incidentLocation, report?.dispatch_type, report?.picked_up_at, reportCode, responderLocation, routeCoordinates]);
 
   if (loading && !report) {
     return (
@@ -305,12 +342,12 @@ export default function RescueStatusScreen() {
         </TouchableOpacity>
       } />
 
-      <ScrollView contentContainerStyle={st.content}>
+      <ScrollView contentContainerStyle={[st.content, { paddingHorizontal: horizontalPadding }]}>
         <Text style={st.pageTitle}>Rescue Request Status</Text>
         {error ? <Text style={st.errorText}>{error}</Text> : null}
 
         <View style={st.mainCard}>
-          <View style={st.topRow}>
+          <View style={[st.topRow, isSmall && st.topRowSmall]}>
             <Text style={st.statusText}>Status: <Text style={st.statusStrong}>{statusLabel}</Text></Text>
             <Text style={st.etaText}>{etaMinutes ? `${Math.max(1, etaMinutes - 1)} - ${etaMinutes + 3} mins` : '--'}</Text>
           </View>
@@ -329,7 +366,7 @@ export default function RescueStatusScreen() {
 
         {responderLocation ? (
           <View style={st.mapCard}>
-            <PlatformMap html={mapHtml} baseUrl={apiBaseUrl} style={st.map} />
+            <PlatformMap key={reportId} html={mapHtml} baseUrl={apiBaseUrl} style={st.map} preserveState updateMessage={mapUpdate} />
           </View>
         ) : null}
 
@@ -387,7 +424,7 @@ const st = StyleSheet.create({
     backgroundColor: '#ffffff',
     marginRight: 6,
   },
-  content: { flexGrow: 1, paddingHorizontal: 14, paddingTop: 16, paddingBottom: 40, backgroundColor: editorial.background },
+  content: { flexGrow: 1, width: '100%', maxWidth: 760, alignSelf: 'center', paddingTop: 16, paddingBottom: 40, backgroundColor: editorial.background },
   pageTitle: { color: editorial.ink, fontSize: 24, lineHeight: 28, marginBottom: 14 },
   errorText: {
     color: '#b91c1c',
@@ -410,6 +447,7 @@ const st = StyleSheet.create({
     borderColor: editorial.border,
   },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  topRowSmall: { alignItems: 'flex-start', flexDirection: 'column', gap: 5 },
   statusText: { color: '#1f8b30', fontSize: 18, fontWeight: '500' },
   statusStrong: { color: '#111827', fontWeight: '900' },
   etaText: { color: '#1f8b30', fontWeight: '700', fontSize: 16 },

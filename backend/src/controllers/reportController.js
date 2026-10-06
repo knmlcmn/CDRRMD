@@ -9,8 +9,11 @@ const {
   isSupportedBarangay,
 } = require('../services/supportedBarangays');
 const FLOOD_ALERT_NEARBY_KM = Number(process.env.FLOOD_ALERT_NEARBY_KM || 2.5);
-const { findShortestReachableDestination } = require('../services/roadRoutingService');
 const { assignNearestAvailableRescuer } = require('../services/rescuerDispatchService');
+const {
+  evacuationAreaStillHasCapacity,
+  findNearestAvailableEvacuationArea,
+} = require('../services/evacuationRoutingService');
 
 function buildReportCode(id, createdAt) {
   const year = new Date(createdAt || Date.now()).getFullYear();
@@ -131,150 +134,6 @@ async function resolveNearestRescueTeam(client, latitude, longitude) {
   }
 
   return `${area.name} Response Team (${area.barangay})`;
-}
-
-async function findNearestAvailableEvacuationArea(
-  client,
-  latitude,
-  longitude,
-  preferredAreaId = null,
-  requirePreferredArea = false,
-  requiredSlots = 1,
-) {
-  await client.query('SELECT pg_advisory_xact_lock($1)', [880021]);
-
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
-    return null;
-  }
-
-  const preferredId = Number(preferredAreaId);
-  if (Number.isFinite(preferredId)) {
-    const preferred = await client.query(
-      `SELECT
-         ea.id,
-         ea.name,
-         ea.barangay,
-         ea.latitude,
-         ea.longitude,
-         ea.capacity,
-         (ea.evacuees + COALESCE(stats.incoming_total, 0))::int AS total_evacuees
-       FROM evacuation_areas ea
-       LEFT JOIN (
-         SELECT
-           evacuation_area_id,
-           COALESCE(SUM(evacuees_reserved), 0)::int AS incoming_total
-         FROM incident_reports
-         WHERE report_type = 'rescue'
-           AND evacuation_area_id IS NOT NULL
-           AND status IN ('accepted', 'in_progress')
-           AND evacuation_arrived_at IS NULL
-         GROUP BY evacuation_area_id
-       ) stats ON stats.evacuation_area_id = ea.id
-       WHERE ea.id = $1
-         AND ea.is_active = TRUE
-       LIMIT 1`,
-      [preferredId],
-    );
-
-    const preferredRow = preferred.rows[0];
-    if (preferredRow && Number(preferredRow.total_evacuees) + requiredSlots <= Number(preferredRow.capacity)) {
-      const reachablePreferred = await findShortestReachableDestination(
-        { latitude, longitude },
-        [{
-          ...preferredRow,
-          latitude: Number(preferredRow.latitude),
-          longitude: Number(preferredRow.longitude),
-        }],
-      );
-      if (reachablePreferred) {
-        return preferredRow;
-      }
-    }
-
-    if (requirePreferredArea) {
-      return null;
-    }
-  } else if (requirePreferredArea) {
-    return null;
-  }
-
-  const available = await client.query(
-    `SELECT
-       ea.id,
-       ea.name,
-       ea.barangay,
-       ea.latitude,
-       ea.longitude,
-       ea.capacity,
-       (ea.evacuees + COALESCE(stats.incoming_total, 0))::int AS total_evacuees
-     FROM evacuation_areas ea
-     LEFT JOIN (
-       SELECT
-         evacuation_area_id,
-         COALESCE(SUM(evacuees_reserved), 0)::int AS incoming_total
-       FROM incident_reports
-       WHERE report_type = 'rescue'
-         AND evacuation_area_id IS NOT NULL
-         AND status IN ('accepted', 'in_progress')
-         AND evacuation_arrived_at IS NULL
-       GROUP BY evacuation_area_id
-     ) stats ON stats.evacuation_area_id = ea.id
-     WHERE ea.is_active = TRUE
-       AND ea.latitude IS NOT NULL
-       AND ea.longitude IS NOT NULL
-       AND (ea.evacuees + COALESCE(stats.incoming_total, 0) + $1) <= ea.capacity
-     ORDER BY ea.id ASC`,
-    [requiredSlots],
-  );
-
-  const routed = await findShortestReachableDestination(
-    { latitude, longitude },
-    available.rows.map((area) => ({
-      ...area,
-      latitude: Number(area.latitude),
-      longitude: Number(area.longitude),
-    })),
-  );
-  return routed?.destination || null;
-}
-
-// Re-checks that a previously assigned evacuation area still has capacity.
-async function evacuationAreaStillHasCapacity(client, evacuationAreaId) {
-  const id = Number(evacuationAreaId);
-  if (!Number.isFinite(id)) {
-    return null;
-  }
-
-  const result = await client.query(
-    `SELECT
-       ea.id,
-       ea.name,
-       ea.barangay,
-       ea.capacity,
-       (ea.evacuees + COALESCE(stats.incoming_total, 0))::int AS total_evacuees
-     FROM evacuation_areas ea
-     LEFT JOIN (
-       SELECT
-         evacuation_area_id,
-         COALESCE(SUM(evacuees_reserved), 0)::int AS incoming_total
-       FROM incident_reports
-       WHERE report_type = 'rescue'
-         AND evacuation_area_id IS NOT NULL
-         AND status IN ('accepted', 'in_progress')
-         AND evacuation_arrived_at IS NULL
-       GROUP BY evacuation_area_id
-     ) stats ON stats.evacuation_area_id = ea.id
-     WHERE ea.id = $1
-       AND ea.is_active = TRUE
-     LIMIT 1`,
-    [id],
-  );
-
-  const row = result.rows[0];
-  if (row && Number(row.total_evacuees) < Number(row.capacity)) {
-    return row;
-  }
-  return null;
 }
 
 async function ensureReportWorkflowColumns(client) {
@@ -476,9 +335,11 @@ async function createReport(req, res) {
         client,
         lat,
         lon,
-        evacuationAreaId,
-        true,
-        rescuePartySize,
+        {
+          preferredAreaId: evacuationAreaId,
+          requirePreferredArea: true,
+          requiredSlots: rescuePartySize,
+        },
       );
       if (!availableArea) {
         await client.query('ROLLBACK');
@@ -901,7 +762,6 @@ async function updateReportStatus(req, res) {
             client,
             Number(current.latitude),
             Number(current.longitude),
-            null,
           );
         }
 
@@ -1080,7 +940,7 @@ async function updateReportStatus(req, res) {
         client,
         Number(current.latitude),
         Number(current.longitude),
-        current.evacuation_area_id,
+        { preferredAreaId: current.evacuation_area_id },
       );
 
       if (!destinationArea) {
@@ -1109,7 +969,7 @@ async function updateReportStatus(req, res) {
           client,
           Number(current.latitude),
           Number(current.longitude),
-          current.evacuation_area_id,
+          { preferredAreaId: current.evacuation_area_id },
         );
 
         if (!destinationArea) {
