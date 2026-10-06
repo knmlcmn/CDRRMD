@@ -205,7 +205,7 @@ export default function FamilyScreen({ appUserId }: Props) {
 const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: editorial.background },
   scrollContent: { flexGrow: 1, width: '100%', maxWidth: 760, alignSelf: 'center', paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
-  pageTitle: { color: editorial.ink, fontSize: 24, lineHeight: 28, marginBottom: 14 },
+  pageTitle: { color: editorial.ink, fontSize: 26, lineHeight: 31, fontWeight: '800', marginBottom: 14 },
   addBtn: {
     width: 34, height: 34, borderRadius: 17,
     backgroundColor: '#ffffff',

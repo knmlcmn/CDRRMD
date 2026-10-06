@@ -25,9 +25,40 @@ function permissionMessage(canAskAgain: boolean) {
   return 'Location access is required to use this app. Select Try Again and allow the location request.';
 }
 
+async function requestWebLocation(): Promise<LocationAccessResult> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) {
+    return { ok: false, message: 'Location is not supported by this browser.' };
+  }
+
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({
+        ok: true,
+        location: {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        },
+      }),
+      (error) => resolve({
+        ok: false,
+        message: error.code === error.PERMISSION_DENIED
+          ? 'Location permission was blocked. Allow location from the icon beside the browser address bar, then select Allow Location.'
+          : 'A live location could not be detected. Turn on device location, then select Allow Location.',
+      }),
+      { enableHighAccuracy: true, timeout: LOCATION_TIMEOUT_MS, maximumAge: 0 },
+    );
+  });
+}
+
 /** Permission alone is insufficient when the device location service is off. */
 export async function requireLiveLocation(requestPermission: boolean): Promise<LocationAccessResult> {
   try {
+    // Calling the browser geolocation API directly from the modal button is
+    // what triggers the browser/device permission prompt on the web build.
+    if (Platform.OS === 'web') {
+      return await requestWebLocation();
+    }
+
     const permission = requestPermission
       ? await Location.requestForegroundPermissionsAsync()
       : await Location.getForegroundPermissionsAsync();
@@ -36,14 +67,12 @@ export async function requireLiveLocation(requestPermission: boolean): Promise<L
       return { ok: false, message: permissionMessage(permission.canAskAgain) };
     }
 
-    if (Platform.OS !== 'web') {
-      const servicesEnabled = await Location.hasServicesEnabledAsync();
-      if (!servicesEnabled) {
-        return {
-          ok: false,
-          message: 'Your device location is turned off. Turn it on to continue and keep automatic barangay assignment active.',
-        };
-      }
+    const servicesEnabled = await Location.hasServicesEnabledAsync();
+    if (!servicesEnabled) {
+      return {
+        ok: false,
+        message: 'Your device location is turned off. Turn it on to continue and keep automatic barangay assignment active.',
+      };
     }
 
     const position = await Promise.race([

@@ -38,7 +38,7 @@ export default function RequiredLocationModal({ loading, message, activeSession 
             {loading ? <ActivityIndicator color="#fff" /> : (
               <>
                 <MaterialCommunityIcons name="crosshairs-gps" size={18} color="#fff" />
-                <Text style={styles.primaryText}>Try Again</Text>
+                <Text style={styles.primaryText}>{Platform.OS === 'web' ? 'Allow Location' : 'Try Again'}</Text>
               </>
             )}
           </TouchableOpacity>

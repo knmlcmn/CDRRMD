@@ -414,8 +414,8 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
               width: '52%',
             }]}>
               <Text style={[st.heroBarangay, {
-                fontSize: 9 * designScale,
-                lineHeight: 10 * designScale,
+                fontSize: 11 * designScale,
+                lineHeight: 13 * designScale,
               }]}>Brgy. {displayBarangay.toUpperCase()}</Text>
               <Text style={[st.heroCity, {
                 fontSize: 7 * designScale,
@@ -590,7 +590,7 @@ const st = StyleSheet.create({
   heroCopy: {
     position: 'absolute',
   },
-  heroBarangay: { color: editorial.ink, letterSpacing: 0, includeFontPadding: false },
+  heroBarangay: { color: editorial.ink, letterSpacing: 0, fontWeight: '800', includeFontPadding: false },
   heroCity: { color: editorial.ink, fontWeight: '700', includeFontPadding: false },
   heroWeatherRow: {
     flexDirection: 'row',

@@ -142,7 +142,7 @@ export default function WeatherScreen() {
       <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
         <View style={[st.hero, { minHeight: 126 * scale, paddingHorizontal: 13 * scale, paddingTop: 13 * scale }]}>
           <View style={st.heroCopy}>
-            <Text style={[st.heroTitle, { fontSize: 10 * scale, lineHeight: 12 * scale }]}>Weather</Text>
+            <Text style={[st.heroTitle, { fontSize: 12 * scale, lineHeight: 14 * scale }]}>Weather</Text>
             <Text style={[st.heroLocation, { fontSize: 7 * scale, marginTop: 2 * scale }]}>Calamba City, Laguna</Text>
             <Text style={[st.heroTemp, { fontSize: 27 * scale, lineHeight: 32 * scale, marginTop: 7 * scale }]}>
               {currentTemperature ?? '--'}°C
@@ -307,7 +307,7 @@ const st = StyleSheet.create({
   scrollContent: { flexGrow: 1, width: '100%', backgroundColor: editorial.background },
   hero: { width: '100%', maxWidth: 720, alignSelf: 'center', backgroundColor: editorial.surface, flexDirection: 'row', marginTop: 10, borderRadius: 14, overflow: 'hidden' },
   heroCopy: { zIndex: 1, maxWidth: '68%' },
-  heroTitle: { color: editorial.ink, includeFontPadding: false },
+  heroTitle: { color: editorial.ink, fontWeight: '800', includeFontPadding: false },
   heroLocation: { color: editorial.muted, fontWeight: '700', includeFontPadding: false },
   heroTemp: { color: editorial.ink, fontWeight: '700', includeFontPadding: false },
   heroArtwork: { position: 'absolute', opacity: 0.9 },

@@ -281,12 +281,12 @@ function buildLeafletHtml(
         boundary: true,
         evacuationAreas: true,
         userMarker: true,
-        route: true,
+        route: false,
         floodHazard: false,
-        rainOverlay: true,
+        rainOverlay: false,
         temperatureOverlay: false,
         humidityOverlay: false,
-        windOverlay: true
+        windOverlay: false
       }, data.layerVisibility || {});
       var calambaCenter = [${CALAMBA_NOMINATIM.latitude}, ${CALAMBA_NOMINATIM.longitude}];
       var calambaBounds = L.latLngBounds([
@@ -1309,7 +1309,7 @@ function buildLeafletHtml(
 export default function RescueMapScreen({ testModeEnabled = false }: Props) {
   const { showNotice, noticeModal } = useNoticeModal();
   const navigation = useNavigation<any>();
-  const { isSmall, horizontalPadding } = useResponsiveLayout(MAX_MAP_CONTENT_WIDTH);
+  const { isSmall, horizontalPadding, uiScale } = useResponsiveLayout(MAX_MAP_CONTENT_WIDTH);
   const [userLocation, setUserLocation] = useState<Coordinate | null>(null);
   const [requestStarted, setRequestStarted] = useState(false);
   const [selectedAreaId, setSelectedAreaId] = useState<EvacuationArea['id'] | null>(null);
@@ -1331,18 +1331,18 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
     boundary: true,
     evacuationAreas: true,
     userMarker: true,
-    route: true,
+    route: false,
     floodHazard: false,
-    rainOverlay: true,
+    rainOverlay: false,
     temperatureOverlay: false,
     humidityOverlay: false,
-    windOverlay: true,
+    windOverlay: false,
   });
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const recordSyncInFlightRef = useRef(false);
   const appliedRoadPlanAreaIdRef = useRef<EvacuationArea['id'] | null>(null);
 
-  const loadEvacuationAreas = useCallback(async (updateMap = false) => {
+  const loadEvacuationAreas = useCallback(async (updateMap = true) => {
     try {
       const areasResult = await api.get('/content/evacuation-areas').then((res) => res.data);
       if (!Array.isArray(areasResult) || areasResult.length === 0) {
@@ -1602,7 +1602,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
       userLocation,
       mapEvacuationAreas,
       selectedAreaId,
-      requestStarted,
+      true,
       routeCoordinates,
       apiBaseUrl,
       layerVisibilityRef.current,
@@ -1648,6 +1648,9 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
         return;
       }
       if (payload.type === 'select-area' && payload.areaId) {
+        if (!requestStarted) {
+          return;
+        }
         const chosen = evacuationAreas.find((area) => area.id === payload.areaId);
         if (!chosen) {
           return;
@@ -1928,36 +1931,22 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
             </View>
           </View>
 
-          <View style={st.actionWrap}>
+          {!requestStarted ? <View style={st.actionWrap}>
             <TouchableOpacity
               style={st.actionBtn}
               activeOpacity={0.88}
               disabled={routingRecommendation}
               onPress={() => {
-                if (requestStarted) {
-                  setRequestStarted(false);
-                  setSelectedAreaId(null);
-                  setProofImageUri(null);
-                  setProofImageBase64(null);
-                  setRescueNotes('');
-                  setPeopleCount(1);
-                  setRouteCoordinates([]);
-                  setRouteDistanceKm(null);
-                  setRouteEtaText(null);
-                  setRouteSource(null);
-                  return;
-                }
-
                 beginRescueRequest().catch(() => {
                   setRequestStarted(true);
                 });
               }}
             >
               <Text style={st.actionText}>
-                {routingRecommendation ? 'Finding Road Route...' : requestStarted ? 'Cancel' : 'Send Rescue Request'}
+                {routingRecommendation ? 'Finding Road Route...' : 'Send Rescue Request'}
               </Text>
             </TouchableOpacity>
-          </View>
+          </View> : null}
 
           {requestStarted ? (
             <>
@@ -2042,6 +2031,33 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
           )}
         </View>
       </ScrollView>
+
+      {requestStarted ? (
+        <TouchableOpacity
+          style={[st.floatingCancelBtn, {
+            bottom: 64 * uiScale,
+            paddingHorizontal: 24 * uiScale,
+            minHeight: 42 * uiScale,
+          }]}
+          activeOpacity={0.9}
+          onPress={() => {
+            setRequestStarted(false);
+            layerVisibilityRef.current = { ...layerVisibilityRef.current, route: false };
+            setSelectedAreaId(null);
+            setProofImageUri(null);
+            setProofImageBase64(null);
+            setRescueNotes('');
+            setPeopleCount(1);
+            setRouteCoordinates([]);
+            setRouteDistanceKm(null);
+            setRouteEtaText(null);
+            setRouteSource(null);
+          }}
+        >
+          <MaterialCommunityIcons name="close-circle-outline" size={20} color="#fff" />
+          <Text style={st.floatingCancelText}>Cancel Rescue Request</Text>
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -2052,7 +2068,7 @@ const st = StyleSheet.create({
   loadingText: { color: '#475569', marginTop: 10, fontSize: 13, fontWeight: '600' },
 
   scrollContent: { flexGrow: 1, width: '100%', maxWidth: 920, alignSelf: 'center', paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
-  pageTitle: { color: editorial.ink, fontSize: 24, lineHeight: 28, marginBottom: 6 },
+  pageTitle: { color: editorial.ink, fontSize: 26, lineHeight: 31, fontWeight: '800', marginBottom: 6 },
 
   mapContainer: {
     marginTop: 10, borderRadius: 12, overflow: 'hidden',
@@ -2123,6 +2139,25 @@ const st = StyleSheet.create({
     paddingVertical: 13,
   },
   actionText: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  floatingCancelBtn: {
+    position: 'absolute',
+    zIndex: 1200,
+    elevation: 24,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    backgroundColor: '#dc2626',
+    shadowColor: '#000000',
+    shadowOpacity: 0.28,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  floatingCancelText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
 
   bottomActionRow: { flexDirection: 'row', marginTop: 10, gap: 8 },
   stackOnSmall: { flexDirection: 'column', alignItems: 'stretch' },
