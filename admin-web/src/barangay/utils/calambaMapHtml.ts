@@ -76,13 +76,12 @@ export function buildCalambaMapHtml(
       html, body, #map { margin: 0; width: 100%; height: 100%; }
       body { background: #163047; }
       .map-legend {
-        background: rgba(255, 255, 255, 0.94);
-        border: 1px solid #cbd5e1;
-        border-radius: 10px;
-        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.2);
+        background: transparent;
+        border: 0;
+        box-shadow: none;
         color: #0f172a;
         font: 11px/1.25 Arial, sans-serif;
-        padding: 6px 8px;
+        padding: 2px;
         pointer-events: none;
         width: min(188px, calc(100vw - 24px));
       }
@@ -95,16 +94,21 @@ export function buildCalambaMapHtml(
         font: 700 11px/1 Arial, sans-serif;
         padding: 8px 10px;
       }
-      .map-legend .title { font-weight: 700; margin-bottom: 6px; }
-      .map-legend .row { align-items: center; display: flex; margin: 3px 0; }
-      .map-legend .swatch { border: 1px solid rgba(15,23,42,0.25); height: 12px; margin-right: 6px; width: 12px; }
-      .map-legend .line { border-top: 3px solid #111111; margin-right: 6px; width: 14px; }
-      .map-legend .pin { background: #e11d48; border: 2px solid #fff; border-radius: 999px; box-shadow: 0 1px 4px rgba(0,0,0,.25); height: 10px; margin-right: 6px; width: 10px; }
-      .map-legend .user { background: #ef4444; border: 2px solid #fff; border-radius: 999px; box-shadow: 0 1px 4px rgba(0,0,0,.25); height: 10px; margin-right: 6px; width: 10px; }
-      .map-legend .route { border-top: 4px solid #22c55e; margin-right: 6px; width: 16px; }
+      .map-legend .title { font-size: 10px; font-weight: 800; margin-bottom: 4px; text-shadow: 0 1px 2px #fff; }
+      .map-legend .row { align-items: center; display: flex; flex-direction: row; justify-content: flex-start; gap: 4px; margin: 2px 0; min-height: 18px; }
+      .map-legend .swatch { border: 1px solid rgba(15,23,42,0.25); flex-shrink: 0; height: 11px; width: 11px; }
+      .map-legend .line { border-top: 3px solid #111111; flex-shrink: 0; width: 14px; }
+      .map-legend .pin { background: #e11d48; border: 2px solid #fff; border-radius: 999px; box-shadow: 0 1px 4px rgba(0,0,0,.25); flex-shrink: 0; height: 10px; width: 10px; }
+      .map-legend .user { background: #ef4444; border: 2px solid #fff; border-radius: 999px; box-shadow: 0 1px 4px rgba(0,0,0,.25); flex-shrink: 0; height: 10px; width: 10px; }
+      .map-legend .route { border-top: 4px solid #22c55e; flex-shrink: 0; width: 16px; }
+      .legend-map-icon { align-items: center; border: 2px solid #fff; border-radius: 999px; box-shadow: 0 1px 4px rgba(0,0,0,.3); display: flex; flex-shrink: 0; height: 18px; justify-content: center; width: 18px; }
+      .legend-map-icon img { filter: brightness(0) invert(1); height: 11px; width: 11px; }
+      .legend-map-line { border-top: 3px solid #22c55e; flex-shrink: 0; width: 18px; }
+      .legend-map-boundary { border: 1px dashed #2563eb; flex-shrink: 0; height: 12px; width: 18px; }
+      .map-legend .row { font-size: 10px; font-weight: 800; text-shadow: 0 1px 2px #fff; }
       .map-legend .rain { border-top: 1px solid #dbe3ec; color: #334155; font-size: 11px; margin-top: 7px; padding-top: 6px; }
       .map-legend .updated { color: #64748b; font-size: 11px; margin-top: 4px; }
-      .legend-section-label { align-items: center; border-top: 1px solid #e2e8f0; color: #1e40af; display: flex; font-size: 10px; font-weight: 800; gap: 5px; margin-top: 7px; padding-top: 5px; text-transform: uppercase; letter-spacing: 0.04em; }
+      .legend-section-label { align-items: center; border-top: 1px solid #e2e8f0; color: #1e40af; display: flex; flex-direction: row; font-size: 10px; font-weight: 800; justify-content: flex-start; gap: 4px; margin-top: 7px; padding-top: 5px; text-transform: uppercase; letter-spacing: 0.04em; }
       .legend-section-dot { border-radius: 999px; display: inline-block; flex-shrink: 0; height: 8px; width: 8px; }
       .flood-info { font: 12px/1.28 Arial, sans-serif; min-width: 168px; max-width: 230px; }
       .flood-info .head { background: #0891b2; color: #fff; font-weight: 800; margin: -8px -10px 8px; padding: 7px 10px; }
@@ -1522,15 +1526,21 @@ export function buildCalambaMapHtml(
             '<div class="updated">White particles show wind direction.</div>';
         }
 
+        var mapSymbolSection =
+          '<div class="row"><span class="legend-map-icon" style="background:#16a34a"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-landmark.svg" /></span>CDRRMD Office</div>' +
+          '<div class="row"><span class="legend-map-icon" style="background:#dc2626"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-user.svg" /></span>Selected Incident</div>' +
+          '<div class="row"><span class="legend-map-icon" style="background:#0ea5e9"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-car.svg" /></span>Responder Location</div>' +
+          '<div class="row"><span class="legend-map-icon" style="background:#e11d48"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" /></span>Evacuation Area</div>' +
+          '<div class="row"><span class="legend-map-line"></span>Rescue Route</div>' +
+          '<div class="row"><span class="legend-map-boundary"></span>Calamba Boundary</div>';
+
         var noLayers = !floodOn && !weatherOn && !windOn;
 
         return (
           '<div class="map-legend">' +
             '<div class="title">Map Legend</div>' +
-            (noLayers
-              ? '<div style="color:#64748b;font-size:10px;margin-top:4px;">Enable Flood Hazard or Live Weather layers to see color indicators.</div>'
-              : (floodSection + rainSection + windSection)
-            ) +
+            mapSymbolSection +
+            (noLayers ? '' : (floodSection + rainSection + windSection)) +
             (floodOn && !weatherOn && !windOn ? '<div class="updated">Updated: ' + escapeHtml(updated) + '</div>' : '') +
           '</div>'
         );
