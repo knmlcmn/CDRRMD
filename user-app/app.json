@@ -28,7 +28,13 @@
       "bundler": "metro"
     },
     "plugins": [
-      "expo-font"
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow CDRRMD to use your live location for safety features and automatic barangay assignment."
+        }
+      ]
     ]
   }
 }

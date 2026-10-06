@@ -42,5 +42,5 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   brand: { flexDirection: 'row', alignItems: 'center' },
-  title: { color: '#111111', fontFamily: 'Manrope_800ExtraBold', fontWeight: '800' },
+  title: { color: '#111111', fontFamily: 'Sora_800ExtraBold', fontWeight: '800' },
 });

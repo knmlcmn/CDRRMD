@@ -13,14 +13,6 @@ const { httpError } = require('../utils/httpError');
 const { SUPPORTED_BARANGAYS: RESIDENT_BARANGAYS } = require('./supportedBarangays');
 const { resolveNearbyBarangayAtLocation } = require('./barangayBoundaryService');
 
-function resolveResidentBarangay(value, address) {
-  const requested = String(value || '').trim().toLowerCase();
-  const exact = RESIDENT_BARANGAYS.find((name) => name.toLowerCase() === requested);
-  if (exact) return exact;
-  const addressText = String(address || '').toLowerCase();
-  return RESIDENT_BARANGAYS.find((name) => addressText.includes(name.toLowerCase())) || null;
-}
-
 // Keeps API response shape stable even if DB column names differ.
 function toUserResponse(user) {
   const accountPrefix = user.role === 'admin' ? 'ADM' : user.role === 'barangay' ? 'BRG' : user.role === 'rescuer' ? 'RSC' : user.role === 'barangay_rescuer' ? 'BRS' : null;
@@ -35,8 +27,20 @@ function toUserResponse(user) {
     address: user.address,
     contactNumber: user.contact_number,
     barangayName: user.barangay_name || null,
+    verificationStatus: user.verification_status || 'approved',
     accountId: accountPrefix && createdYear ? `${accountPrefix}-${createdYear}-${String(user.id).padStart(5, '0')}` : null,
   };
+}
+
+function normalizeValidIdImage(value) {
+  const normalized = String(value || '').trim();
+  if (!/^data:image\/(jpeg|jpg|png|webp|heic|heif);base64,[a-z0-9+/=\s]+$/i.test(normalized)) {
+    throw httpError(400, 'A valid ID image is required for account verification.');
+  }
+  if (normalized.length > 10 * 1024 * 1024) {
+    throw httpError(413, 'The valid ID image is too large. Please upload a smaller image.');
+  }
+  return normalized;
 }
 
 async function persistRefreshToken(client, userId, refreshToken) {
@@ -47,7 +51,7 @@ async function persistRefreshToken(client, userId, refreshToken) {
 }
 
 async function register(payload) {
-  const { username, email, password, firstName, lastName, address, contactNumber, barangayName } = payload || {};
+  const { username, email, password, firstName, lastName, address, contactNumber, validIdImage } = payload || {};
 
   if (!email || !password) {
     throw httpError(400, 'Email and password are required.');
@@ -62,6 +66,8 @@ async function register(payload) {
     throw httpError(400, 'Password must be at least 6 characters.');
   }
 
+  const normalizedValidId = normalizeValidIdImage(validIdImage);
+
   const existing = await userModel.findUserByEmail(trimmedEmail);
   if (existing) {
     throw httpError(409, 'Email already exists.');
@@ -70,11 +76,6 @@ async function register(payload) {
   const rawUsername = String(username || '').trim();
   const finalUsername = rawUsername.length > 0 ? rawUsername : trimmedEmail.split('@')[0];
   const passwordHash = await bcrypt.hash(password, 10);
-  const residentBarangay = resolveResidentBarangay(barangayName, address);
-  if (!residentBarangay) {
-    throw httpError(400, 'Please select a supported barangay when creating your account.');
-  }
-
   const user = await userModel.createUser({
     username: finalUsername,
     email: trimmedEmail,
@@ -84,12 +85,12 @@ async function register(payload) {
     contactNumber: String(contactNumber || '').trim() || null,
     passwordHash,
     role: 'user',
-    barangayName: residentBarangay,
+    barangayName: null,
+    validIdImage: normalizedValidId,
+    verificationStatus: 'pending',
   });
 
   const { token, refreshToken } = issueTokens(user);
-
-  // Register/login always rotates prior refresh tokens for this user.
   await refreshTokenModel.withTransaction(async (client) => {
     await refreshTokenModel.revokeActiveByUser(client, user.id);
     await persistRefreshToken(client, user.id, refreshToken);
@@ -171,9 +172,13 @@ async function completeLogin(user) {
   await refreshTokenModel.withTransaction(async (client) => {
     await refreshTokenModel.revokeActiveByUser(client, user.id);
     await persistRefreshToken(client, user.id, refreshToken);
-    // Stamp last login time and mark user as active
+    // Accounts awaiting review can authenticate only to see their verification status.
     await client.query(
-      `UPDATE users SET last_login = NOW(), last_seen_at = NOW(), is_active = TRUE WHERE id = $1`,
+      `UPDATE users
+       SET last_login = NOW(),
+           last_seen_at = NOW(),
+           is_active = CASE WHEN verification_status = 'approved' THEN TRUE ELSE FALSE END
+       WHERE id = $1`,
       [user.id],
     );
   });
@@ -212,7 +217,6 @@ async function refresh(payload) {
     if (!user) {
       throw httpError(404, 'User not found.');
     }
-
     const nextTokens = issueTokens(user);
     await refreshTokenModel.revokeById(client, tokenRow.id);
     await persistRefreshToken(client, user.id, nextTokens.refreshToken);
@@ -248,8 +252,20 @@ async function getMe(userId) {
   if (!user) {
     throw httpError(404, 'User not found.');
   }
-
   return { user: toUserResponse(user) };
+}
+
+async function resubmitVerification(userId, payload) {
+  if (!userId) throw httpError(401, 'Invalid token payload.');
+  const validIdImage = normalizeValidIdImage(payload?.validIdImage);
+  const currentUser = await userModel.findPublicUserById(userId);
+  if (!currentUser || currentUser.role !== 'user') throw httpError(404, 'User account not found.');
+  if (String(currentUser.verification_status || 'approved').toLowerCase() === 'approved') {
+    throw httpError(400, 'This account is already approved.');
+  }
+  const user = await userModel.resubmitUserVerification(userId, validIdImage);
+  if (!user) throw httpError(404, 'User account not found.');
+  return { message: 'Your valid ID was resubmitted for review.', user: toUserResponse(user) };
 }
 
 async function updateMe(userId, payload) {
@@ -257,7 +273,7 @@ async function updateMe(userId, payload) {
     throw httpError(401, 'Invalid token payload.');
   }
 
-  const { firstName, lastName, email, address, contactNumber, barangayName } = payload || {};
+  const { firstName, lastName, email, address, contactNumber } = payload || {};
   const nextEmail = String(email || '').trim().toLowerCase() || null;
   if (nextEmail && !nextEmail.includes('@')) {
     throw httpError(400, 'Please provide a valid email address.');
@@ -274,12 +290,8 @@ async function updateMe(userId, payload) {
   if (!currentUser) {
     throw httpError(404, 'User not found.');
   }
-  const isResident = currentUser.role === 'user';
-  const residentBarangay = isResident
-    ? resolveResidentBarangay(barangayName || currentUser.barangay_name, address)
-    : currentUser.barangay_name;
-  if (isResident && !residentBarangay) {
-    throw httpError(400, 'Please select one of the six supported barangays.');
+  if (currentUser.role === 'user' && String(currentUser.verification_status || 'approved').toLowerCase() !== 'approved') {
+    throw httpError(403, 'This account is not approved for access.', 'ACCOUNT_NOT_APPROVED');
   }
   const user = await userModel.updateMyProfile(userId, {
     firstName: String(firstName || '').trim() || null,
@@ -287,7 +299,6 @@ async function updateMe(userId, payload) {
     email: nextEmail,
     address: String(address || '').trim() || null,
     contactNumber: String(contactNumber || '').trim() || null,
-    barangayName: residentBarangay,
   });
 
   if (!user) {
@@ -300,6 +311,14 @@ async function updateMe(userId, payload) {
 async function assignBarangayFromLocation(userId, payload) {
   if (!userId) {
     throw httpError(401, 'Invalid token payload.');
+  }
+
+  const currentUser = await userModel.findPublicUserById(userId);
+  if (!currentUser) {
+    throw httpError(404, 'User not found.');
+  }
+  if (currentUser.role !== 'user' || String(currentUser.verification_status || 'approved').toLowerCase() !== 'approved') {
+    throw httpError(403, 'This account is not approved for access.', 'ACCOUNT_NOT_APPROVED');
   }
 
   const latitude = Number(payload?.latitude);
@@ -343,4 +362,5 @@ module.exports = {
   getMe,
   updateMe,
   assignBarangayFromLocation,
+  resubmitVerification,
 };

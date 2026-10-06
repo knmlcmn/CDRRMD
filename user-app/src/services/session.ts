@@ -10,6 +10,7 @@ export type SessionUser = {
   address?: string;
   contactNumber?: string;
   barangayName?: string | null;
+  verificationStatus?: 'pending' | 'approved' | 'disapproved';
 };
 
 export type SessionData = {

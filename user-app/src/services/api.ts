@@ -376,3 +376,7 @@ export async function assignAuthBarangayFromLocation(latitude: number, longitude
     return api.put('/auth/location-barangay', payload);
   }
 }
+
+export async function resubmitAuthVerification(validIdImage: string) {
+  return api.put('/auth/verification-resubmit', { validIdImage });
+}

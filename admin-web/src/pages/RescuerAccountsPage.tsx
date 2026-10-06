@@ -56,7 +56,7 @@ export default function RescuerAccountsPage(props: Props) {
   const [error, setError] = useState('');
   const [accountRole, setAccountRole] = useState<RescuerRole>('rescuer');
   const isBarangayRescuer = accountRole === 'barangay_rescuer';
-  const accountLabel = isBarangayRescuer ? 'Barangay Rescuer' : 'CDRRMD Rescuer';
+  const accountLabel = isBarangayRescuer ? 'Barangay Rescuer' : 'Rescuer';
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -210,21 +210,21 @@ export default function RescuerAccountsPage(props: Props) {
       activeView="rescuers"
       title="Rescuer Account Management"
       noMainScroll
-      actions={<button className={d.admin.actionAdd} onClick={openCreateForm}>Add {accountLabel}</button>}
+      actions={<button className={d.admin.actionAdd} onClick={openCreateForm}>Add {accountLabel} Account</button>}
     >
       <div className={d.admin.root}>
         <div className={d.admin.headerRow}>
           <div>
             <h2 className={d.admin.title}>{accountLabel} Accounts</h2>
             <div className="mt-2 flex flex-wrap gap-2" role="tablist" aria-label="Rescuer account type">
-              <button type="button" role="tab" aria-selected={!isBarangayRescuer} onClick={() => selectAccountRole('rescuer')} className={[d.monitoring.filterBase, !isBarangayRescuer ? d.monitoring.filterActive : d.monitoring.filterIdle].join(' ')}>CDRRMD Rescuers</button>
+              <button type="button" role="tab" aria-selected={!isBarangayRescuer} onClick={() => selectAccountRole('rescuer')} className={[d.monitoring.filterBase, !isBarangayRescuer ? d.monitoring.filterActive : d.monitoring.filterIdle].join(' ')}>Rescuers</button>
               <button type="button" role="tab" aria-selected={isBarangayRescuer} onClick={() => selectAccountRole('barangay_rescuer')} className={[d.monitoring.filterBase, isBarangayRescuer ? d.monitoring.filterActive : d.monitoring.filterIdle].join(' ')}>Barangay Rescuers</button>
             </div>
           </div>
           <div className={d.admin.searchRow}>
             <button type="button" onClick={() => { setShowArchive(true); void loadArchivedAccounts(); }} className={d.admin.archiveButton}><img src={ARCHIVE_ICON} alt="Archive" className={d.admin.archiveIcon} /> Archive</button>
             <select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)} className={d.admin.search} aria-label="Filter rescuer accounts by availability"><option value="all">All Rescuers</option><option value="available">Available</option><option value="assigned">Assigned</option></select>
-            <input className={d.admin.search} placeholder="Search by ID, name, email, username, or contact" value={search} onChange={(event) => setSearch(event.target.value)} />
+            <input className={d.admin.search} placeholder={`Search ${accountLabel} Account`} value={search} onChange={(event) => setSearch(event.target.value)} />
           </div>
         </div>
         {error ? <p className={d.page.error}>{error}</p> : null}

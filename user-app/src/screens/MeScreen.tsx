@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AppText as Text, AppTextInput as TextInput } from '../components/Typography';
 import { DashboardHeader } from '../components/DashboardHeader';
@@ -7,11 +7,11 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { AppProfile, getAccountById, updateAccountProfile } from '../services/appAccount';
 import { putAuthMe } from '../services/api';
-import { SUPPORTED_BARANGAYS } from '../constants/barangays';
 import { useResponsiveLayout } from '../utils/responsive';
 
 type Props = {
   appUserId: string;
+  barangayName?: string | null;
   onLogout?: () => void | Promise<void>;
 };
 
@@ -24,14 +24,18 @@ const EMPTY_PROFILE: AppProfile = {
     barangayName: '',
   };
 
-export default function MeScreen({ appUserId, onLogout }: Props) {
+export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
   const { isSmall, horizontalPadding } = useResponsiveLayout();
   const [profile, setProfile] = useState<AppProfile>(EMPTY_PROFILE);
   const [draftProfile, setDraftProfile] = useState<AppProfile>(EMPTY_PROFILE);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [changingBarangay, setChangingBarangay] = useState(false);
-  const [barangayError, setBarangayError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!barangayName) return;
+    setProfile((current) => ({ ...current, barangayName }));
+    setDraftProfile((current) => ({ ...current, barangayName }));
+  }, [barangayName]);
 
   useFocusEffect(
     useCallback(() => {
@@ -72,7 +76,6 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
         email: draftProfile.email,
         address: draftProfile.address,
         contactNumber: draftProfile.contactNumber,
-        barangayName: draftProfile.barangayName,
       });
       await updateAccountProfile(appUserId, draftProfile);
       setProfile(draftProfile);
@@ -90,32 +93,6 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
   function onCancelEdit() {
     setDraftProfile(profile);
     setIsEditing(false);
-  }
-
-  async function onChangeBarangay(barangayName: string) {
-    if (!appUserId || saving) return;
-
-    setSaving(true);
-    setBarangayError(null);
-    try {
-      const nextProfile = { ...profile, barangayName };
-      await putAuthMe({
-        firstName: nextProfile.firstName,
-        lastName: nextProfile.lastName,
-        email: nextProfile.email,
-        address: nextProfile.address,
-        contactNumber: nextProfile.contactNumber,
-        barangayName,
-      });
-      await updateAccountProfile(appUserId, nextProfile);
-      setProfile(nextProfile);
-      setDraftProfile(nextProfile);
-      setChangingBarangay(false);
-    } catch (err: any) {
-      setBarangayError(err?.response?.data?.message || 'Unable to change your barangay area.');
-    } finally {
-      setSaving(false);
-    }
   }
 
   const fullName = `${profile.firstName} ${profile.lastName}`.trim() || 'No name set';
@@ -173,7 +150,7 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
             </View>
             <View style={st.infoRow}>
               <Text style={st.infoLabel}>Barangay</Text>
-              <Text style={st.infoValue}>{profile.barangayName || 'Not selected'}</Text>
+              <Text style={st.infoValue}>{profile.barangayName || 'Not assigned'}</Text>
             </View>
             <View style={[st.infoRow, { borderBottomWidth: 0, paddingBottom: 0 }]}>
               <Text style={st.infoLabel}>Contact Number</Text>
@@ -234,34 +211,8 @@ export default function MeScreen({ appUserId, onLogout }: Props) {
               <Text style={st.areaTitle}>Barangay Area</Text>
               <Text style={st.areaValue}>{profile.barangayName || 'Not assigned'}</Text>
             </View>
-            <TouchableOpacity
-              style={st.changeAreaBtn}
-              onPress={() => { setBarangayError(null); setChangingBarangay((value) => !value); }}
-              disabled={saving}
-            >
-              <Text style={st.changeAreaText}>{changingBarangay ? 'Cancel' : 'Change Area'}</Text>
-            </TouchableOpacity>
           </View>
-          {changingBarangay ? (
-            <>
-              <Text style={st.areaHelp}>Select your correct home barangay:</Text>
-              <View style={st.barangayChoices}>
-                {SUPPORTED_BARANGAYS.map((name) => (
-                  <TouchableOpacity
-                    key={name}
-                    style={[st.barangayChoice, profile.barangayName === name && st.barangayChoiceActive]}
-                    onPress={() => onChangeBarangay(name)}
-                    disabled={saving}
-                  >
-                    <Text style={[st.barangayChoiceText, profile.barangayName === name && st.barangayChoiceTextActive]}>
-                      {saving && profile.barangayName !== name ? name : name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </>
-          ) : null}
-          {barangayError ? <Text style={st.areaError}>{barangayError}</Text> : null}
+          <Text style={st.areaHelp}>Automatically assigned from your latest live location.</Text>
         </View>
 
         <View style={st.card}>
@@ -290,22 +241,13 @@ const st = StyleSheet.create({
   editHeaderText: { color: '#111111', fontSize: 13, fontWeight: '700' },
 
   card: { backgroundColor: editorial.surface, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: editorial.border },
-  barangayLabel: { color: editorial.ink, fontSize: 14, fontWeight: '700', marginBottom: 8 },
-  barangayChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 10 },
-  barangayChoice: { borderWidth: 1, borderColor: editorial.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },
-  barangayChoiceActive: { backgroundColor: editorial.accent, borderColor: editorial.accent },
-  barangayChoiceText: { color: '#475569', fontSize: 12, fontWeight: '700' },
-  barangayChoiceTextActive: { color: '#fff' },
   areaHeaderRow: { flexDirection: 'row', alignItems: 'center' },
   areaHeaderSmall: { flexWrap: 'wrap', gap: 8 },
   areaIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: editorial.accentSoft, alignItems: 'center', justifyContent: 'center' },
   areaCopy: { flex: 1, marginLeft: 10 },
   areaTitle: { color: editorial.muted, fontSize: 11, fontWeight: '700' },
   areaValue: { color: '#181818', fontSize: 15, fontWeight: '800', marginTop: 2 },
-  changeAreaBtn: { borderWidth: 1, borderColor: editorial.accent, borderRadius: 10, paddingHorizontal: 11, paddingVertical: 7 },
-  changeAreaText: { color: editorial.accent, fontSize: 11, fontWeight: '800' },
-  areaHelp: { color: editorial.muted, fontSize: 11, marginTop: 14, marginBottom: 8 },
-  areaError: { color: '#b91c1c', fontSize: 11, marginTop: 8 },
+  areaHelp: { color: editorial.muted, fontSize: 11, marginTop: 10 },
 
   profileRow: { flexDirection: 'row', alignItems: 'center' },
   avatar: {

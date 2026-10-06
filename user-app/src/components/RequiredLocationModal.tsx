@@ -1,58 +1,21 @@
-import { useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppText as Text } from './Typography';
 import { editorial } from './EditorialTheme';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Location from 'expo-location';
-import { assignAuthBarangayFromLocation } from '../services/api';
-import { SessionUser } from '../services/session';
 
 type Props = {
-  onAssigned: (user: SessionUser) => Promise<void>;
+  loading: boolean;
+  message?: string | null;
+  activeSession?: boolean;
+  onEnable: () => void;
 };
 
-export default function RequiredLocationModal({ onAssigned }: Props) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function enableLocation() {
-    if (loading) return;
-    setLoading(true);
-    setError(null);
-
-    try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== 'granted') {
-        setError('Location access is required to use the application. Enable it in your browser or device settings, then try again.');
-        return;
-      }
-
-      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      const response = await assignAuthBarangayFromLocation(
-        position.coords.latitude,
-        position.coords.longitude,
-      );
-      const user = response.data?.user as SessionUser | undefined;
-      if (!user?.id || !user.barangayName) {
-        throw new Error('The nearest barangay could not be assigned.');
-      }
-      await onAssigned(user);
-    } catch (err: any) {
-      setError(err?.response?.data?.message || err?.message || 'Unable to verify your location. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
+export default function RequiredLocationModal({ loading, message, activeSession = false, onEnable }: Props) {
   async function openSettings() {
     try {
-      if (Platform.OS === 'web') {
-        setError('Use the location icon beside your browser address bar to allow location, then press Try Again.');
-      } else {
-        await Linking.openSettings();
-      }
+      await Linking.openSettings();
     } catch {
-      setError('Please open your device settings and allow location access for this application.');
+      // Instructions remain visible if settings cannot be opened directly.
     }
   }
 
@@ -63,26 +26,32 @@ export default function RequiredLocationModal({ onAssigned }: Props) {
           <View style={styles.iconCircle}>
             <MaterialCommunityIcons name="map-marker-radius" size={38} color={editorial.accent} />
           </View>
-          <Text style={styles.title}>Location access required</Text>
+          <Text style={styles.title}>{activeSession ? 'Keep your location on' : 'Location access required'}</Text>
           <Text style={styles.message}>
-            Turn on location to continue. We use your current position to assign your account to the nearest supported barangay.
+            {activeSession
+              ? 'Your location was turned off or became unavailable. Turn it back on to safely use the app and automatically assign your barangay area.'
+              : 'Turn on location to continue. We use your live position to safely assign your account to the nearest supported barangay.'}
           </Text>
           <Text style={styles.supported}>Sampiruhan · Lingga · Palingon · Parian · Uwisan · Looc</Text>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <TouchableOpacity style={styles.primaryButton} onPress={enableLocation} disabled={loading}>
+          {message ? <Text style={styles.error}>{message}</Text> : null}
+          <TouchableOpacity style={styles.primaryButton} onPress={onEnable} disabled={loading}>
             {loading ? <ActivityIndicator color="#fff" /> : (
               <>
                 <MaterialCommunityIcons name="crosshairs-gps" size={18} color="#fff" />
-                <Text style={styles.primaryText}>{error ? 'Try Again' : 'Enable Location'}</Text>
+                <Text style={styles.primaryText}>Try Again</Text>
               </>
             )}
           </TouchableOpacity>
-          {error ? (
+          {message && Platform.OS !== 'web' ? (
             <TouchableOpacity style={styles.settingsButton} onPress={openSettings} disabled={loading}>
               <Text style={styles.settingsText}>Open Location Settings</Text>
             </TouchableOpacity>
           ) : null}
-          <Text style={styles.requiredNote}>Location must be enabled before the application can be accessed.</Text>
+          <Text style={styles.requiredNote}>
+            {activeSession
+              ? 'App access will resume as soon as a live location is detected.'
+              : 'You will remain on the login screen until live location is enabled.'}
+          </Text>
         </View>
       </View>
     </Modal>

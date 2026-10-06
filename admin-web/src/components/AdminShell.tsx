@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { type ChangeEvent, type ReactNode } from 'react';
 import cdrrmdLogo from '../assets/cdrrmd-logo.png';
 import { d } from '../adminDesign';
 
@@ -91,15 +91,23 @@ export default function AdminShell({
   actions,
   children,
 }: Props) {
-  const [isAccountsExpanded, setIsAccountsExpanded] = useState(activeView === 'admin' || activeView === 'users' || activeView === 'barangay' || activeView === 'rescuers');
+  const isAccountsView = activeView === 'admin' || activeView === 'users' || activeView === 'barangay' || activeView === 'rescuers';
 
-  function onAccountsClick() {
-    if (activeView !== 'admin' && activeView !== 'users' && activeView !== 'barangay' && activeView !== 'rescuers') {
+  function handleAccountTypeChange(event: ChangeEvent<HTMLSelectElement>) {
+    const accountType = event.target.value as Extract<ActiveView, 'admin' | 'users' | 'barangay' | 'rescuers'>;
+    const accountPages = {
+      admin: onOpenAdmin,
+      users: onOpenUsers,
+      barangay: onOpenBarangay,
+      rescuers: onOpenRescuers,
+    };
+    accountPages[accountType]();
+  }
+
+  function openAccounts() {
+    if (!isAccountsView) {
       onOpenAdmin();
-      setIsAccountsExpanded(true);
-      return;
     }
-    setIsAccountsExpanded((prev) => !prev);
   }
 
   // Single source of truth for desktop and mobile navigation labels/actions.
@@ -138,37 +146,9 @@ export default function AdminShell({
             </button>
 
             <div>
-              <button onClick={onAccountsClick} className={itemClass(activeView === 'admin' || activeView === 'users' || activeView === 'barangay' || activeView === 'rescuers')}>
+              <button onClick={openAccounts} className={itemClass(isAccountsView)}>
                 <NavLabel icon="accounts" label="Accounts" />
               </button>
-              {isAccountsExpanded ? (
-                <div className={d.shell.accountsDropdownWrap}>
-                  <button
-                    onClick={onOpenAdmin}
-                    className={[d.shell.accountsDropdownItem, activeView === 'admin' ? d.shell.accountsDropdownItemActive : d.shell.accountsDropdownItemIdle].join(' ')}
-                  >
-                    Admin
-                  </button>
-                  <button
-                    onClick={onOpenUsers}
-                    className={[d.shell.accountsDropdownItem, activeView === 'users' ? d.shell.accountsDropdownItemActive : d.shell.accountsDropdownItemIdle].join(' ')}
-                  >
-                    Users
-                  </button>
-                  <button
-                    onClick={onOpenBarangay}
-                    className={[d.shell.accountsDropdownItem, activeView === 'barangay' ? d.shell.accountsDropdownItemActive : d.shell.accountsDropdownItemIdle].join(' ')}
-                  >
-                    Barangay
-                  </button>
-                  <button
-                    onClick={onOpenRescuers}
-                    className={[d.shell.accountsDropdownItem, activeView === 'rescuers' ? d.shell.accountsDropdownItemActive : d.shell.accountsDropdownItemIdle].join(' ')}
-                  >
-                    CDRRMD Rescuers
-                  </button>
-                </div>
-              ) : null}
             </div>
 
             {navItems.map((item) => (
@@ -199,7 +179,30 @@ export default function AdminShell({
                 <h1 className={d.shell.h1}>{title}</h1>
                 {subtitle ? <p className={d.shell.subtitle}>{subtitle}</p> : null}
               </div>
-              {actions ? <div className={d.shell.actions}>{actions}</div> : null}
+              {isAccountsView || actions ? (
+                <div className={isAccountsView ? d.shell.accountActions : d.shell.actions}>
+                  {isAccountsView ? <div className={d.shell.accountActionSlot}>{actions}</div> : actions}
+                  {isAccountsView ? (
+                    <div className={d.shell.accountTypeControl}>
+                      <select
+                        aria-label="Account type"
+                        title="Account type"
+                        value={activeView}
+                        onChange={handleAccountTypeChange}
+                        className={d.shell.accountTypeSelect}
+                      >
+                        <option value="admin">Admin Accounts</option>
+                        <option value="users">User Accounts</option>
+                        <option value="barangay">Barangay Accounts</option>
+                        <option value="rescuers">Rescuer Accounts</option>
+                      </select>
+                      <svg className={d.shell.accountTypeArrow} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                        <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </header>
 

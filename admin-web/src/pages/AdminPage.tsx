@@ -293,7 +293,7 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationAreas={onOpenEvacuationAreas}
       onOpenPostUpdates={onOpenPostUpdates}
-      actions={<button onClick={openAddForm} className={d.admin.actionAdd}>Add Admin</button>}
+      actions={<button onClick={openAddForm} className={d.admin.actionAdd}>Add Admin Account</button>}
     >
       <div className={d.admin.root}>
             <div className={d.admin.headerRow}>
@@ -310,7 +310,7 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
                 <input
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Search by name, email, username, or contact"
+                  placeholder="Search Admin Account"
                   className={d.admin.search}
                 />
               </div>

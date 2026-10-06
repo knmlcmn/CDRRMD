@@ -54,10 +54,6 @@ export const d = {
     navIcon: 'h-5 w-5 shrink-0',
     navItemActive: 'bg-[#2a5d8d] text-white shadow-sm',
     navItemIdle: 'text-slate-100 hover:bg-[#163b60]',
-    accountsDropdownWrap: 'mt-2 space-y-2 rounded-xl border border-slate-500/35 bg-[#163b60] p-2',
-    accountsDropdownItem: 'w-full rounded-lg px-3 py-2 text-left text-sm font-bold transition',
-    accountsDropdownItemActive: 'border border-sky-300 bg-sky-700 text-white',
-    accountsDropdownItemIdle: 'bg-[#2a5d8d] text-white hover:bg-[#346e9f]',
     monitoringDropdownWrap: 'mb-2 mt-3 space-y-3',
     monitoringDropdownPanel: 'space-y-2 rounded-xl border border-slate-500/35 bg-[#163b60] p-2',
     monitoringDropdownButton: 'w-full rounded-lg bg-[#2a5d8d] px-3 py-2 text-left text-sm font-bold text-white transition hover:bg-[#346e9f]',
@@ -79,6 +75,11 @@ export const d = {
     h1: 'text-xl font-extrabold leading-tight text-[#0b2e4e] md:text-[1.7rem]',
     subtitle: 'mt-1 text-[0.95rem] text-slate-600',
     actions: 'flex flex-wrap gap-2',
+    accountActions: 'grid w-full grid-cols-1 gap-3 sm:w-auto sm:grid-cols-[13rem_15rem] sm:justify-end',
+    accountActionSlot: 'flex h-12 min-w-0 items-center justify-end',
+    accountTypeControl: 'relative h-12 w-full',
+    accountTypeSelect: 'h-12 w-full appearance-none rounded-xl border-2 border-[#1f4e79] bg-[#1f4e79] py-2 pl-4 pr-11 text-base font-bold text-white shadow-sm outline-none transition hover:bg-[#173a5b] focus:ring-4 focus:ring-sky-200 [&>option]:bg-white [&>option]:text-slate-900',
+    accountTypeArrow: 'pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-white',
   },
 
   page: {
@@ -204,7 +205,7 @@ export const d = {
   },
 
   admin: {
-    actionAdd: 'btn-primary',
+    actionAdd: 'btn-primary h-12 w-full px-5 text-base',
     root: 'panel flex h-[calc(100dvh-8.7rem)] min-h-0 flex-col p-3 lg:h-[calc(var(--admin-viewport-height)-9.2rem)]',
     headerRow: 'mb-2 flex flex-wrap items-center justify-between gap-2',
     title: 'text-lg font-black text-[#1a3650] sm:text-xl',

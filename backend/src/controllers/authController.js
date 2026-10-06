@@ -35,4 +35,9 @@ async function assignBarangayFromLocation(req, res) {
   return res.json(response);
 }
 
-module.exports = { login, register, logout, refresh, me, updateMe, assignBarangayFromLocation };
+async function resubmitVerification(req, res) {
+  const response = await authService.resubmitVerification(req.user?.userId, req.body);
+  return res.json(response);
+}
+
+module.exports = { login, register, logout, refresh, me, updateMe, assignBarangayFromLocation, resubmitVerification };

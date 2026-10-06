@@ -249,7 +249,7 @@ export default function BarangayAccountsPage({
       activeView="barangay"
       title="Barangay Account Management"
       noMainScroll
-      actions={<button onClick={handleNew} className={d.admin.actionAdd}>Add Barangay Account</button>}
+      actions={<button onClick={handleNew} className={`${d.admin.actionAdd} !text-sm whitespace-nowrap`}>Add Barangay Account</button>}
     >
       <div className={d.admin.root}>
         <div className={d.admin.headerRow}>
@@ -270,7 +270,7 @@ export default function BarangayAccountsPage({
             </select>
             <input
               className={d.admin.search}
-              placeholder="Search by ID, name, email, username, or contact"
+              placeholder="Search Barangay Account"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />

@@ -26,6 +26,10 @@ async function initDb() {
       password_hash TEXT NOT NULL,
       role VARCHAR(20) NOT NULL DEFAULT 'admin',
       barangay_name VARCHAR(120),
+      valid_id_image TEXT,
+      verification_status VARCHAR(20) NOT NULL DEFAULT 'approved',
+      verification_reviewed_at TIMESTAMP,
+      verification_reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
       last_login TIMESTAMP,
       is_active BOOLEAN NOT NULL DEFAULT FALSE,
       last_seen_at TIMESTAMP,
@@ -413,6 +417,22 @@ async function initDb() {
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS location_updated_at TIMESTAMP;
 
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS valid_id_image TEXT;
+
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS verification_status VARCHAR(20) NOT NULL DEFAULT 'approved';
+
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS verification_reviewed_at TIMESTAMP;
+
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS verification_reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
+
+    UPDATE users
+    SET verification_status = 'approved'
+    WHERE verification_status IS NULL OR verification_status NOT IN ('pending', 'approved', 'disapproved');
+
     CREATE INDEX IF NOT EXISTS users_barangay_name_idx
     ON users (barangay_name)
     WHERE barangay_name IS NOT NULL;
@@ -423,6 +443,9 @@ async function initDb() {
 
     CREATE INDEX IF NOT EXISTS users_is_archived_idx
     ON users (is_archived, role, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS users_verification_status_idx
+    ON users (role, verification_status, created_at DESC);
 
     CREATE INDEX IF NOT EXISTS users_presence_idx
     ON users (role, last_seen_at DESC)

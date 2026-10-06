@@ -20,6 +20,16 @@ async function listArchivedUsers(req, res) {
   return res.json(rows);
 }
 
+async function getUserVerification(req, res) {
+  const user = await adminService.getUserVerification(req.user, req.params.id);
+  return res.json(user);
+}
+
+async function reviewUserVerification(req, res) {
+  const reviewed = await adminService.reviewUserVerification(req.user, req.params.id, req.body);
+  return res.json(reviewed);
+}
+
 async function createAdmin(req, res) {
   const created = await adminService.createAdmin(req.user, req.body);
   return res.status(201).json(created);
@@ -75,6 +85,8 @@ module.exports = {
   listArchivedAdmins,
   listArchivedUsers,
   listUsers,
+  getUserVerification,
+  reviewUserVerification,
   createAdmin,
   createUser,
   updateAdmin,

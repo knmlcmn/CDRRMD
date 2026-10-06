@@ -36,6 +36,31 @@ async function listUsers(actor) {
   return userModel.listUsers();
 }
 
+async function getUserVerification(actor, userId) {
+  ensureAdmin(actor);
+  const id = Number(userId);
+  if (!Number.isFinite(id)) throw httpError(400, 'Invalid user id.');
+
+  const user = await userModel.getUserVerificationById(id);
+  if (!user) throw httpError(404, 'User account not found.');
+  return user;
+}
+
+async function reviewUserVerification(actor, userId, payload) {
+  ensureAdmin(actor);
+  const id = Number(userId);
+  if (!Number.isFinite(id)) throw httpError(400, 'Invalid user id.');
+
+  const status = String(payload?.status || '').trim().toLowerCase();
+  if (!['approved', 'disapproved'].includes(status)) {
+    throw httpError(400, 'Verification status must be approved or disapproved.');
+  }
+
+  const reviewed = await userModel.reviewUserVerification(id, status, actor?.userId || null);
+  if (!reviewed) throw httpError(404, 'User account not found.');
+  return reviewed;
+}
+
 async function listArchivedUsers(actor) {
   ensureAdmin(actor);
   return userModel.listArchivedUsers();
@@ -285,6 +310,8 @@ async function permanentlyDeleteUser(actor, userId) {
 module.exports = {
   listAdmins,
   listUsers,
+  getUserVerification,
+  reviewUserVerification,
   listArchivedAdmins,
   listArchivedUsers,
   createAdmin,

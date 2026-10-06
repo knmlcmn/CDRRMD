@@ -7,6 +7,7 @@ const {
   me,
   updateMe,
   assignBarangayFromLocation,
+  resubmitVerification,
 } = require('../controllers/authController');
 const auth = require('../middleware/auth');
 const authFlexible = require('../middleware/authFlexible');
@@ -25,5 +26,6 @@ router.post('/logout', authFlexible, logout);
 router.get('/me', auth, me);
 router.put('/me', auth, updateMe);
 router.put('/location-barangay', auth, assignBarangayFromLocation);
+router.put('/verification-resubmit', auth, resubmitVerification);
 
 module.exports = router;

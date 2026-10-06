@@ -1,17 +1,21 @@
 import { createContext, useContext, type ReactNode } from 'react';
-import { Platform, StyleSheet, Text as NativeText, TextInput as NativeTextInput, type TextProps, type TextInputProps } from 'react-native';
+import { StyleSheet, Text as NativeText, TextInput as NativeTextInput, type TextProps, type TextInputProps } from 'react-native';
 import { useFonts } from 'expo-font';
-import { Manrope_400Regular } from '@expo-google-fonts/manrope/400Regular';
-import { Manrope_800ExtraBold } from '@expo-google-fonts/manrope/800ExtraBold';
+import { Sora_400Regular } from '@expo-google-fonts/sora/400Regular';
+import { Sora_600SemiBold } from '@expo-google-fonts/sora/600SemiBold';
+import { Sora_700Bold } from '@expo-google-fonts/sora/700Bold';
+import { Sora_800ExtraBold } from '@expo-google-fonts/sora/800ExtraBold';
 
 const FontContext = createContext(false);
 const FontFamilyContext = createContext<string | undefined>(undefined);
-export const EDITORIAL_FONT = Platform.select({ ios: 'Georgia', android: 'serif', default: 'Georgia' }) ?? 'Georgia';
+export const EDITORIAL_FONT = 'Sora_400Regular';
 
 export function TypographyProvider({ children }: { children: ReactNode }) {
   const [loaded] = useFonts({
-    Manrope_400Regular,
-    Manrope_800ExtraBold,
+    Sora_400Regular,
+    Sora_600SemiBold,
+    Sora_700Bold,
+    Sora_800ExtraBold,
   });
 
   return <FontContext.Provider value={loaded}>{children}</FontContext.Provider>;
@@ -23,8 +27,11 @@ export function TypographyFamily({ children, family }: { children: ReactNode; fa
 
 function fontForText(style: TextProps['style']) {
   const flattened = StyleSheet.flatten(style);
-  if (flattened?.fontFamily) return flattened.fontFamily;
-  return EDITORIAL_FONT;
+  const weight = flattened?.fontWeight === 'bold' ? 700 : Number(flattened?.fontWeight || 400);
+  if (weight >= 800) return 'Sora_800ExtraBold';
+  if (weight >= 700) return 'Sora_700Bold';
+  if (weight >= 600) return 'Sora_600SemiBold';
+  return 'Sora_400Regular';
 }
 
 export function AppText({ style, ...props }: TextProps) {
@@ -34,16 +41,17 @@ export function AppText({ style, ...props }: TextProps) {
   return (
     <NativeText
       {...props}
-      style={[style, family === EDITORIAL_FONT ? { fontFamily: family } : fontsLoaded ? { fontFamily: family, fontWeight: 'normal' } : undefined]}
+      style={[style, fontsLoaded ? { fontFamily: family, fontWeight: 'normal' } : undefined]}
     />
   );
 }
 
 export function AppTextInput({ style, ...props }: TextInputProps) {
+  const fontsLoaded = useContext(FontContext);
   return (
     <NativeTextInput
       {...props}
-      style={[style, { fontFamily: EDITORIAL_FONT }]}
+      style={[style, fontsLoaded ? { fontFamily: EDITORIAL_FONT } : undefined]}
     />
   );
 }

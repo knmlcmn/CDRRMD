@@ -3,6 +3,7 @@ import cdrrmdLogo from '../../assets/cdrrmd-logo.png';
 import { d } from '../barangayDesign';
 
 type ActiveView = 'dashboard' | 'monitoring' | 'flood-monitoring' | 'evacuation-center' | 'account';
+type NavIconName = 'dashboard' | 'incidents' | 'flood' | 'evacuation' | 'account';
 
 type Props = {
   activeView: ActiveView;
@@ -25,6 +26,75 @@ function itemClass(isActive: boolean) {
     d.shell.navItem,
     isActive ? d.shell.navItemActive : d.shell.navItemIdle,
   ].join(' ');
+}
+
+function NavIcon({ name }: { name: NavIconName }) {
+  const commonProps = {
+    className: d.shell.navIcon,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 2,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+
+  if (name === 'dashboard') {
+    return (
+      <svg {...commonProps}>
+        <rect x="3" y="3" width="7" height="7" rx="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1" />
+        <rect x="14" y="14" width="7" height="7" rx="1" />
+      </svg>
+    );
+  }
+
+  if (name === 'incidents') {
+    return (
+      <svg {...commonProps}>
+        <path d="M10.3 3.6 2.5 17a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0Z" />
+        <path d="M12 9v4" />
+        <path d="M12 17h.01" />
+      </svg>
+    );
+  }
+
+  if (name === 'flood') {
+    return (
+      <svg {...commonProps}>
+        <path d="M12 2.5S6 9 6 14a6 6 0 0 0 12 0c0-5-6-11.5-6-11.5Z" />
+        <path d="M8.5 15.5c1.1.8 2.3 1.2 3.5 1.2s2.4-.4 3.5-1.2" />
+      </svg>
+    );
+  }
+
+  if (name === 'account') {
+    return (
+      <svg {...commonProps}>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21a8 8 0 0 1 16 0" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg {...commonProps}>
+      <path d="m3 10 9-7 9 7" />
+      <path d="M5 9v11h14V9" />
+      <path d="M9 20v-6h6v6" />
+    </svg>
+  );
+}
+
+function NavLabel({ icon, label }: { icon: NavIconName; label: string }) {
+  return (
+    <>
+      <NavIcon name={icon} />
+      <span>{label}</span>
+    </>
+  );
 }
 
 export default function BarangayShell({
@@ -88,19 +158,19 @@ export default function BarangayShell({
 
           <nav className={d.shell.nav}>
             <button onClick={onOpenDashboard} className={itemClass(activeView === 'dashboard')}>
-              Dashboard
+              <NavLabel icon="dashboard" label="Dashboard" />
             </button>
             <button onClick={onOpenMonitoring} className={itemClass(activeView === 'monitoring')}>
-              Incident Monitoring
+              <NavLabel icon="incidents" label="Incident Monitoring" />
             </button>
             <button onClick={onOpenFloodMonitoring} className={itemClass(activeView === 'flood-monitoring')}>
-              Flood Monitoring
+              <NavLabel icon="flood" label="Flood Monitoring" />
             </button>
             <button onClick={onOpenEvacuationCenter} className={itemClass(activeView === 'evacuation-center')}>
-              Evacuation Center
+              <NavLabel icon="evacuation" label="Evacuation Center" />
             </button>
             <button onClick={onOpenAccount} className={itemClass(activeView === 'account')}>
-              My Account
+              <NavLabel icon="account" label="My Account" />
             </button>
           </nav>
 

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -12,14 +13,13 @@ import { AppText as Text, AppTextInput as TextInput } from '../components/Typogr
 import { DashboardHeader } from '../components/DashboardHeader';
 import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { postAuth } from '../services/api';
 import { SessionData } from '../services/session';
-import { AppProfile } from '../services/appAccount';
-import { SUPPORTED_BARANGAYS } from '../constants/barangays';
 import { useResponsiveLayout } from '../utils/responsive';
 
 type Props = {
-  onRegisterSuccess: (session: SessionData, profile?: AppProfile) => Promise<void>;
+  onRegisterSuccess: (session: SessionData) => Promise<void>;
   onShowLogin: () => void;
 };
 
@@ -52,7 +52,8 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
   const [contactNumber, setContactNumber] = useState('');
-  const [barangayName, setBarangayName] = useState('');
+  const [validIdImage, setValidIdImage] = useState<string | null>(null);
+  const [validIdUri, setValidIdUri] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -60,8 +61,35 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  async function pickValidId() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setError('Please allow photo access so you can upload a valid ID.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.65,
+      base64: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+
+    const asset = result.assets[0];
+    if (!asset.base64) {
+      setError('The selected ID image could not be read. Please select another image.');
+      return;
+    }
+
+    const mimeType = asset.mimeType || 'image/jpeg';
+    setValidIdImage(`data:${mimeType};base64,${asset.base64}`);
+    setValidIdUri(asset.uri || null);
+    setError(null);
+  }
+
   async function onRegister() {
-    if (!firstName.trim() || !lastName.trim() || !email.trim() || !barangayName || !password) {
+    if (!firstName.trim() || !lastName.trim() || !email.trim() || !password || !validIdImage) {
       setError('Please fill in all required fields.');
       return;
     }
@@ -85,18 +113,14 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
         email: email.trim(),
         address: address.trim(),
         contactNumber: contactNumber.trim(),
-        barangayName,
+        validIdImage,
       });
       const nextSession = res.data as SessionData;
-      if (!nextSession?.user || nextSession.user.role !== 'user') {
+      if (!nextSession?.token || !nextSession.user || nextSession.user.role !== 'user') {
         setError('Registration failed for user account.');
         return;
       }
-      await onRegisterSuccess(nextSession, {
-        firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(),
-        address: address.trim(), contactNumber: contactNumber.trim(),
-        barangayName: nextSession.user.barangayName || barangayName,
-      });
+      await onRegisterSuccess(nextSession);
     } catch (err: any) {
       if (err?.code === 'ECONNABORTED' || err?.message?.toLowerCase?.().includes('network')) {
         setError('Cannot reach the server. Check your connection and try again.');
@@ -125,23 +149,22 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
             <Field icon="email-outline" value={email} onChangeText={setEmail} placeholder="Email *" keyboardType="email-address" autoCapitalize="none" />
             <Field icon="map-marker-outline" value={address} onChangeText={setAddress} placeholder="Address" autoCapitalize="words" />
             <Field icon="phone-outline" value={contactNumber} onChangeText={setContactNumber} placeholder="Contact Number" keyboardType="phone-pad" />
-            <Text style={styles.barangayLabel}>Registered Barangay *</Text>
-            <View style={styles.barangayChoices}>
-              {SUPPORTED_BARANGAYS.map((name) => {
-                const selected = barangayName === name;
-                return (
-                  <TouchableOpacity
-                    key={name}
-                    style={[styles.barangayChoice, selected && styles.barangayChoiceSelected]}
-                    onPress={() => setBarangayName(name)}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected }}
-                  >
-                    <Text style={[styles.barangayChoiceText, selected && styles.barangayChoiceTextSelected]}>{name}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <Text style={styles.validIdLabel}>Upload Valid ID *</Text>
+            <TouchableOpacity style={styles.uploadButton} onPress={pickValidId} disabled={loading}>
+              <MaterialCommunityIcons name="card-account-details-outline" size={18} color={editorial.accent} />
+              <Text style={styles.uploadButtonText}>{validIdImage ? 'Change Valid ID' : 'Choose Valid ID Image'}</Text>
+            </TouchableOpacity>
+            {validIdUri ? (
+              <View style={styles.idPreviewWrap}>
+                <Image source={{ uri: validIdUri }} style={styles.idPreview} resizeMode="contain" />
+                <View style={styles.idReadyRow}>
+                  <MaterialCommunityIcons name="check-circle" size={15} color="#15803d" />
+                  <Text style={styles.idReadyText}>Valid ID ready for verification</Text>
+                </View>
+              </View>
+            ) : (
+              <Text style={styles.idHint}>Upload a clear photo of a government-issued or school ID.</Text>
+            )}
             <Field
               icon="lock-outline" value={password} onChangeText={setPassword} placeholder="Password *" secureTextEntry={!showPassword}
               trailing={<TouchableOpacity onPress={() => setShowPassword((value) => !value)}><MaterialCommunityIcons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={16} color="#526170" /></TouchableOpacity>}
@@ -151,7 +174,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
               trailing={<TouchableOpacity onPress={() => setShowConfirmPassword((value) => !value)}><MaterialCommunityIcons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={16} color="#526170" /></TouchableOpacity>}
             />
 
-            <Text style={styles.locationHint}>Your selected barangay will be shown on your resident account.</Text>
+            <Text style={styles.locationHint}>Your barangay will be assigned automatically from your latest live location after approval.</Text>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <TouchableOpacity style={styles.primaryButton} onPress={onRegister} disabled={loading} activeOpacity={0.85}>
@@ -164,6 +187,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
     </View>
   );
 }
@@ -183,12 +207,14 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', gap: 7 },
   nameRowSmall: { flexDirection: 'column', gap: 0 },
   nameField: { flex: 1, minWidth: 0 },
-  barangayLabel: { color: editorial.ink, fontSize: 11, fontWeight: '800', marginHorizontal: 8, marginTop: 2, marginBottom: 6 },
-  barangayChoices: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 9 },
-  barangayChoice: { borderWidth: 1, borderColor: editorial.border, borderRadius: 8, backgroundColor: '#fff', paddingHorizontal: 10, paddingVertical: 7 },
-  barangayChoiceSelected: { borderColor: editorial.accent, backgroundColor: '#e8f2f8' },
-  barangayChoiceText: { color: '#526170', fontSize: 11, fontWeight: '700' },
-  barangayChoiceTextSelected: { color: editorial.accent, fontWeight: '900' },
+  validIdLabel: { color: editorial.ink, fontSize: 11, fontWeight: '800', marginHorizontal: 8, marginTop: 2, marginBottom: 6 },
+  uploadButton: { height: 42, borderWidth: 1, borderStyle: 'dashed', borderColor: editorial.accent, borderRadius: 10, backgroundColor: '#f7fbfe', paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  uploadButtonText: { color: editorial.accent, fontSize: 12, fontWeight: '800', marginLeft: 7 },
+  idPreviewWrap: { borderWidth: 1, borderColor: editorial.border, borderRadius: 10, padding: 8, marginBottom: 8, backgroundColor: '#fff' },
+  idPreview: { width: '100%', height: 115, borderRadius: 7, backgroundColor: '#f1f5f9' },
+  idReadyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 6 },
+  idReadyText: { color: '#15803d', fontSize: 10, fontWeight: '700', marginLeft: 5 },
+  idHint: { color: '#64748b', fontSize: 10, marginHorizontal: 8, marginBottom: 8 },
   locationHint: { color: '#555555', fontSize: 10, marginHorizontal: 8, marginBottom: 8 },
   errorText: { color: '#c62828', fontSize: 11, marginHorizontal: 8, marginBottom: 8 },
   primaryButton: { height: 45, borderRadius: 10, backgroundColor: editorial.accent, alignItems: 'center', justifyContent: 'center', marginTop: 2, marginBottom: 10 },
