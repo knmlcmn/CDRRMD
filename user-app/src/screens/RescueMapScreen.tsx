@@ -192,6 +192,7 @@ function buildLeafletHtml(
   allAreas: EvacuationArea[],
   selectedAreaId: EvacuationArea['id'] | null,
   showAreas: boolean,
+  requestStarted: boolean,
   routeCoordinates: Coordinate[],
   apiBaseUrl: string,
   layerVisibility: UserMapLayerVisibility,
@@ -202,6 +203,7 @@ function buildLeafletHtml(
     allAreas,
     selectedAreaId,
     showAreas,
+    requestStarted,
     routeCoordinates,
     windDataUrl: `${apiBaseUrl}/weather/wind-field`,
     rainImpactUrl: `${apiBaseUrl}/flood-risk/calamba/rain-impact`,
@@ -251,20 +253,20 @@ function buildLeafletHtml(
       .map-legend .updated{color:#64748b;font-size:10px;margin-top:5px}
       .legend-section-label{align-items:center;border-top:1px solid #e2e8f0;color:#1e40af;display:flex;font-size:10px;font-weight:800;gap:5px;margin-top:7px;padding-top:5px;text-transform:uppercase;letter-spacing:0.04em}
       .legend-section-dot{border-radius:999px;display:inline-block;flex-shrink:0;height:8px;width:8px}
-      .layer-control{font-family:Arial,sans-serif;position:relative}.layer-control-button{background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.45);border-radius:8px;color:#fff;cursor:pointer;font:700 11px/1 Arial,sans-serif;padding:8px 10px}.layer-control-panel{background:rgba(13,20,35,.96);border:1px solid rgba(148,163,184,.25);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.6);display:none;margin-top:6px;padding:10px 10px 8px;width:190px}.layer-control-panel.open{display:block}.layer-control-title{border-bottom:1px solid rgba(148,163,184,.2);color:#94a3b8;font-size:9px;font-weight:700;letter-spacing:.1em;margin-bottom:7px;padding-bottom:5px;text-align:center;text-transform:uppercase}.layer-control-row{align-items:center;color:#e2e8f0;display:flex;font-size:10px;font-weight:700;justify-content:space-between;padding:5px 0}.layer-control-row input{accent-color:#38bdf8}
+      .layer-control{font-family:Arial,sans-serif;height:32px;position:relative;width:190px}.layer-control-button{background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.45);border-radius:8px;color:#fff;cursor:pointer;font:700 11px/1 Arial,sans-serif;height:32px;min-width:88px;padding:0 10px;position:absolute;right:0;top:0;white-space:nowrap}.layer-control-panel{background:rgba(13,20,35,.96);border:1px solid rgba(148,163,184,.25);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.6);display:none;padding:10px 10px 8px;position:absolute;right:0;top:38px;width:190px}.layer-control-panel.open{display:block}.layer-control-panel.scrollable{max-height:178px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}.layer-control-title{border-bottom:1px solid rgba(148,163,184,.2);color:#94a3b8;font-size:9px;font-weight:700;letter-spacing:.1em;margin-bottom:7px;padding-bottom:5px;text-align:center;text-transform:uppercase}.layer-control-row{align-items:center;color:#e2e8f0;display:flex;font-size:10px;font-weight:700;justify-content:space-between;padding:5px 0}.layer-control-row input{accent-color:#38bdf8}
       .flood-info{font:13px/1.35 Arial,sans-serif;min-width:220px}
       .flood-info .head{background:#0891b2;color:#fff;font-weight:800;margin:-10px -12px 10px;padding:10px 12px}
       .flood-info table{border-collapse:collapse;width:100%}
       .flood-info td{border:1px solid #cbd5e1;padding:6px 8px}
       .flood-info td:first-child{background:#f8fafc;font-weight:700;width:42%}
-      .evacuation-popup .leaflet-popup-content{margin:10px 16px 12px;width:min(260px,calc(100vw - 64px))!important}
-      .evac-info{font:14px/1.3 Arial,sans-serif;min-width:0;width:100%}
-      .evac-info .head{background:#0f766e;color:#fff;font-size:15px;font-weight:800;line-height:1.2;margin:-10px -16px 8px;padding:8px 10px}
-      .evac-info .selected{color:#ccfbf1;display:block;font-size:11px;font-weight:700;letter-spacing:.02em;margin-top:2px;text-transform:uppercase}
+      .evacuation-popup .leaflet-popup-content{margin:8px 12px 10px;width:min(218px,calc(100vw - 72px))!important}
+      .evac-info{font:11px/1.25 Arial,sans-serif;min-width:0;width:100%}
+      .evac-info .head{background:#0f766e;color:#fff;font-size:13px;font-weight:800;line-height:1.15;margin:-8px -12px 6px;padding:6px 8px}
+      .evac-info .selected{color:#ccfbf1;display:block;font-size:8px;font-weight:700;letter-spacing:.02em;margin-top:2px;text-transform:uppercase}
       .evac-info table{border-collapse:collapse;width:100%}
-      .evac-info td{border:1px solid #cbd5e1;padding:5px 7px;vertical-align:top}
-      .evac-info td:first-child{background:#f8fafc;font-weight:700;width:36%}
-      .evac-status{border-radius:999px;display:inline-block;font-size:12px;font-weight:800;padding:2px 7px}
+      .evac-info td{border:1px solid #cbd5e1;padding:3px 5px;vertical-align:top}
+      .evac-info td:first-child{background:#f8fafc;font-weight:700;width:34%}
+      .evac-status{border-radius:999px;display:inline-block;font-size:9px;font-weight:800;padding:2px 5px}
       .evac-status.available{background:#dcfce7;color:#166534}
       .evac-status.full{background:#fee2e2;color:#991b1b}
       .map-rain-canvas{left:0;opacity:.5;pointer-events:none;position:absolute;top:0;z-index:429}.map-wind-canvas{left:0;opacity:.5;pointer-events:none;position:absolute;top:0;z-index:430}.forecast-timebar{backdrop-filter:blur(9px);background:rgba(7,17,24,.94);border:1px solid rgba(148,163,184,.35);border-radius:18px;bottom:10px;box-shadow:0 5px 18px rgba(0,0,0,.38);color:#fff;display:none;left:50%;max-width:calc(100% - 16px);padding:8px 10px 7px;pointer-events:auto;position:absolute;transform:translateX(-50%);width:calc(100% - 16px);z-index:700}.forecast-time-track{position:relative}.forecast-time-labels{display:flex;justify-content:space-between;margin:0 5px 3px}.forecast-time-label{color:#f8fafc;font:700 10px/1.1 Arial,sans-serif;text-align:center}.forecast-time-date{color:#cbd5e1;display:block;font:8px/1 Arial,sans-serif}.forecast-time-range{appearance:none;background:repeating-linear-gradient(90deg,rgba(203,213,225,.7) 0 1px,transparent 1px 9px);border:0;display:block;height:26px;margin:0;outline:none;width:100%}.forecast-time-range::-webkit-slider-thumb{appearance:none;background:#f97316;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px rgba(249,115,22,.3);cursor:grab;height:17px;width:5px}.forecast-time-range::-moz-range-thumb{background:#f97316;border:2px solid #fff;border-radius:50%;cursor:grab;height:17px;width:5px}.forecast-time-summary{color:#dbeafe;font:700 9px/1.3 Arial,sans-serif;overflow:hidden;text-align:center;text-overflow:ellipsis;white-space:nowrap}
@@ -1119,6 +1121,7 @@ function buildLeafletHtml(
           button.type = 'button';
           button.textContent = 'Map Layers';
           var panel = L.DomUtil.create('div', 'layer-control-panel', wrap);
+          if (!data.showForecastTimeline) panel.classList.add('scrollable');
           var title = L.DomUtil.create('div', 'layer-control-title', panel);
           title.textContent = 'Map Layers';
           var rows = [
@@ -1230,7 +1233,7 @@ function buildLeafletHtml(
                 '<tr><td>Status</td><td><span class="evac-status ' + (area.status === 'full' ? 'full' : 'available') + '">' + (area.status === 'full' ? 'Full' : 'Available') + '</span></td></tr>' +
               '</table>' +
             '</div>',
-            { className: 'evacuation-popup', maxWidth: 292, minWidth: 0 }
+            { className: 'evacuation-popup', maxWidth: 242, minWidth: 0 }
           );
 
           if (isSelected) {
@@ -1266,8 +1269,10 @@ function buildLeafletHtml(
           } else if (fitBounds.isValid()) {
             map.fitBounds(fitBounds.pad(0.08), { maxZoom: 15 });
           }
-        } else if (fitBounds.isValid()) {
+        } else if (data.requestStarted && fitBounds.isValid()) {
           map.fitBounds(fitBounds.pad(0.08), { maxZoom: 15 });
+        } else {
+          map.setView([data.userLocation.latitude, data.userLocation.longitude], 15);
         }
 
       } else {
@@ -1603,6 +1608,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
       mapEvacuationAreas,
       selectedAreaId,
       true,
+      requestStarted,
       routeCoordinates,
       apiBaseUrl,
       layerVisibilityRef.current,
@@ -2036,8 +2042,8 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
         <TouchableOpacity
           style={[st.floatingCancelBtn, {
             bottom: 64 * uiScale,
-            paddingHorizontal: 24 * uiScale,
-            minHeight: 42 * uiScale,
+            paddingHorizontal: 18 * uiScale,
+            height: 34 * uiScale,
           }]}
           activeOpacity={0.9}
           onPress={() => {
@@ -2054,7 +2060,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
             setRouteSource(null);
           }}
         >
-          <MaterialCommunityIcons name="close-circle-outline" size={20} color="#fff" />
+          <MaterialCommunityIcons name="close-circle-outline" size={17} color="#fff" />
           <Text style={st.floatingCancelText}>Cancel Rescue Request</Text>
         </TouchableOpacity>
       ) : null}
@@ -2157,7 +2163,7 @@ const st = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
   },
-  floatingCancelText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
+  floatingCancelText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
 
   bottomActionRow: { flexDirection: 'row', marginTop: 10, gap: 8 },
   stackOnSmall: { flexDirection: 'column', alignItems: 'stretch' },
