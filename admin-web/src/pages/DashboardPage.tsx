@@ -332,24 +332,32 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       label: 'Emergency Alerts',
       value: cards.emergencyAlerts,
       className: d.dashboard.cardEmergency,
+      borderClass: 'border-rose-400',
+      toneClass: 'text-rose-600',
     },
     {
       key: 'activeTeams',
       label: 'Active Teams',
       value: cards.activeTeams,
       className: d.dashboard.cardTeams,
+      borderClass: 'border-sky-400',
+      toneClass: 'text-sky-600',
     },
     {
       key: 'evacuationAreas',
       label: 'Evacuation Areas',
       value: cards.evacuationAreas,
       className: d.dashboard.cardEvac,
+      borderClass: 'border-amber-400',
+      toneClass: 'text-amber-600',
     },
     {
       key: 'totalEvacuees',
       label: 'Total Evacuees',
       value: cards.totalEvacuees,
       className: d.dashboard.cardEvacuees,
+      borderClass: 'border-emerald-400',
+      toneClass: 'text-emerald-600',
     },
   ];
 
@@ -382,16 +390,19 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
 
           <section className={d.dashboard.metricsGrid}>
             {cardsToRender.map((card) => (
-              <article key={card.key} className={[d.dashboard.metricGradient, card.className].join(' ')}>
-                <p className={d.dashboard.metricValue}>{card.value}</p>
-                <p className={d.dashboard.metricLabel}>{card.label}</p>
+              <article key={card.key} className={`rounded-xl border border-slate-200 border-t-4 ${card.borderClass} bg-white px-3 py-2 shadow-sm`}>
+                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{card.label}</p>
+                <p className={`mt-0.5 text-2xl font-black ${card.toneClass}`}>{card.value}</p>
               </article>
             ))}
           </section>
 
           <section className={d.dashboard.overviewGrid}>
             <article className={d.dashboard.reportsPanel}>
-              <h2 className={d.dashboard.reportsTitle}>Incident Reports Overview</h2>
+              <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-3 py-2">
+                <div><h2 className={d.dashboard.reportsTitle}>Incident Reports Overview</h2><p className="text-xs text-slate-500">Latest emergency reports across Calamba City</p></div>
+                <button onClick={onOpenMonitoring} className="rounded-lg bg-[#1f567d] px-3 py-2 text-xs font-bold text-white hover:bg-[#174866]">View all</button>
+              </div>
               <div className={d.dashboard.reportsContentGrid}>
                 <table className={d.dashboard.reportsTable}>
                   <thead>
@@ -471,6 +482,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                 className={d.dashboard.mapWrap}
                 style={isMapFullscreen ? { position: 'fixed', inset: 0, zIndex: 9999, borderRadius: 0, minHeight: '100dvh' } : { position: 'relative' }}
               >
+                <div className="shrink-0 border-b border-slate-200 px-3 py-2"><h2 className="font-black text-[#173750]">Operations Map</h2><p className="text-xs text-slate-500">Active incidents and evacuation centers across Calamba City</p></div>
                 <iframe ref={mapFrameRef} title="Evacuation map" srcDoc={mapHtml} className={d.dashboard.mapFrame} />
                 {!isMapFullscreen ? (
                   <button
@@ -559,7 +571,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
             </div>
           </section>
 
-          {loading ? <p className={d.page.loading}>Refreshing dashboard data...</p> : null}
+          {loading ? <p role="status" className="absolute bottom-2 left-2 z-20 rounded bg-white/90 px-2 py-1 text-xs text-slate-500 shadow">Refreshing dashboard data...</p> : null}
 
           <button
             type="button"

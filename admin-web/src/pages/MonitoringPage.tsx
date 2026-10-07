@@ -116,6 +116,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   const [previewLoading, setPreviewLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'active' | 'pending' | 'accepted' | 'in_progress' | 'resolved' | 'declined'>('active');
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
+  const [showRainRanking, setShowRainRanking] = useState(false);
   const mapWrapRef = useRef<HTMLElement | null>(null);
   const [declineExplanation, setDeclineExplanation] = useState('');
   const [layerVisibility] = useState<MonitoringLayerVisibility>({
@@ -504,6 +505,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     <AdminShell
       activeView="monitoring"
       title="Incident Monitoring"
+      subtitle="Citywide incident response, backup requests, and live operations"
       noMainScroll
       onLogout={onLogout}
       onOpenDashboard={onOpenDashboard}
@@ -573,7 +575,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
           </article>
 
           <aside className={d.monitoring.mapSideColumn}>
-            <section className={[d.monitoring.rainRankCard, selectedReport ? 'max-h-[55%]' : 'h-full'].join(' ')}>
+            <section className={d.monitoring.rainRankCard}>
               <div className={d.monitoring.rainRankHead}>
                 <div>
                   <h3 className={d.monitoring.rainRankTitle}>Barangays with Moderate–Severe Rainfall</h3>
@@ -581,20 +583,27 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
                     Updated: {rainLegendUpdatedAt ? new Date(rainLegendUpdatedAt).toLocaleTimeString() : '-'}
                   </p>
                 </div>
+                <button type="button" onClick={() => setShowRainRanking((current) => !current)} className={d.btn.secondaryXs}>
+                  {showRainRanking ? 'Hide' : 'Show'}
+                </button>
               </div>
-              {topRainBarangays.length === 0 ? (
-                <p className={d.monitoring.rainRankEmpty}>No moderate or severe rainfall detected right now.</p>
-              ) : (
-                <div className={d.monitoring.rainRankSideList}>
-                  {topRainBarangays.map((item, index) => (
-                    <article key={`${item.barangayName}-${index}`} className={d.monitoring.rainRankRow}>
-                      <p className={d.monitoring.rainRankName}>{`${index + 1}. ${item.barangayName}`}</p>
-                      <p className={d.monitoring.rainRankMeta}>Intensity: {item.rainIntensityMmPerHour.toFixed(2)} mm/hr</p>
-                      <p className={d.monitoring.rainRankMeta}>Risk: {item.rainLevel}</p>
-                    </article>
-                  ))}
+              {showRainRanking ? (
+                <div className={d.monitoring.rainRankPopover}>
+                  {topRainBarangays.length === 0 ? (
+                    <p className={d.monitoring.rainRankEmpty}>No moderate or severe rainfall detected right now.</p>
+                  ) : (
+                    <div className={d.monitoring.rainRankSideList}>
+                      {topRainBarangays.map((item, index) => (
+                        <article key={`${item.barangayName}-${index}`} className={d.monitoring.rainRankRow}>
+                          <p className={d.monitoring.rainRankName}>{`${index + 1}. ${item.barangayName}`}</p>
+                          <p className={d.monitoring.rainRankMeta}>Intensity: {item.rainIntensityMmPerHour.toFixed(2)} mm/hr</p>
+                          <p className={d.monitoring.rainRankMeta}>Risk: {item.rainLevel}</p>
+                        </article>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
+              ) : null}
             </section>
 
             {selectedReport ? (

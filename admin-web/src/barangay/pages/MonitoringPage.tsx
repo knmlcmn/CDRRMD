@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../services/apiClient';
 import { fetchRoadRoute } from '../../services/roadRouting';
-import BackupModal from '../components/BackupModal';
 import BackupRequest, { type BackupRequestState } from '../components/BackupRequest';
 import BarangayShell from '../components/BarangayShell';
 import IncidentHistoryModal from '../../components/IncidentHistoryModal';
@@ -21,19 +20,6 @@ type Props = {
 };
 
 type ApiError = { response?: { status?: number; data?: { message?: string } } };
-
-type AssignmentPreview = {
-  reportNotes: string | null;
-  rescuer: {
-    rescuerId: number;
-    rescuerName: string;
-    rescuerAccountId: string;
-    distanceKm: number | null;
-    isOnline: boolean;
-  } | null;
-};
-
-type ActionMode = 'accept' | 'decline' | null;
 
 type MonitoringLayerVisibility = {
   boundary: boolean;
@@ -147,14 +133,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   const [showIncidentHistory, setShowIncidentHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [actionMode, setActionMode] = useState<ActionMode>(null);
   const [statusFilter, setStatusFilter] = useState<'active' | 'pending' | 'accepted' | 'in_progress' | 'resolved' | 'declined'>('active');
-  const [notes, setNotes] = useState('');
-  const [declineReason, setDeclineReason] = useState('');
-  const [declineExplanation, setDeclineExplanation] = useState('');
-  const [assignmentPreview, setAssignmentPreview] = useState<AssignmentPreview | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const [showRainRanking, setShowRainRanking] = useState(false);
   const [topRainBarangays, setTopRainBarangays] = useState<RainRankingItem[]>([]);
   const [rainUpdatedAt, setRainUpdatedAt] = useState<string | null>(null);
@@ -521,71 +500,6 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
     };
   }, [reports]);
 
-  async function updateStatus(nextStatus: 'accepted' | 'declined') {
-    if (!selectedReport || busy) {
-      return;
-    }
-
-    if (nextStatus === 'accepted' && !notes.trim()) {
-      setError('Notes are required before accepting a report.');
-      return;
-    }
-
-    if (nextStatus === 'declined' && (!declineReason.trim() || !declineExplanation.trim())) {
-      setError('Decline reason and explanation are required.');
-      return;
-    }
-
-    setBusy(true);
-    setError(null);
-
-    try {
-      await api.patch(`/barangay/reports/${selectedReport.id}/status`, {
-        status: nextStatus,
-        notes: nextStatus === 'accepted' ? notes : '',
-        rescuerId: nextStatus === 'accepted' ? assignmentPreview?.rescuer?.rescuerId : undefined,
-        declineReason,
-        declineExplanation,
-      });
-
-      setActionMode(null);
-      setNotes('');
-      setDeclineReason('');
-      setDeclineExplanation('');
-      setAssignmentPreview(null);
-      await loadData(false);
-    } catch (err: unknown) {
-      const apiError = err as ApiError;
-      if (apiError.response?.status === 401) {
-        onAuthError();
-        return;
-      }
-      const message = apiError.response?.data?.message || 'Failed to update report status.';
-      if (nextStatus === 'accepted') await openAcceptModal();
-      setError(message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function openAcceptModal() {
-    if (!selectedReport) return;
-    setActionMode('accept');
-    setAssignmentPreview(null);
-    setPreviewLoading(true);
-    setError(null);
-    try {
-      const { data } = await api.get<AssignmentPreview>(`/barangay/reports/${selectedReport.id}/rescuer-preview`);
-      setAssignmentPreview(data);
-    } catch (err: unknown) {
-      const apiError = err as ApiError;
-      if (apiError.response?.status === 401) return onAuthError();
-      setError(apiError.response?.data?.message || 'Unable to find the nearest available Barangay Rescuer.');
-    } finally {
-      setPreviewLoading(false);
-    }
-  }
-
   return (
     <BarangayShell
       activeView="monitoring"
@@ -611,10 +525,10 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
 
         {/* Stats */}
         <section className={d.monitoring.statsGrid}>
-          <article className={[d.monitoring.statCardBase, d.monitoring.statReports].join(' ')}><p className={d.monitoring.statValue}>{stats.totalToday}</p><p className={d.monitoring.statLabel}>Reports Today</p></article>
-          <article className={[d.monitoring.statCardBase, d.monitoring.statPending].join(' ')}><p className={d.monitoring.statValue}>{stats.pending}</p><p className={d.monitoring.statLabel}>Pending</p></article>
-          <article className={[d.monitoring.statCardBase, d.monitoring.statInProgress].join(' ')}><p className={d.monitoring.statValue}>{stats.inProgress}</p><p className={d.monitoring.statLabel}>In Progress</p></article>
-          <article className={[d.monitoring.statCardBase, d.monitoring.statResolved].join(' ')}><p className={d.monitoring.statValue}>{stats.resolved}</p><p className={d.monitoring.statLabel}>Resolved</p></article>
+          <article className={[d.monitoring.statCardBase, d.monitoring.statReports].join(' ')}><p className={d.monitoring.statLabel}>Reports Today</p><p className={d.monitoring.statValue}>{stats.totalToday}</p></article>
+          <article className={[d.monitoring.statCardBase, d.monitoring.statPending].join(' ')}><p className={d.monitoring.statLabel}>Pending</p><p className={d.monitoring.statValue}>{stats.pending}</p></article>
+          <article className={[d.monitoring.statCardBase, d.monitoring.statInProgress].join(' ')}><p className={d.monitoring.statLabel}>In Progress</p><p className={d.monitoring.statValue}>{stats.inProgress}</p></article>
+          <article className={[d.monitoring.statCardBase, d.monitoring.statResolved].join(' ')}><p className={d.monitoring.statLabel}>Resolved</p><p className={d.monitoring.statValue}>{stats.resolved}</p></article>
         </section>
 
         {/* Map + selected report */}
@@ -829,20 +743,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
                   </p>
                 ) : null}
                 {selectedReport.status === 'pending' ? (
-                  <div className={d.monitoring.actionRow}>
-                    <button
-                      type="button"
-                      onClick={() => void openAcceptModal()}
-                      className={d.btn.acceptDisabled}
-                      disabled={busy}
-                    >Accept</button>
-                    <button
-                      type="button"
-                      onClick={() => { setError(null); setActionMode('decline'); }}
-                      className={d.btn.declineDisabled}
-                      disabled={busy}
-                    >Decline</button>
-                  </div>
+                  <p className={d.monitoring.assignNote}>Awaiting a decision from the New Resident Rescue Request notification.</p>
                 ) : null}
                 {isRescueReport(selectedReport)
                   && ['accepted', 'in_progress'].includes(selectedReport.status)
@@ -864,61 +765,6 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
             </div>
           </article>
         </section>
-
-        {actionMode === 'accept' && selectedReport ? (
-          <BackupModal
-            title="Accept Rescue Request?"
-            onClose={() => { setActionMode(null); setAssignmentPreview(null); setError(null); }}
-          >
-            <p>Confirm that Barangay {barangayName} will respond to this rescue request.</p>
-            <p><strong>User notes:</strong> {assignmentPreview?.reportNotes || selectedReport.notes || 'No notes provided.'}</p>
-            <p><strong>Assigned Barangay Rescuer:</strong> {previewLoading ? 'Finding nearest available rescuer…' : assignmentPreview?.rescuer ? `${assignmentPreview.rescuer.rescuerName} (${assignmentPreview.rescuer.rescuerAccountId})${assignmentPreview.rescuer.distanceKm != null ? ` · ${assignmentPreview.rescuer.distanceKm.toFixed(2)} km away` : ''}` : 'No available Barangay Rescuer'}</p>
-            <textarea
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              placeholder="Add required validation notes"
-              className={d.form.textareaSm}
-              autoFocus
-            />
-            {error ? <p className="backup-error">{error}</p> : null}
-            <div className="backup-actions">
-              <button type="button" onClick={() => updateStatus('accepted')} className="backup-button backup-button-acknowledged" disabled={busy || previewLoading || !assignmentPreview?.rescuer}>
-                {busy ? 'Accepting...' : 'Confirm Accept'}
-              </button>
-              <button type="button" onClick={() => { setActionMode(null); setAssignmentPreview(null); setError(null); }} className="backup-button backup-button-secondary">Cancel</button>
-            </div>
-          </BackupModal>
-        ) : null}
-
-        {actionMode === 'decline' && selectedReport ? (
-          <BackupModal
-            title="Decline Rescue Request?"
-            onClose={() => { setActionMode(null); setError(null); }}
-          >
-            <p>Choose a reason and explain why Barangay {barangayName} is declining this rescue request.</p>
-            <select value={declineReason} onChange={(event) => setDeclineReason(event.target.value)} className={d.form.selectSm} autoFocus>
-              <option value="">Select reason</option>
-              <option value="invalid report">Invalid report</option>
-              <option value="duplicate">Duplicate</option>
-              <option value="outside jurisdiction">Outside jurisdiction</option>
-              <option value="false alarm">False alarm</option>
-              <option value="other">Other</option>
-            </select>
-            <textarea
-              value={declineExplanation}
-              onChange={(event) => setDeclineExplanation(event.target.value)}
-              placeholder="Explain why this report is declined"
-              className={d.form.textareaSm}
-            />
-            {error ? <p className="backup-error">{error}</p> : null}
-            <div className="backup-actions">
-              <button type="button" onClick={() => updateStatus('declined')} className="backup-button" disabled={busy}>
-                {busy ? 'Declining...' : 'Confirm Decline'}
-              </button>
-              <button type="button" onClick={() => { setActionMode(null); setError(null); }} className="backup-button backup-button-secondary">Cancel</button>
-            </div>
-          </BackupModal>
-        ) : null}
 
         {/* Image preview modal */}
         {previewImage ? (

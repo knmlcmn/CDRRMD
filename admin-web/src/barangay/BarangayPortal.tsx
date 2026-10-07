@@ -33,6 +33,8 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
   const [view, setView] = useState<View>('dashboard');
   const [pendingRescueRequests, setPendingRescueRequests] = useState<RescueRequestNotice[]>([]);
   const [dismissedRescueIds, setDismissedRescueIds] = useState<Set<number>>(() => new Set());
+  const [rescueDecisionId, setRescueDecisionId] = useState<number | null>(null);
+  const [rescueDecisionError, setRescueDecisionError] = useState('');
   const [focusReportId, setFocusReportId] = useState<number | null>(null);
   const [notices, setNotices] = useState<Array<{ id: number; alert: WaterLevelSensor; kind: WaterLevelNoticeKind }>>([]);
   const noticeIdRef = useRef(0);
@@ -131,22 +133,63 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
   const activeNotice = notices[0];
   const popup = activeNotice ? <WaterLevelAlert key={activeNotice.id} alert={activeNotice.alert} kind={activeNotice.kind} onClose={() => setNotices((current) => current.filter((item) => item.id !== activeNotice.id))} /> : null;
   const activeRescueRequest = pendingRescueRequests.find((request) => !dismissedRescueIds.has(request.id)) || null;
+
+  const decideRescueRequest = async (request: RescueRequestNotice, decision: 'accepted' | 'declined') => {
+    if (rescueDecisionId !== null) return;
+    setRescueDecisionId(request.id);
+    setRescueDecisionError('');
+    try {
+      await api.patch(`/barangay/reports/${request.id}/status`, decision === 'accepted'
+        ? {
+            status: 'accepted',
+            notes: `Barangay ${barangayName} confirmed dispatch from the resident rescue notification.`,
+          }
+        : {
+            status: 'declined',
+            declineReason: 'other',
+            declineExplanation: `Barangay ${barangayName} dismissed the resident rescue request from the notification.`,
+          });
+      setPendingRescueRequests((current) => current.filter((item) => item.id !== request.id));
+      setDismissedRescueIds((current) => new Set(current).add(request.id));
+      setFocusReportId(request.id);
+    } catch (error: unknown) {
+      const apiError = error as { response?: { status?: number; data?: { message?: string } } };
+      if (apiError.response?.status === 401) {
+        onAuthError();
+        return;
+      }
+      setRescueDecisionError(apiError.response?.data?.message || 'Unable to update this rescue request. Please try again.');
+    } finally {
+      setRescueDecisionId(null);
+    }
+  };
+
   const rescuePopup = activeRescueRequest ? (
-    <BackupModal title="New Resident Rescue Request" onClose={() => setDismissedRescueIds((current) => new Set(current).add(activeRescueRequest.id))}>
-      <p><strong>Request:</strong> {activeRescueRequest.report_code || `RPT-${String(activeRescueRequest.id).padStart(6, '0')}`}</p>
-      <p><strong>Incident:</strong> {String(activeRescueRequest.incident_type || 'Request Rescue').replace(/_/g, ' ')}</p>
-      <p><strong>Location:</strong> {activeRescueRequest.location}</p>
-      <p><strong>Resident:</strong> {[activeRescueRequest.first_name, activeRescueRequest.last_name].filter(Boolean).join(' ') || '-'}</p>
-      <p><strong>Contact:</strong> {activeRescueRequest.contact_number || '-'}</p>
-      <p><strong>Submitted:</strong> {new Date(activeRescueRequest.created_at).toLocaleString()}</p>
-      <p>This rescue request must be accepted or declined by Barangay {barangayName}.</p>
-      <div className="backup-actions">
-        <button className="backup-button backup-button-secondary" onClick={() => setDismissedRescueIds((current) => new Set(current).add(activeRescueRequest.id))}>Dismiss</button>
-        <button className="backup-button" onClick={() => {
-          setDismissedRescueIds((current) => new Set(current).add(activeRescueRequest.id));
-          setFocusReportId(activeRescueRequest.id);
-          setView('monitoring');
-        }}>Review Request</button>
+    <BackupModal title="New Resident Rescue Request" variant="rescue-request" onClose={() => {}}>
+      <div className="rescue-request-layout">
+        <div>
+          <p className="rescue-request-eyebrow">New Resident Rescue Request</p>
+          <h2 className="rescue-request-title">Barangay {barangayName}</h2>
+          <p className="rescue-request-subtitle">{String(activeRescueRequest.incident_type || 'Emergency rescue').replace(/_/g, ' ')}</p>
+          <p className="rescue-request-description">
+            A resident has requested immediate rescue at {activeRescueRequest.location}. Confirm dispatch to accept the request and automatically assign the nearest available Barangay Rescuer.
+          </p>
+          <p className="rescue-request-meta">
+            {activeRescueRequest.report_code || `RPT-${String(activeRescueRequest.id).padStart(6, '0')}`} · Requested {new Date(activeRescueRequest.created_at).toLocaleString()}
+          </p>
+        </div>
+        <svg className="rescue-request-icon" viewBox="0 0 120 120" fill="none" aria-hidden="true">
+          <path d="M52.8 17.2c3.2-5.5 11.2-5.5 14.4 0l43.1 74.7c3.2 5.5-.8 12.4-7.2 12.4H16.9c-6.4 0-10.4-6.9-7.2-12.4l43.1-74.7Z" fill="#fff7d6" stroke="currentColor" strokeWidth="5" />
+          <path d="M60 40v34" stroke="#123a59" strokeWidth="8" strokeLinecap="round" />
+          <circle cx="60" cy="88" r="5" fill="#123a59" />
+        </svg>
+      </div>
+      {rescueDecisionError ? <p className="rescue-request-error" role="alert">{rescueDecisionError}</p> : null}
+      <div className="rescue-request-actions">
+        <button className="rescue-request-button rescue-request-button-primary" disabled={rescueDecisionId !== null} onClick={() => void decideRescueRequest(activeRescueRequest, 'accepted')}>
+          {rescueDecisionId === activeRescueRequest.id ? 'Processing…' : 'Confirm Dispatch'}
+        </button>
+        <button className="rescue-request-button" disabled={rescueDecisionId !== null} onClick={() => void decideRescueRequest(activeRescueRequest, 'declined')}>Dismiss Request</button>
       </div>
     </BackupModal>
   ) : null;

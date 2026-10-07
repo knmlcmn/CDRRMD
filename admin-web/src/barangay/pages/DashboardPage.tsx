@@ -116,10 +116,7 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
       is_active: center.is_active,
       created_at: center.created_at,
     })).filter((center) => Number.isFinite(center.latitude) && Number.isFinite(center.longitude)),
-    null,
-    [],
-    null,
-    null,
+    null, [], null, null,
     incidents
       .filter((incident) => ['pending', 'accepted', 'in_progress'].includes(String(incident.status).toLowerCase()))
       .map((incident) => ({
@@ -130,8 +127,7 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
         reportType: incident.report_type || 'rescue',
       }))
       .filter((incident) => Number.isFinite(incident.latitude) && Number.isFinite(incident.longitude)),
-    `${API_BASE_URL.replace(/\/$/, '')}/flood-risk/calamba/barangays`,
-    '',
+    `${API_BASE_URL.replace(/\/$/, '')}/flood-risk/calamba/barangays`, '',
     `${API_BASE_URL.replace(/\/$/, '')}/flood-risk/calamba/rain-impact`,
     `${API_BASE_URL.replace(/\/$/, '')}/weather/wind-field`,
     { boundary: true, floodHazard: false, evacuationAreas: true, incidentMarkers: true, responderRoute: false, weatherOverlay: false, temperatureOverlay: false, humidityOverlay: false, windOverlay: false },
@@ -143,7 +139,7 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
     <BarangayShell activeView="dashboard" title="Barangay Dashboard" subtitle={`Live operations overview for Barangay ${barangayName}`}
       barangayName={barangayName} onLogout={onLogout} onOpenDashboard={() => {}} onOpenMonitoring={onOpenMonitoring}
       onOpenFloodMonitoring={onOpenFloodMonitoring} onOpenEvacuationCenter={onOpenEvacuationCenter} onOpenAccount={onOpenAccount}>
-      <div className="space-y-3 bg-[#eaf3fb] p-3 sm:p-4">
+      <div className="space-y-3 bg-[#eaf3fb] px-3 pb-3 pt-0 sm:px-4 sm:pb-4 sm:pt-0">
         {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p> : null}
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

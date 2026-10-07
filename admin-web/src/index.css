@@ -40,6 +40,20 @@ body,
   --barangay-viewport-height: 100dvh;
 }
 
+/* Keep every portal page close to its shared title bar. Page-specific wrappers
+   can retain their side and bottom padding without creating a second large
+   band of space beneath the header. */
+.admin-desktop-scale main > header,
+.barangay-desktop-scale main > header {
+  margin-bottom: 0.375rem;
+}
+
+.admin-desktop-scale main > header + *,
+.barangay-desktop-scale main > header + * {
+  padding-top: 0.375rem !important;
+  padding-bottom: 0.75rem !important;
+}
+
 /* Keep the desktop admin interface at the comfortable density of 80% browser
    zoom while the browser itself stays at the standard 100% setting. */
 @media (min-width: 819.2px) {
