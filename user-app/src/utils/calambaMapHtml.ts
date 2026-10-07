@@ -1238,31 +1238,6 @@ export function buildCalambaMapHtml(
           });
       }
 
-      function identifyFloodAt(latlng) {
-        if (!inCalamba(latlng.lat, latlng.lng) || !isWithinCalambaBoundary(latlng)) {
-          return;
-        }
-
-        var result = classifyRiskAt(latlng);
-        var sourceLabel = waterwaysState.status === 'ready'
-          ? 'OSM waterways + Calamba terrain rules'
-          : 'OSM waterways + Calamba terrain rules (terrain fallback active)';
-
-        L.popup({ maxWidth: 320 })
-          .setLatLng(latlng)
-          .setContent(
-            '<div class="flood-info">' +
-              '<div class="head">FLOOD INFORMATION</div>' +
-              '<table>' +
-                '<tr><td>Risk Class</td><td>' + result.risk + '</td></tr>' +
-                '<tr><td>Terrain Band</td><td>' + toCapitalWord(result.terrainBand) + '</td></tr>' +
-                '<tr><td>Data Source</td><td>' + sourceLabel + '</td></tr>' +
-              '</table>' +
-            '</div>'
-          )
-          .openOn(map);
-      }
-
       function renderIncidents() {
         incidentLayer.clearLayers();
         (payload.incidentPoints || []).forEach(function(point) {
@@ -1424,7 +1399,6 @@ export function buildCalambaMapHtml(
       applyLayerVisibility();
       if (Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
       renderLegendControl();
-      map.on('click', function(event) { identifyFloodAt(event.latlng); });
       map.on('resize', refreshRainCanvasSize);
       map.on('moveend', refreshRainCanvasSize);
 
