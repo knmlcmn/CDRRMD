@@ -18,6 +18,7 @@ type Props = {
   onOpenEvacuationAreas: () => void;
   onOpenPostUpdates: () => void;
   onOpenFloodMonitoring: () => void;
+  onOpenBackupRequest: (reportId: number) => void;
   onAuthError: () => void;
   backupReportId?: number | null;
 };
@@ -85,7 +86,7 @@ function distanceSquared(a: Coordinate, b: Coordinate) {
   return dLat * dLat + dLon * dLon;
 }
 
-export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenEvacuationAreas, onOpenPostUpdates, onOpenFloodMonitoring, onAuthError, backupReportId = null }: Props) {
+export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenEvacuationAreas, onOpenPostUpdates, onOpenFloodMonitoring, onOpenBackupRequest, onAuthError, backupReportId = null }: Props) {
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationAreaItem[]>([]);
   const [reports, setReports] = useState<MonitoringReport[]>([]);
   const [backupRequests, setBackupRequests] = useState<BackupRequest[]>([]);
@@ -612,7 +613,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
         ) : (
           <div className={d.monitoring.validationStack}>
             <p className={d.monitoring.validationCurrent}>Barangay: {selectedBackup.barangay_name || '-'}</p>
-            <p className={d.monitoring.validationCurrent}>Request status: {selectedBackup.acknowledged_at ? 'Accepted' : 'Pending'}</p>
+            <p className={d.monitoring.validationCurrent}>Request status: {selectedBackup.acknowledged_at ? 'Accepted' : <span className="rounded-full bg-amber-100 px-2 py-1 font-extrabold text-amber-800">Pending</span>}</p>
             {selectedBackup.acknowledged_at ? (
               <div className={d.monitoring.actionBox}>
                 <p className={d.monitoring.validationCurrent}>CDRRMD Backup Assignment</p>
@@ -674,7 +675,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       onOpenPostUpdates={onOpenPostUpdates}
       actions={<><button type="button" onClick={() => setShowIncidentHistory(true)} className={d.btn.secondary}>Incident History</button><button onClick={onOpenEvacuationAreas} className={d.monitoring.actionEvac}>Evacuation Readiness</button></>}
     >
-      <div className={d.monitoring.root}>
+      <div className={`${d.monitoring.root} admin-incident-monitoring-root`}>
         {error ? <div className={d.page.error}>{error}</div> : null}
 
         <section className={d.monitoring.statsGrid}>
@@ -795,17 +796,35 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
                 <tbody>
                   {filteredReports.length === 0 ? (
                     <tr><td colSpan={5} className={d.table.empty}>No barangay backup requests yet.</td></tr>
-                  ) : filteredReports.map((item) => (
-                    <tr
-                      key={item.id}
-                      onClick={() => {
-                        setSelectedReportId(item.id);
-                        setMapFocusedReportId(null);
-                        setMapFocusMode(null);
-                      }}
-                      className={[d.monitoring.rowBase, selectedReport?.id === item.id ? d.monitoring.rowSelected : null].filter(Boolean).join(' ')}
-                    >
-                      <td>{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td>
+                  ) : filteredReports.map((item) => {
+                    const itemBackup = backupRequests.find((request) => request.report_id === item.id);
+                    const backupIsPending = Boolean(itemBackup && !itemBackup.acknowledged_at);
+                    return (
+                      <tr
+                        key={item.id}
+                        onClick={() => {
+                          setSelectedReportId(item.id);
+                          setMapFocusedReportId(null);
+                          setMapFocusMode(null);
+                        }}
+                        className={[d.monitoring.rowBase, selectedReport?.id === item.id ? d.monitoring.rowSelected : null].filter(Boolean).join(' ')}
+                      >
+                      <td>
+                        {backupIsPending ? (
+                          <button
+                            type="button"
+                            className="rounded bg-amber-100 px-2 py-1 font-extrabold text-amber-800 underline decoration-amber-500 underline-offset-2 hover:bg-amber-200"
+                            title="Open pending backup request"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedReportId(item.id);
+                              onOpenBackupRequest(item.id);
+                            }}
+                          >
+                            {item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}
+                          </button>
+                        ) : item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}
+                      </td>
                       <td className={d.monitoring.rowLocation}>
                         <button
                           type="button"
@@ -821,15 +840,16 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
                           {item.location}
                         </button>
                       </td>
-                      <td><span className={d.monitoring.statusChip}>{formatIncidentStatus(item.status, Boolean(item.picked_up_at))}</span></td>
+                      <td><span className={`${d.monitoring.statusChip} ${backupIsPending ? '!bg-amber-100 !text-amber-800' : ''}`}>{backupIsPending ? 'Pending' : formatIncidentStatus(item.status, Boolean(item.picked_up_at))}</span></td>
                       <td>{item.assigned_team || '-'}</td>
                       <td>
                         {item.image_base64 ? (
                           <button onClick={(event) => { event.stopPropagation(); setPreviewImage(item.image_base64 || null); }} className={d.btn.secondaryXs}>View</button>
                         ) : <span className={d.monitoring.muted}>-</span>}
                       </td>
-                    </tr>
-                  ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

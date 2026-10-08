@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/apiClient';
 import BackupModal from './BackupModal';
+import RescueRequestRouteMap from '../barangay/components/RescueRequestRouteMap';
+import RescueImagePreview from '../barangay/components/RescueImagePreview';
+import '../barangay/components/BackupModal.css';
 
 type Request = {
   id: number;
@@ -11,18 +14,31 @@ type Request = {
   report_code: string;
   incident_type: string | null;
   report_location: string;
+  report_latitude: number | string | null;
+  report_longitude: number | string | null;
   report_notes: string | null;
   are_people_trapped: boolean | null;
   estimated_people: number | null;
   reporter_name: string | null;
   reporter_contact: string | null;
+  reporter_email: string | null;
+  evacuation_area_name: string | null;
+  evacuation_latitude: number | string | null;
+  evacuation_longitude: number | string | null;
+  image_base64: string | null;
 };
 
-export default function BackupNotifications({ onConfirm }: { onConfirm: (reportId: number) => void }) {
+export default function BackupNotifications({ reopenReportId, onStandby, onConfirm }: {
+  reopenReportId: number | null;
+  onStandby: () => void;
+  onConfirm: (reportId: number) => void;
+}) {
   const [requests, setRequests] = useState<Request[]>([]);
   const [dismissed, setDismissed] = useState<Set<number>>(() => new Set());
-  const [busy, setBusy] = useState<'confirm' | 'dismiss' | null>(null);
+  const [busy, setBusy] = useState<'confirm' | null>(null);
   const [error, setError] = useState('');
+  const [showImage, setShowImage] = useState(false);
+  const [routeMetrics, setRouteMetrics] = useState<{ distanceKm: number; etaMinutes: number } | null>();
   const acknowledging = useRef(false);
   const pending = useRef(false);
   useEffect(() => {
@@ -47,27 +63,22 @@ export default function BackupNotifications({ onConfirm }: { onConfirm: (reportI
       window.removeEventListener('focus', refresh);
     };
   }, []);
+
   const active = requests.find((request) =>
-    !request.acknowledged_at && !dismissed.has(request.id));
+    !request.acknowledged_at && Number(request.report_id) === reopenReportId)
+    ?? requests.find((request) => !request.acknowledged_at && !dismissed.has(request.id));
+
+  useEffect(() => {
+    setShowImage(false);
+    setRouteMetrics(undefined);
+  }, [active?.id]);
+
   if (!active) return null;
-  const dismiss = async () => {
-    if (acknowledging.current) return;
-    acknowledging.current = true;
-    setBusy('dismiss');
-    setError('');
-    try {
-      await api.patch(`/backup-requests/${active.id}/decline`, {
-        reason: 'Dismissed from the urgent backup request notification.',
-      });
-      setDismissed((current) => new Set(current).add(active.id));
-      setRequests((current) => current.filter((request) => request.id !== active.id));
-    } catch (requestError: unknown) {
-      const apiError = requestError as { response?: { data?: { message?: string } } };
-      setError(apiError.response?.data?.message || 'Unable to dismiss this backup request. Please try again.');
-    } finally {
-      acknowledging.current = false;
-      setBusy(null);
-    }
+
+  const standby = () => {
+    if (busy) return;
+    setDismissed((current) => new Set(current).add(active.id));
+    onStandby();
   };
   const confirmDispatch = async () => {
     if (acknowledging.current) return;
@@ -82,6 +93,7 @@ export default function BackupNotifications({ onConfirm }: { onConfirm: (reportI
       await api.patch(`/backup-requests/${active.id}/acknowledge`, { rescuerId: preview.rescuer.rescuerId });
       setDismissed((current) => new Set(current).add(active.id));
       setRequests((current) => current.filter((request) => request.id !== active.id));
+      onStandby();
       onConfirm(active.report_id);
     } catch (requestError: unknown) {
       const apiError = requestError as { response?: { data?: { message?: string } }; message?: string };
@@ -91,31 +103,57 @@ export default function BackupNotifications({ onConfirm }: { onConfirm: (reportI
       setBusy(null);
     }
   };
-  return <BackupModal key={active.id} title="Urgent Backup Request" variant="urgent-backup" onClose={() => { if (!busy) void dismiss(); }}>
-    <div className="urgent-backup-layout">
-      <div>
-        <p className="urgent-backup-eyebrow">Urgent Backup Request</p>
-        <h2 className="urgent-backup-title">Barangay {active.barangay_name}</h2>
-        <p className="urgent-backup-subtitle">Backup responders have not arrived</p>
-        <p className="urgent-backup-description">
-          The barangay reports that backup responders have not arrived at {active.report_location}. Please confirm dispatch and coordinate immediate assistance.
-        </p>
-        <p className="urgent-backup-meta">{active.report_code} · Requested {new Date(active.created_at).toLocaleString()}</p>
+  const residentName = active.reporter_name || 'Resident';
+  const residentLatitude = Number(active.report_latitude);
+  const residentLongitude = Number(active.report_longitude);
+  const evacuationLatitude = Number(active.evacuation_latitude);
+  const evacuationLongitude = Number(active.evacuation_longitude);
+  const hasRouteLocations = [residentLatitude, residentLongitude, evacuationLatitude, evacuationLongitude].every(Number.isFinite);
+  const reportDescription = String(active.report_notes || '').trim();
+  const visibleDescription = /^selected evacuation area:/i.test(reportDescription) ? '' : reportDescription;
+
+  return <>
+    <BackupModal key={active.id} title="Urgent Backup Request" variant="rescue-request" onClose={standby}>
+      <div className="rescue-request-layout">
+        <div className="rescue-request-content">
+          <p className="rescue-request-eyebrow">Urgent Backup Request · Barangay {active.barangay_name}</p>
+          <h2 className="rescue-request-title">{residentName}</h2>
+          <p className="rescue-request-subtitle">{String(active.incident_type || 'Request Rescue').replace(/_/g, ' ')}</p>
+          <dl className="rescue-request-details">
+            <div><dt>Contact</dt><dd>{active.reporter_contact || active.reporter_email || 'Not provided'}</dd></div>
+            <div><dt>People</dt><dd>{active.estimated_people || 1}</dd></div>
+            <div><dt>Rescue location</dt><dd>{active.report_location}</dd></div>
+            <div><dt>Assigned evacuation</dt><dd>{active.evacuation_area_name || 'Automatic nearest center'}</dd></div>
+            <div><dt>Shortest route</dt><dd>{routeMetrics ? `${routeMetrics.distanceKm.toFixed(2)} km · about ${routeMetrics.etaMinutes} min` : routeMetrics === null ? 'Road route unavailable' : 'Calculating…'}</dd></div>
+          </dl>
+          {visibleDescription ? <p className="rescue-request-description">{visibleDescription}</p> : null}
+          {active.image_base64 ? (
+            <div className="rescue-request-meta-row">
+              <span>{active.report_code}</span>
+              <button type="button" className="rescue-request-view-image" onClick={() => setShowImage(true)}>View Image</button>
+            </div>
+          ) : <p className="rescue-request-meta">{active.report_code} · Requested {new Date(active.created_at).toLocaleString()}</p>}
+        </div>
+        {hasRouteLocations ? (
+          <RescueRequestRouteMap
+            resident={{ latitude: residentLatitude, longitude: residentLongitude }}
+            evacuationArea={{ latitude: evacuationLatitude, longitude: evacuationLongitude }}
+            residentName={residentName}
+            evacuationAreaName={active.evacuation_area_name || 'Assigned evacuation center'}
+            onRouteMetrics={setRouteMetrics}
+          />
+        ) : <div className="rescue-request-route-unavailable">Route location unavailable</div>}
       </div>
-      <svg className="urgent-backup-icon" viewBox="0 0 120 120" fill="none" aria-hidden="true">
-        <path d="M52.8 17.2c3.2-5.5 11.2-5.5 14.4 0l43.1 74.7c3.2 5.5-.8 12.4-7.2 12.4H16.9c-6.4 0-10.4-6.9-7.2-12.4l43.1-74.7Z" fill="#fff7d6" stroke="currentColor" strokeWidth="5" />
-        <path d="M60 40v34" stroke="#123a59" strokeWidth="8" strokeLinecap="round" />
-        <circle cx="60" cy="88" r="5" fill="#123a59" />
-      </svg>
-    </div>
-    {error ? <p role="alert" className="urgent-backup-error">{error}</p> : null}
-    <div className="urgent-backup-actions">
-      <button className="urgent-backup-button urgent-backup-button-primary" disabled={busy !== null} onClick={() => void confirmDispatch()}>
-        {busy === 'confirm' ? 'Confirming…' : 'Confirm Dispatch'}
-      </button>
-      <button className="urgent-backup-button" disabled={busy !== null} onClick={() => void dismiss()}>
-        {busy === 'dismiss' ? 'Dismissing…' : 'Dismiss Request'}
-      </button>
-    </div>
-  </BackupModal>;
+      {error ? <p role="alert" className="rescue-request-error">{error}</p> : null}
+      <div className="rescue-request-actions">
+        <button className="rescue-request-button rescue-request-button-primary" disabled={busy !== null} onClick={() => void confirmDispatch()}>
+          {busy === 'confirm' ? 'Confirming…' : 'Confirm Dispatch'}
+        </button>
+        <button className="rescue-request-button" disabled={busy !== null} onClick={standby}>Standby Request</button>
+      </div>
+    </BackupModal>
+    {showImage && active.image_base64 ? (
+      <RescueImagePreview image={active.image_base64} residentName={residentName} createdAt={active.created_at} onClose={() => setShowImage(false)} />
+    ) : null}
+  </>;
 }

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import './BackupModal.css';
 
 export default function BackupModal({ title, children, onClose, square = false, variant = 'default' }: {
-  title: string; children: ReactNode; onClose: () => void; square?: boolean; variant?: 'default' | 'urgent-backup';
+  title: string; children: ReactNode; onClose: () => void; square?: boolean; variant?: 'default' | 'urgent-backup' | 'rescue-request';
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -12,7 +12,7 @@ export default function BackupModal({ title, children, onClose, square = false, 
     return () => { dialog?.close(); };
   }, []);
   return createPortal(
-    <dialog ref={ref} className={`backup-modal ${square ? 'backup-modal-square' : ''} ${variant === 'urgent-backup' ? 'backup-modal-urgent-backup' : ''}`}
+    <dialog ref={ref} className={`backup-modal ${square ? 'backup-modal-square' : ''} ${variant === 'urgent-backup' ? 'backup-modal-urgent-backup' : ''} ${variant === 'rescue-request' ? 'backup-modal-rescue-request' : ''}`}
       aria-label={title} onCancel={(event) => { event.preventDefault(); onClose(); }}>
       {variant === 'default' ? <h2>{title}</h2> : null}
       {children}

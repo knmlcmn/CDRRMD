@@ -6,6 +6,7 @@ import { d } from '../adminDesign';
 import type {
   DashboardIncident,
   DashboardSummary,
+  BackupRequest,
   EvacuationAreaItem,
   MonitoringReport,
   RescuerAccount,
@@ -14,12 +15,8 @@ import { buildCalambaMapHtml } from '../utils/calambaMapHtml';
 import { loadWaterLevelSensors, type WaterLevelSensor } from '../services/waterLevelSensors';
 import WaterLevelAlert, { type WaterLevelNoticeKind } from '../components/WaterLevelAlert';
 import { formatIncidentStatus } from '../utils/incidentStatus';
+import { isCalambaCurrentlyRainy } from '../services/weatherAlerts';
 
-type RainRankingItem = {
-  barangayName: string;
-  rainIntensityMmPerHour: number;
-  rainLevel: 'Light' | 'Moderate' | 'Heavy' | 'Severe';
-};
 type Coordinate = { latitude: number; longitude: number };
 type CityRescuerLocation = RescuerAccount & { kind: 'barangay' | 'cddrmd' };
 
@@ -33,6 +30,7 @@ type Props = {
   onOpenMonitoring: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenPostUpdates: () => void;
+  onOpenBackupRequest: (reportId: number) => void;
   onAuthError: () => void;
 };
 
@@ -92,10 +90,11 @@ function buildMapHtml(
   );
 }
 
-export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenEvacuationAreas, onOpenMonitoring, onOpenFloodMonitoring, onOpenPostUpdates, onAuthError }: Props) {
+export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenEvacuationAreas, onOpenMonitoring, onOpenFloodMonitoring, onOpenPostUpdates, onOpenBackupRequest, onAuthError }: Props) {
   const [areas, setAreas] = useState<EvacuationAreaItem[]>([]);
   const [incidents, setIncidents] = useState<DashboardIncident[]>([]);
   const [operationalReports, setOperationalReports] = useState<MonitoringReport[]>([]);
+  const [backupRequests, setBackupRequests] = useState<BackupRequest[]>([]);
   const [cityRescuers, setCityRescuers] = useState<CityRescuerLocation[]>([]);
   const [mapFocusedReportId, setMapFocusedReportId] = useState<number | null>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<Coordinate[]>([]);
@@ -114,8 +113,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [topRainBarangays, setTopRainBarangays] = useState<RainRankingItem[]>([]);
-  const [rainLegendUpdatedAt, setRainLegendUpdatedAt] = useState<string | null>(null);
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const mapWrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -130,10 +127,11 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     setError(null);
 
     try {
-      const [areasResponse, summaryResponse, reportsResponse, cdrrmdResponse, barangayResponderResponse] = await Promise.all([
+      const [areasResponse, summaryResponse, reportsResponse, backupResponse, cdrrmdResponse, barangayResponderResponse] = await Promise.all([
         api.get('/content/evacuation-areas'),
         api.get('/content/dashboard-summary'),
         api.get('/reports'),
+        api.get('/backup-requests'),
         api.get('/rescuers/accounts', { params: { role: 'rescuer' } }),
         api.get('/rescuers/accounts', { params: { role: 'barangay_rescuer' } }),
       ]);
@@ -142,6 +140,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       setCards(summaryResponse.data.cards);
       setIncidents(summaryResponse.data.incidents);
       setOperationalReports(Array.isArray(reportsResponse.data) ? reportsResponse.data : []);
+      setBackupRequests(Array.isArray(backupResponse.data) ? backupResponse.data : []);
       setCityRescuers([
         ...(Array.isArray(cdrrmdResponse.data) ? cdrrmdResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'cddrmd' as const })),
         ...(Array.isArray(barangayResponderResponse.data) ? barangayResponderResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'barangay' as const })),
@@ -159,44 +158,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       }
     }
   }, [onAuthError]);
-
-  async function loadRainRanking() {
-    try {
-      const rainImpactResponse = await api.get('/flood-risk/calamba/rain-impact').catch(() => ({ data: null }));
-      const rainPayload = rainImpactResponse?.data as {
-        updatedAt?: string;
-        barangayImpacts?: Array<{
-          barangayName?: string;
-          rainIntensityMmPerHour?: number;
-          rainLevel?: string;
-        }>;
-      } | null;
-
-      const impacts = Array.isArray(rainPayload?.barangayImpacts) ? rainPayload.barangayImpacts : [];
-
-      const ranked = impacts
-        .map((item) => {
-          const rain = Number(item?.rainIntensityMmPerHour || 0);
-          const normalizedLevel = String(item?.rainLevel || 'Light');
-          const level = (normalizedLevel === 'Severe' || normalizedLevel === 'Heavy' || normalizedLevel === 'Moderate')
-            ? normalizedLevel
-            : 'Light';
-
-          return {
-            barangayName: String(item?.barangayName || 'Barangay'),
-            rainIntensityMmPerHour: Number.isFinite(rain) ? rain : 0,
-            rainLevel: level as RainRankingItem['rainLevel'],
-          };
-        })
-        .filter((item) => item.rainIntensityMmPerHour > 2.5) // Moderate and above only (>2.5 mm/hr)
-        .sort((a, b) => b.rainIntensityMmPerHour - a.rainIntensityMmPerHour);
-
-      setTopRainBarangays(ranked);
-      setRainLegendUpdatedAt(rainPayload?.updatedAt || new Date().toISOString());
-    } catch {
-      // Keep existing ranking if rain feed is temporarily unavailable.
-    }
-  }
 
   async function loadWaterLevels() {
     setWaterLevelSensors(await loadWaterLevelSensors());
@@ -234,7 +195,8 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       setShowWaterLevelAlert(true);
       if (postUpdateTimerRef.current !== null) window.clearTimeout(postUpdateTimerRef.current);
       postUpdateTimerRef.current = window.setTimeout(() => {
-        loadWaterLevelSensors().then((currentSensors) => {
+        Promise.all([loadWaterLevelSensors(), isCalambaCurrentlyRainy()]).then(([currentSensors, isRainy]) => {
+          if (!isRainy) return;
           const currentAvailableIds = new Set(
             currentSensors
               .filter((sensor) => sensor.status === 'Active' && sensor.hasReading && sensor.waterLevelPercentage >= 40)
@@ -253,16 +215,11 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
 
   useEffect(() => {
     loadFeed(true);
-    loadRainRanking().catch(() => {});
     checkWaterLevelAlerts().catch(() => {});
 
     const refreshTimer = setInterval(() => {
       loadFeed(false);
     }, 7000);
-
-    const rainTimer = setInterval(() => {
-      loadRainRanking().catch(() => {});
-    }, 10000);
 
     const waterLevelTimer = setInterval(() => {
       checkWaterLevelAlerts().catch(() => {});
@@ -271,7 +228,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
         loadFeed(false);
-        loadRainRanking().catch(() => {});
         loadWaterLevels().catch(() => {});
       }
     };
@@ -280,7 +236,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
 
     return () => {
       clearInterval(refreshTimer);
-      clearInterval(rainTimer);
       clearInterval(waterLevelTimer);
       if (postUpdateTimerRef.current !== null) window.clearTimeout(postUpdateTimerRef.current);
       document.removeEventListener('visibilitychange', onVisible);
@@ -438,6 +393,27 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     [areas],
   );
 
+  const backupOverviewRows = useMemo(() => backupRequests.map((request) => {
+    const report = operationalReports.find((item) => item.id === Number(request.report_id));
+    const summary = incidents.find((item) => item.caseId === report?.report_code);
+    return {
+      request,
+      report,
+      caseId: report?.report_code || `RPT-${String(request.report_id).padStart(6, '0')}`,
+      location: report?.location || summary?.location || 'Calamba City',
+      requester: `Barangay ${request.barangay_name || report?.assigned_barangay || 'Unknown'}`,
+      status: request.acknowledged_at ? 'Response Accepted' : 'Pending',
+    };
+  }), [backupRequests, incidents, operationalReports]);
+
+  const barangayRescueRows = useMemo(() => incidents.map((incident) => {
+    const report = operationalReports.find((item) => item.report_code === incident.caseId);
+    return {
+      ...incident,
+      barangay: report?.assigned_barangay || 'Unassigned',
+    };
+  }), [incidents, operationalReports]);
+
   const cardsToRender = [
     {
       key: 'emergencyAlerts',
@@ -496,7 +472,18 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
         </>
       }
     >
-      {showWaterLevelAlert ? <WaterLevelAlert alerts={waterLevelAlerts} kind={waterLevelNoticeKind} onClose={() => setShowWaterLevelAlert(false)} /> : null}
+      {showWaterLevelAlert ? (
+        <WaterLevelAlert
+          alerts={waterLevelAlerts}
+          kind={waterLevelNoticeKind}
+          onClose={() => setShowWaterLevelAlert(false)}
+          onSeeDetails={() => {
+            setShowWaterLevelAlert(false);
+            if (waterLevelNoticeKind === 'reminder') onOpenPostUpdates();
+            else onOpenFloodMonitoring();
+          }}
+        />
+      ) : null}
       <div className={d.dashboard.root}>
           {error ? <div className={d.page.error}>{error}</div> : null}
 
@@ -512,7 +499,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
           <section className={d.dashboard.overviewGrid}>
             <article className={d.dashboard.reportsPanel}>
               <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-3 py-2">
-                <div><h2 className={d.dashboard.reportsTitle}>Incident Reports Overview</h2><p className="text-xs text-slate-500">Latest emergency reports across Calamba City</p></div>
+                <div><h2 className={d.dashboard.reportsTitle}>Incident Reports Overview</h2><p className="text-xs text-slate-500">Backup requests from the six barangays</p></div>
                 <button onClick={onOpenMonitoring} className="rounded-lg bg-[#1f567d] px-3 py-2 text-xs font-bold text-white hover:bg-[#174866]">View all</button>
               </div>
               <div className={d.dashboard.reportsContentGrid}>
@@ -526,25 +513,36 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                     </tr>
                   </thead>
                   <tbody>
-                    {incidents.map((row) => (
-                      <tr key={row.caseId}>
-                        <td className={d.dashboard.tdStrong}>{row.caseId}</td>
-                        <td className={d.dashboard.tdTruncate}>{row.location}</td>
-                        <td className={d.dashboard.thHiddenMd}>{titleCase(row.requesterName || 'Unknown')}</td>
-                        <td>
-                          {row.status ? (
-                            <span className={d.dashboard.statusChip}>
-                              {formatIncidentStatus(row.status)}
-                            </span>
-                          ) : (
-                            <span className={d.dashboard.muted}>-</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                    {incidents.length === 0 ? (
+                    {backupOverviewRows.map((row) => {
+                      const isBackupPending = !row.request.acknowledged_at;
+                      return (
+                        <tr
+                          key={row.request.id}
+                          className={isBackupPending ? 'border-l-4 border-l-amber-400 !bg-amber-50 hover:!bg-amber-100' : ''}
+                        >
+                          <td className={d.dashboard.tdStrong}>
+                            {isBackupPending && row.report ? (
+                              <button
+                                type="button"
+                                className="rounded bg-amber-100 px-2 py-1 font-extrabold text-amber-800 underline decoration-amber-500 underline-offset-2 hover:bg-amber-200"
+                                title="Open pending backup request"
+                                onClick={() => onOpenBackupRequest(row.report!.id)}
+                              >
+                                {row.caseId}
+                              </button>
+                            ) : row.caseId}
+                          </td>
+                          <td className={d.dashboard.tdTruncate}>{row.location}</td>
+                          <td className={d.dashboard.thHiddenMd}>{row.requester}</td>
+                          <td>
+                            <span className={`${d.dashboard.statusChip} ${isBackupPending ? '!bg-amber-100 !text-amber-800' : '!bg-sky-100 !text-sky-700'}`}>{row.status}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {backupOverviewRows.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className={d.table.empty}>No incident reports yet.</td>
+                        <td colSpan={4} className={d.table.empty}>No Barangay backup requests yet.</td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -646,24 +644,29 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
               </div>
             </section>
 
-            <div className={d.dashboard.rainRankCard}>
-              <div className={d.dashboard.rainRankHead}>
-                <h3 className={d.dashboard.rainRankTitle}>Barangays with Moderate–Severe Rainfall</h3>
-                <p className={d.dashboard.rainRankUpdated}>Updated: {rainLegendUpdatedAt ? new Date(rainLegendUpdatedAt).toLocaleTimeString() : '-'}</p>
+            <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="shrink-0 border-b border-slate-200 px-3 py-2">
+                <h3 className={d.dashboard.reportsTitle}>Incident Reports Overview of Barangay</h3>
+                <p className="text-xs text-slate-500">User-app rescue requests assigned across all six barangays</p>
               </div>
-              <div className={d.table.wrap}>
-                <table className={d.table.main}>
-                  <thead><tr><th>#</th><th>Barangay</th><th>Intensity</th><th>Risk</th></tr></thead>
+              <div className="min-h-0 flex-1 overflow-auto">
+                <table className={d.dashboard.reportsTable}>
+                  <thead><tr><th>Case ID</th><th>Barangay</th><th className={d.dashboard.thHiddenMd}>Requested By</th><th>Status</th></tr></thead>
                   <tbody>
-                    {topRainBarangays.map((item, index) => (
-                      <tr key={`${item.barangayName}-${index}`}>
-                        <td>{index + 1}</td>
-                        <td className={d.dashboard.rainRankName}>{item.barangayName}</td>
-                        <td>{item.rainIntensityMmPerHour.toFixed(2)} mm/hr</td>
-                        <td><span className={d.dashboard.statusChip}>{item.rainLevel}</span></td>
-                      </tr>
-                    ))}
-                    {!topRainBarangays.length ? <tr><td colSpan={4} className={d.table.empty}>No moderate or severe rainfall detected right now.</td></tr> : null}
+                    {barangayRescueRows.map((item) => {
+                      const normalizedStatus = String(item.status || '').toLowerCase();
+                      const isPending = normalizedStatus === 'pending';
+                      const isResolved = normalizedStatus === 'resolved';
+                      return (
+                        <tr key={item.caseId} className={isPending ? 'border-l-4 border-l-orange-400 !bg-orange-50' : isResolved ? 'border-l-4 border-l-emerald-400 !bg-emerald-50' : ''}>
+                          <td className={d.dashboard.tdStrong}>{item.caseId}</td>
+                          <td className={d.dashboard.tdTruncate}>{item.barangay}</td>
+                          <td className={d.dashboard.thHiddenMd}>{titleCase(item.requesterName || 'Unknown')}</td>
+                          <td><span className={`${d.dashboard.statusChip} ${isPending ? '!bg-orange-100 !text-orange-700' : isResolved ? '!bg-emerald-100 !text-emerald-700' : ''}`}>{formatIncidentStatus(item.status)}</span></td>
+                        </tr>
+                      );
+                    })}
+                    {barangayRescueRows.length === 0 ? <tr><td colSpan={4} className={d.table.empty}>No user-app rescue requests yet.</td></tr> : null}
                   </tbody>
                 </table>
               </div>

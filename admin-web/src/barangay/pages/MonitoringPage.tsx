@@ -575,7 +575,6 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   const selectedReportIsResolved = selectedReport?.status === 'resolved';
   const incidentDetailContent = selectedReport ? (
     <>
-      <h3 className={d.monitoring.selectedTitle}>Incident Detail</h3>
       <div className={d.monitoring.incidentDetailGrid}>
         <div className={d.monitoring.incidentDetailColumn}>
           <p><strong>ID:</strong> {selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`}</p>
@@ -610,7 +609,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
                   marginTop: 4,
                   padding: '8px 10px',
                   borderRadius: 8,
-                  fontSize: '1rem',
+                  fontSize: '0.8rem',
                   fontWeight: 700,
                   background: isRescueAwaitingPickup(selectedReport) ? '#fef2f2' : '#f0fdf4',
                   border: `1px solid ${isRescueAwaitingPickup(selectedReport) ? '#fecaca' : '#bbf7d0'}`,
@@ -622,7 +621,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
                 Current destination: {activeRouteDestination?.label || 'Calculating…'}
               </div>
               </div>
-              <p style={{ fontSize: '0.95rem', lineHeight: 1.5, color: '#64748b' }}>
+              <p style={{ fontSize: '0.78rem', lineHeight: 1.4, color: '#64748b' }}>
                 {routeOriginLabel
                   ? `Route: ${routeOriginLabel} to ${routeDestination?.label || 'assigned evacuation center'}.`
                   : 'Calculating the resident-to-evacuation-center route…'}
@@ -631,7 +630,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
           ) : null}
         </div>
       </div>
-      {!selectedReportIsResolved ? <div style={{ marginTop: 12, padding: '10px 12px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd', fontSize: '0.95rem', lineHeight: 1.5, color: '#0369a1' }}>
+      {!selectedReportIsResolved ? <div style={{ marginTop: 8, padding: '8px 10px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd', fontSize: '0.78rem', lineHeight: 1.4, color: '#0369a1' }}>
         <strong>ℹ️ Barangay review view.</strong> Accept or decline pending reports from this barangay.
       </div> : null}
     </>
@@ -696,7 +695,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
       onOpenEvacuationCenter={onOpenEvacuationCenter}
       onOpenAccount={onOpenAccount}
     >
-      <div className={d.monitoring.root}>
+      <div className={`${d.monitoring.root} incident-monitoring-root`}>
         {error ? <div className={d.page.error}>{error}</div> : null}
 
         {/* Stats */}
@@ -782,12 +781,6 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
         <section className={d.monitoring.lowerGrid}>
           <article className={d.monitoring.incidentsCard}>
             <div className={d.monitoring.incidentsHead}>
-              <h3 className={d.monitoring.incidentsTitle}>
-                Incidents in Brgy. {barangayName}
-                <span style={{ marginLeft: 8, fontSize: '0.78rem', fontWeight: 600, color: '#64748b' }}>
-                  ({reports.length} total)
-                </span>
-              </h3>
               <div className={d.monitoring.filterWrap}>
                 {INCIDENT_STATUS_FILTERS.map((status) => (
                   <button
@@ -802,6 +795,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
             </div>
             <div className={d.monitoring.incidentsTableWrap}>
               <table className={d.monitoring.incidentReportsTable}>
+                <colgroup><col className="w-[22%]" /><col className="w-[32%]" /><col className="w-[18%]" /><col className="w-[18%]" /><col className="w-[10%]" /></colgroup>
                 <thead>
                   <tr>
                     <th>Incident ID</th>
@@ -826,7 +820,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
                       }}
                       className={[d.monitoring.rowBase, selectedReport?.id === item.id ? d.monitoring.rowSelected : ''].join(' ')}
                     >
-                      <td className="font-mono text-xs">{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td>
+                      <td className="truncate font-mono text-xs" title={item.report_code || undefined}>{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td>
                       <td className={d.monitoring.rowLocation}>
                         <button
                           type="button"
@@ -860,7 +854,9 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
           </article>
 
           <article className={d.monitoring.validationCard}>
-            {incidentDetailContent}
+            <div className="active-list-scroll incident-detail-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-1">
+              {incidentDetailContent}
+            </div>
           </article>
         </section>
 

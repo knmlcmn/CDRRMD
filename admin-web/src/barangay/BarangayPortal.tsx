@@ -6,6 +6,8 @@ import EvacuationCenterPage from './pages/EvacuationCenterPage';
 import DashboardPage from './pages/DashboardPage';
 import WaterLevelAlert, { type WaterLevelNoticeKind } from './components/WaterLevelAlert';
 import BackupModal from './components/BackupModal';
+import RescueRequestRouteMap from './components/RescueRequestRouteMap';
+import RescueImagePreview from './components/RescueImagePreview';
 import { API_BASE_URL, api, setAuthToken } from '../services/apiClient';
 import { loadWaterLevelSensors, type WaterLevelSensor } from './services/waterLevelSensors';
 
@@ -18,6 +20,16 @@ type RescueRequestNotice = {
   first_name?: string | null;
   last_name?: string | null;
   contact_number?: string | null;
+  email?: string | null;
+  latitude?: number | string | null;
+  longitude?: number | string | null;
+  evacuation_area_name?: string | null;
+  evacuation_latitude?: number | string | null;
+  evacuation_longitude?: number | string | null;
+  estimated_people?: number | null;
+  are_people_trapped?: boolean | null;
+  notes?: string | null;
+  image_base64?: string | null;
   status: string;
   created_at: string;
 };
@@ -33,12 +45,14 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
   const [view, setView] = useState<View>('dashboard');
   const [pendingRescueRequests, setPendingRescueRequests] = useState<RescueRequestNotice[]>([]);
   const [dismissedRescueIds, setDismissedRescueIds] = useState<Set<number>>(() => new Set());
+  const [openedRescueRequestId, setOpenedRescueRequestId] = useState<number | null>(null);
   const [rescueDecisionId, setRescueDecisionId] = useState<number | null>(null);
   const [rescueDecisionError, setRescueDecisionError] = useState('');
+  const [rescueRouteMetrics, setRescueRouteMetrics] = useState<{ distanceKm: number; etaMinutes: number } | null>();
+  const [showRescueImage, setShowRescueImage] = useState(false);
   const [focusReportId, setFocusReportId] = useState<number | null>(null);
   const [notices, setNotices] = useState<Array<{ id: number; alert: WaterLevelSensor; kind: WaterLevelNoticeKind }>>([]);
   const noticeIdRef = useRef(0);
-  const reminderTimerRef = useRef<number | null>(null);
   const lastWarningLevelRef = useRef<number | null>(null);
 
   const showNotice = useCallback((alert: WaterLevelSensor, kind: WaterLevelNoticeKind) => {
@@ -95,21 +109,12 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
       if (!ownSensor || !warning) {
         lastWarningLevelRef.current = null;
         setNotices([]);
-        if (reminderTimerRef.current !== null) window.clearTimeout(reminderTimerRef.current);
-        reminderTimerRef.current = null;
         return;
       }
       const lastLevel = lastWarningLevelRef.current;
       if (lastLevel === null || ownSensor.waterLevelPercentage >= lastLevel + 10) {
         lastWarningLevelRef.current = ownSensor.waterLevelPercentage;
         showNotice(ownSensor, 'warning');
-        if (reminderTimerRef.current !== null) window.clearTimeout(reminderTimerRef.current);
-        reminderTimerRef.current = window.setTimeout(() => {
-          loadWaterLevelSensors().then((current) => {
-            const sensor = current.find((item) => item.barangayName.toLowerCase() === normalizedBarangay);
-            if (!stopped && sensor?.status === 'Active' && sensor.hasReading && sensor.waterLevelPercentage >= 40) showNotice(sensor, 'reminder');
-          }).catch(() => {});
-        }, 8_500);
       }
     };
     void checkWaterLevel();
@@ -117,7 +122,6 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
     return () => {
       stopped = true;
       window.clearInterval(timer);
-      if (reminderTimerRef.current !== null) window.clearTimeout(reminderTimerRef.current);
     };
   }, [barangayName, showNotice, token]);
 
@@ -131,26 +135,54 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
   }, [token]);
 
   const activeNotice = notices[0];
-  const popup = activeNotice ? <WaterLevelAlert key={activeNotice.id} alert={activeNotice.alert} kind={activeNotice.kind} onClose={() => setNotices((current) => current.filter((item) => item.id !== activeNotice.id))} /> : null;
-  const activeRescueRequest = pendingRescueRequests.find((request) => !dismissedRescueIds.has(request.id)) || null;
+  const popup = activeNotice ? <WaterLevelAlert key={activeNotice.id} alert={activeNotice.alert} kind={activeNotice.kind} onClose={() => setNotices((current) => current.filter((item) => item.id !== activeNotice.id))} onSeeDetails={() => { setNotices([]); setView('flood-monitoring'); }} /> : null;
+  const activeRescueRequest = (
+    openedRescueRequestId == null
+      ? null
+      : pendingRescueRequests.find((request) => request.id === openedRescueRequestId)
+  ) || pendingRescueRequests.find((request) => !dismissedRescueIds.has(request.id)) || null;
+  const residentName = activeRescueRequest
+    ? [activeRescueRequest.first_name, activeRescueRequest.last_name].filter(Boolean).join(' ').trim() || 'Resident'
+    : 'Resident';
+  const residentLatitude = Number(activeRescueRequest?.latitude);
+  const residentLongitude = Number(activeRescueRequest?.longitude);
+  const evacuationLatitude = Number(activeRescueRequest?.evacuation_latitude);
+  const evacuationLongitude = Number(activeRescueRequest?.evacuation_longitude);
+  const hasRouteLocations = [residentLatitude, residentLongitude, evacuationLatitude, evacuationLongitude].every(Number.isFinite);
 
-  const decideRescueRequest = async (request: RescueRequestNotice, decision: 'accepted' | 'declined') => {
+  useEffect(() => {
+    setRescueRouteMetrics(undefined);
+    setShowRescueImage(false);
+  }, [activeRescueRequest?.id]);
+
+  const standbyRescueRequest = (request: RescueRequestNotice) => {
+    setDismissedRescueIds((current) => new Set(current).add(request.id));
+    setOpenedRescueRequestId((current) => current === request.id ? null : current);
+    setRescueDecisionError('');
+  };
+
+  const reopenPendingRescueRequest = (reportId: number) => {
+    setDismissedRescueIds((current) => {
+      const next = new Set(current);
+      next.delete(reportId);
+      return next;
+    });
+    setOpenedRescueRequestId(reportId);
+    setRescueDecisionError('');
+  };
+
+  const decideRescueRequest = async (request: RescueRequestNotice) => {
     if (rescueDecisionId !== null) return;
     setRescueDecisionId(request.id);
     setRescueDecisionError('');
     try {
-      await api.patch(`/barangay/reports/${request.id}/status`, decision === 'accepted'
-        ? {
-            status: 'accepted',
-            notes: `Barangay ${barangayName} confirmed dispatch from the resident rescue notification.`,
-          }
-        : {
-            status: 'declined',
-            declineReason: 'other',
-            declineExplanation: `Barangay ${barangayName} dismissed the resident rescue request from the notification.`,
-          });
+      await api.patch(`/barangay/reports/${request.id}/status`, {
+        status: 'accepted',
+        notes: `Barangay ${barangayName} confirmed dispatch from the resident rescue notification.`,
+      });
       setPendingRescueRequests((current) => current.filter((item) => item.id !== request.id));
       setDismissedRescueIds((current) => new Set(current).add(request.id));
+      setOpenedRescueRequestId(null);
       setFocusReportId(request.id);
     } catch (error: unknown) {
       const apiError = error as { response?: { status?: number; data?: { message?: string } } };
@@ -164,32 +196,51 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
     }
   };
 
+  const rescueDescription = String(activeRescueRequest?.notes || '').trim();
+  const visibleRescueDescription = /^selected evacuation area:/i.test(rescueDescription) ? '' : rescueDescription;
+
   const rescuePopup = activeRescueRequest ? (
-    <BackupModal title="New Resident Rescue Request" variant="rescue-request" onClose={() => {}}>
+    <BackupModal title="Urgent Rescue Request" variant="rescue-request" onClose={() => standbyRescueRequest(activeRescueRequest)}>
       <div className="rescue-request-layout">
-        <div>
-          <p className="rescue-request-eyebrow">New Resident Rescue Request</p>
-          <h2 className="rescue-request-title">Barangay {barangayName}</h2>
+        <div className="rescue-request-content">
+          <p className="rescue-request-eyebrow">Urgent Rescue Request</p>
+          <h2 className="rescue-request-title">{residentName}</h2>
           <p className="rescue-request-subtitle">{String(activeRescueRequest.incident_type || 'Emergency rescue').replace(/_/g, ' ')}</p>
-          <p className="rescue-request-description">
-            A resident has requested immediate rescue at {activeRescueRequest.location}. Confirm dispatch to accept the request and automatically assign the nearest available Barangay Rescuer.
-          </p>
-          <p className="rescue-request-meta">
-            {activeRescueRequest.report_code || `RPT-${String(activeRescueRequest.id).padStart(6, '0')}`} · Requested {new Date(activeRescueRequest.created_at).toLocaleString()}
-          </p>
+          <dl className="rescue-request-details">
+            <div><dt>Contact</dt><dd>{activeRescueRequest.contact_number || activeRescueRequest.email || 'Not provided'}</dd></div>
+            <div><dt>People</dt><dd>{activeRescueRequest.estimated_people || 1}</dd></div>
+            <div><dt>Rescue location</dt><dd>{activeRescueRequest.location}</dd></div>
+            <div><dt>Assigned evacuation</dt><dd>{activeRescueRequest.evacuation_area_name || 'Automatic nearest center'}</dd></div>
+            <div><dt>Shortest route</dt><dd>{rescueRouteMetrics ? `${rescueRouteMetrics.distanceKm.toFixed(2)} km · about ${rescueRouteMetrics.etaMinutes} min` : rescueRouteMetrics === null ? 'Road route unavailable' : 'Calculating…'}</dd></div>
+          </dl>
+          {visibleRescueDescription ? <p className="rescue-request-description">{visibleRescueDescription}</p> : null}
+          {activeRescueRequest.image_base64 ? (
+            <div className="rescue-request-meta-row">
+              <span>{activeRescueRequest.report_code || `RPT-${String(activeRescueRequest.id).padStart(6, '0')}`}</span>
+              <button type="button" className="rescue-request-view-image" onClick={() => setShowRescueImage(true)}>View Image</button>
+            </div>
+          ) : (
+            <p className="rescue-request-meta">
+              {activeRescueRequest.report_code || `RPT-${String(activeRescueRequest.id).padStart(6, '0')}`} · Requested {new Date(activeRescueRequest.created_at).toLocaleString()}
+            </p>
+          )}
         </div>
-        <svg className="rescue-request-icon" viewBox="0 0 120 120" fill="none" aria-hidden="true">
-          <path d="M52.8 17.2c3.2-5.5 11.2-5.5 14.4 0l43.1 74.7c3.2 5.5-.8 12.4-7.2 12.4H16.9c-6.4 0-10.4-6.9-7.2-12.4l43.1-74.7Z" fill="#fff7d6" stroke="currentColor" strokeWidth="5" />
-          <path d="M60 40v34" stroke="#123a59" strokeWidth="8" strokeLinecap="round" />
-          <circle cx="60" cy="88" r="5" fill="#123a59" />
-        </svg>
+        {hasRouteLocations ? (
+          <RescueRequestRouteMap
+            resident={{ latitude: residentLatitude, longitude: residentLongitude }}
+            evacuationArea={{ latitude: evacuationLatitude, longitude: evacuationLongitude }}
+            residentName={residentName}
+            evacuationAreaName={activeRescueRequest.evacuation_area_name || 'Assigned evacuation center'}
+            onRouteMetrics={setRescueRouteMetrics}
+          />
+        ) : <div className="rescue-request-route-unavailable">Route location unavailable</div>}
       </div>
       {rescueDecisionError ? <p className="rescue-request-error" role="alert">{rescueDecisionError}</p> : null}
       <div className="rescue-request-actions">
-        <button className="rescue-request-button rescue-request-button-primary" disabled={rescueDecisionId !== null} onClick={() => void decideRescueRequest(activeRescueRequest, 'accepted')}>
+        <button className="rescue-request-button rescue-request-button-primary" disabled={rescueDecisionId !== null} onClick={() => void decideRescueRequest(activeRescueRequest)}>
           {rescueDecisionId === activeRescueRequest.id ? 'Processing…' : 'Confirm Dispatch'}
         </button>
-        <button className="rescue-request-button" disabled={rescueDecisionId !== null} onClick={() => void decideRescueRequest(activeRescueRequest, 'declined')}>Dismiss Request</button>
+        <button className="rescue-request-button" disabled={rescueDecisionId !== null} onClick={() => standbyRescueRequest(activeRescueRequest)}>Standby Request</button>
       </div>
     </BackupModal>
   ) : null;
@@ -198,7 +249,15 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
   return (
     <>
       {rescuePopup || popup}
-      {view === 'dashboard' ? <DashboardPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenEvacuationCenter={() => setView('evacuation-center')} onOpenAccount={() => setView('account')} /> : null}
+      {showRescueImage && activeRescueRequest?.image_base64 ? (
+        <RescueImagePreview
+          image={activeRescueRequest.image_base64}
+          residentName={residentName}
+          createdAt={activeRescueRequest.created_at}
+          onClose={() => setShowRescueImage(false)}
+        />
+      ) : null}
+      {view === 'dashboard' ? <DashboardPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenEvacuationCenter={() => setView('evacuation-center')} onOpenAccount={() => setView('account')} onOpenPendingRescue={reopenPendingRescueRequest} /> : null}
       {view === 'account' ? <PersonnelAccountsPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenEvacuationCenter={() => setView('evacuation-center')} /> : null}
       {view === 'flood-monitoring' ? <FloodMonitoringPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenEvacuationCenter={() => setView('evacuation-center')} onOpenAccount={() => setView('account')} /> : null}
       {view === 'evacuation-center' ? <EvacuationCenterPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenAccount={() => setView('account')} /> : null}

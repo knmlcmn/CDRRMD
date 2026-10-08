@@ -17,6 +17,7 @@ import RescuerAccountPage from './pages/RescuerAccountPage';
 import type { StaffPortal } from './services/authService';
 import WaterLevelUpdateToast, { type WaterLevelUpdateNoticeKind } from './components/WaterLevelUpdateToast';
 import { loadWaterLevelSensors, type WaterLevelSensor } from './services/waterLevelSensors';
+import { isCalambaCurrentlyRainy } from './services/weatherAlerts';
 
 type View =
   | 'dashboard'
@@ -60,22 +61,22 @@ function App() {
   const [view, setView] = useState<View>('dashboard');
   const [rescuerView, setRescuerView] = useState<RescuerView>('incidents');
   const [backupReportId, setBackupReportId] = useState<number | null>(null);
+  const [backupNoticeReportId, setBackupNoticeReportId] = useState<number | null>(null);
   const [waterUpdateNotices, setWaterUpdateNotices] = useState<WaterUpdateNotice[]>([]);
   const waterNoticeIdRef = useRef(0);
   const lastNotifiedWaterBucketRef = useRef<Record<string, number>>({});
 
-  const finishWaterUpdateNotice = useCallback(() => {
-    setWaterUpdateNotices((current) => {
-      const [finished, ...remaining] = current;
-      if (!finished) return current;
-      if (finished.kind === 'update') {
-        return [{
-          id: ++waterNoticeIdRef.current,
-          kind: 'post-updates',
-          sensors: finished.sensors,
-        }, ...remaining];
-      }
-      return remaining;
+  const finishWaterUpdateNotice = useCallback((finished: WaterUpdateNotice) => {
+    setWaterUpdateNotices((current) => current.filter((notice) => notice.id !== finished.id));
+    if (finished.kind !== 'update') return;
+
+    void isCalambaCurrentlyRainy().then((isRainy) => {
+      if (!isRainy) return;
+      setWaterUpdateNotices((current) => [...current, {
+        id: ++waterNoticeIdRef.current,
+        kind: 'post-updates',
+        sensors: finished.sensors,
+      }]);
     });
   }, []);
 
@@ -216,6 +217,7 @@ function App() {
     onOpenFloodMonitoring: () => openView('flood-monitoring'),
     onOpenEvacuationAreas: () => openView('evacuation-areas'),
     onOpenPostUpdates: () => openView('post-updates'),
+    onOpenBackupRequest: setBackupNoticeReportId,
     onAuthError: onLogout,
   };
 
@@ -237,14 +239,23 @@ function App() {
           key={activeWaterUpdateNotice.id}
           sensors={activeWaterUpdateNotice.sensors}
           kind={activeWaterUpdateNotice.kind}
-          onDone={finishWaterUpdateNotice}
+          onDone={() => finishWaterUpdateNotice(activeWaterUpdateNotice)}
+          onSeeDetails={() => {
+            finishWaterUpdateNotice(activeWaterUpdateNotice);
+            openView(activeWaterUpdateNotice.kind === 'post-updates' ? 'post-updates' : 'flood-monitoring');
+          }}
         />
       ) : null}
       {currentPage}
-      <BackupNotifications onConfirm={(reportId) => {
-        setBackupReportId(reportId);
-        openView('monitoring');
-      }} />
+      <BackupNotifications
+        reopenReportId={backupNoticeReportId}
+        onStandby={() => setBackupNoticeReportId(null)}
+        onConfirm={(reportId) => {
+          setBackupNoticeReportId(null);
+          setBackupReportId(reportId);
+          openView('monitoring');
+        }}
+      />
     </>
   );
 }

@@ -150,6 +150,7 @@ export type MonitoringReport = {
   location: string;
   latitude?: number | null;
   longitude?: number | null;
+  assigned_barangay?: string | null;
   incident_type: string;
   water_level?: string | null;
   are_people_trapped?: boolean | null;

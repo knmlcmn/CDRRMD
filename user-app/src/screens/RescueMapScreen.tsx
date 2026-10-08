@@ -224,12 +224,13 @@ function buildLeafletHtml(
       html,body,#map{margin:0;padding:0;width:100%;height:100%}
       body{margin:0;padding:0;background:#eef2f7}
       .map-legend{
-        background:transparent;
-        border:0;
-        box-shadow:none;
+        background:rgba(255,255,255,.96);
+        border:1px solid rgba(148,163,184,.55);
+        border-radius:10px;
+        box-shadow:0 6px 18px rgba(15,23,42,.22);
         color:#0f172a;
         font:12px/1.35 Arial,sans-serif;
-        padding:2px;
+        padding:9px 10px;
         pointer-events:none;
         width:192px;
       }
@@ -1221,14 +1222,6 @@ function buildLeafletHtml(
             selectedAreaMarker = marker;
           }
 
-          marker.on('click', function() {
-            var message = JSON.stringify({ type: 'select-area', areaId: area.id });
-            if (window.ReactNativeWebView) {
-              window.ReactNativeWebView.postMessage(message);
-            } else if (window.parent !== window) {
-              window.parent.postMessage(message, '*');
-            }
-          });
           fitBounds.extend([area.latitude, area.longitude]);
         });
 
@@ -1580,7 +1573,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
 
     return buildLeafletHtml(
       userLocation,
-      mapEvacuationAreas,
+      requestStarted && selectedArea ? [selectedArea] : mapEvacuationAreas,
       selectedAreaId,
       true,
       requestStarted,
@@ -1589,7 +1582,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
       layerVisibilityRef.current,
       isMapFullscreen,
     );
-  }, [mapEvacuationAreas, apiBaseUrl, isMapFullscreen, requestStarted, routeCoordinates, selectedAreaId, userLocation]);
+  }, [mapEvacuationAreas, apiBaseUrl, isMapFullscreen, requestStarted, routeCoordinates, selectedArea, selectedAreaId, userLocation]);
 
   async function handleUploadProof() {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -1627,43 +1620,6 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
       if (payload.type === 'layer-visibility' && payload.visibility) {
         layerVisibilityRef.current = { ...layerVisibilityRef.current, ...payload.visibility };
         return;
-      }
-      if (payload.type === 'select-area' && payload.areaId) {
-        if (!requestStarted) {
-          return;
-        }
-        const chosen = evacuationAreas.find((area) => area.id === payload.areaId);
-        if (!chosen) {
-          return;
-        }
-
-        if (!hasCapacityFor(chosen, peopleCount)) {
-          if (!userLocation) {
-            return;
-          }
-          setRoutingRecommendation(true);
-          try {
-            const plan = await resolveBestRoadPlan(userLocation, evacuationAreas, peopleCount);
-            if (plan) {
-              applyRoadPlan(plan);
-              showNotice(
-                'Area at full capacity',
-                `${chosen.name} is full. The shortest reachable road route is to ${plan.area.name}.`,
-              );
-            } else {
-              setSelectedAreaId(null);
-              showNotice('No reachable evacuation area', 'No available evacuation center is reachable through the current road network.');
-            }
-          } catch {
-            setSelectedAreaId(null);
-            showNotice('Road routing unavailable', 'Unable to verify another reachable evacuation center right now.');
-          } finally {
-            setRoutingRecommendation(false);
-          }
-          return;
-        }
-
-        setSelectedAreaId(payload.areaId);
       }
     } catch {
       // Ignore malformed messages from the map.
@@ -1932,7 +1888,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
           {requestStarted ? (
             <>
               <Text style={st.areaSectionTitle}>Nearest Evacuation Center</Text>
-              <Text style={st.areaCountText}>The nearest available center is selected automatically. Tap another map marker to review a different center.</Text>
+              <Text style={st.areaCountText}>The shortest reachable route is assigned automatically and cannot be changed.</Text>
 
               {selectedArea ? (
                 <View style={[st.areaCard, st.areaCardSelected]}>
@@ -1966,7 +1922,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
                   <Text style={st.areaHintText}>
                     {routingRecommendation
                       ? 'Comparing road distance and reachability for every available evacuation center...'
-                      : 'No road-reachable evacuation center is selected. Tap a map pin to check another center.'}
+                      : 'No road-reachable evacuation center is currently available.'}
                   </Text>
                 </View>
               )}

@@ -168,33 +168,30 @@ export default function AdminShell({
                 <h1 className={d.shell.h1}>{title}</h1>
                 {subtitle ? <p className={d.shell.subtitle}>{subtitle}</p> : null}
               </div>
+              {isAccountsView ? (
+                <nav className="ml-auto flex min-w-max gap-2 overflow-x-auto" role="tablist" aria-label="Account roles">
+                  {[
+                    ['admin', 'Admin', onOpenAdmin],
+                    ['users', 'User', onOpenUsers],
+                    ['barangay', 'Barangay', onOpenBarangay],
+                    ['rescuers', 'Rescuer', onOpenRescuers],
+                  ].map(([key, label, onClick]) => (
+                    <button
+                      key={String(key)}
+                      type="button"
+                      role="tab"
+                      aria-selected={activeView === key}
+                      onClick={onClick as () => void}
+                      className={`min-w-24 rounded-lg px-4 py-2 text-sm font-black transition ${activeView === key ? 'bg-[#1f4e79] text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                    >
+                      {String(label)}
+                    </button>
+                  ))}
+                </nav>
+              ) : null}
               {actions ? <div className={d.shell.actions}>{actions}</div> : null}
             </div>
           </header>
-
-          {isAccountsView ? (
-            <nav className="flex shrink-0 overflow-x-auto border-b border-slate-200 bg-white px-4 py-3 sm:px-6" role="tablist" aria-label="Account roles">
-              <div className="ml-auto flex min-w-max gap-2">
-                {[
-                  ['admin', 'Admin', onOpenAdmin],
-                  ['users', 'User', onOpenUsers],
-                  ['barangay', 'Barangay', onOpenBarangay],
-                  ['rescuers', 'Rescuer', onOpenRescuers],
-                ].map(([key, label, onClick]) => (
-                  <button
-                    key={String(key)}
-                    type="button"
-                    role="tab"
-                    aria-selected={activeView === key}
-                    onClick={onClick as () => void}
-                    className={`min-w-28 rounded-lg px-5 py-2.5 text-sm font-black transition ${activeView === key ? 'bg-[#1f4e79] text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
-                  >
-                    {String(label)}
-                  </button>
-                ))}
-              </div>
-            </nav>
-          ) : null}
 
           {children}
         </main>

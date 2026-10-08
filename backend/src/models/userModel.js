@@ -885,6 +885,7 @@ async function listReportsByAssignedBarangay(barangayName) {
        ir.assigned_barangay, ir.incident_type, ir.water_level,
        ir.are_people_trapped, ir.estimated_people, ir.notes, ir.image_base64,
        ir.status, ir.evacuation_area_id, ir.evacuation_area_name,
+       ea.latitude AS evacuation_latitude, ea.longitude AS evacuation_longitude,
        ir.evacuees_reserved, ir.assigned_team, ir.admin_notes,
        ir.decline_reason, ir.decline_explanation,
        ir.dispatched_at, ir.resolved_at, ir.updated_at, ir.created_at,
@@ -898,6 +899,7 @@ async function listReportsByAssignedBarangay(barangayName) {
        responder.location_updated_at AS rescuer_location_updated_at
      FROM incident_reports ir
      JOIN users u ON u.id = ir.reported_by
+     LEFT JOIN evacuation_areas ea ON ea.id = ir.evacuation_area_id
      LEFT JOIN LATERAL (
        SELECT br.id, br.dispatch_type, br.assigned_rescuer_id, br.assigned_at, br.responder_acknowledged_at, br.picked_up_at
        FROM backup_requests br

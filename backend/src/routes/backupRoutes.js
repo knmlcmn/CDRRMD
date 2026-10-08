@@ -35,12 +35,18 @@ router.get('/', async (req, res) => {
             br.assigned_rescuer_id, br.assigned_at, br.responder_acknowledged_at, br.picked_up_at,
             ir.report_code, ir.report_type, ir.incident_type, ir.status AS report_status,
             ir.location AS report_location, ir.notes AS report_notes, ir.admin_notes AS barangay_notes,
+            ir.image_base64,
             ir.are_people_trapped, ir.estimated_people,
-            ir.latitude AS report_latitude, ir.longitude AS report_longitude,
+            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
+                      AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
+                   THEN reporter.current_latitude ELSE ir.latitude END AS report_latitude,
+            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
+                      AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
+                   THEN reporter.current_longitude ELSE ir.longitude END AS report_longitude,
             ir.evacuation_area_id, ir.evacuation_area_name,
             ea.latitude AS evacuation_latitude, ea.longitude AS evacuation_longitude,
             NULLIF(TRIM(CONCAT_WS(' ', reporter.first_name, reporter.last_name)), '') AS reporter_name,
-            reporter.contact_number AS reporter_contact,
+            reporter.contact_number AS reporter_contact, reporter.email AS reporter_email,
             NULLIF(TRIM(CONCAT_WS(' ', rescuer.first_name, rescuer.last_name)), '') AS rescuer_name,
             CONCAT('RSC-', EXTRACT(YEAR FROM rescuer.created_at)::text, '-', LPAD(rescuer.id::text, 5, '0')) AS rescuer_account_id,
             rescuer.contact_number AS rescuer_contact,
