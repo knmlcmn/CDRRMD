@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE_URL, api } from '../../services/apiClient';
 import type { EvacuationAreaItem } from '../../types';
 import { buildCalambaMapHtml } from '../../utils/calambaMapHtml';
+import { formatIncidentStatus } from '../../utils/incidentStatus';
+import { d } from '../../adminDesign';
 import BarangayShell from '../components/BarangayShell';
 import { loadWaterLevelSensors, type WaterLevelSensor } from '../services/waterLevelSensors';
 
@@ -42,10 +44,6 @@ type Center = {
   is_active: boolean;
   created_at: string;
 };
-
-function statusLabel(value: string) {
-  return String(value || 'pending').replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
 
 function sensorTone(sensor: WaterLevelSensor | null) {
   if (!sensor || sensor.status === 'Unavailable' || !sensor.hasReading) return 'bg-slate-400';
@@ -153,11 +151,11 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
 
         <section className="grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.72fr)] 2xl:grid-cols-[minmax(0,1.5fr)_minmax(260px,0.72fr)_minmax(320px,0.85fr)]">
           <article className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3"><div><h2 className="font-black text-[#173750]">Incident Reports Overview</h2><p className="text-xs text-slate-500">Latest reports from Barangay {barangayName}</p></div><button onClick={onOpenMonitoring} className="rounded-lg bg-[#1f567d] px-3 py-2 text-xs font-bold text-white hover:bg-[#174866]">View all</button></div>
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3"><div><h2 className={d.dashboard.reportsTitle}>Incident Reports Overview</h2><p className="text-xs text-slate-500">Latest reports from Barangay {barangayName}</p></div><button onClick={onOpenMonitoring} className="rounded-lg bg-[#1f567d] px-3 py-2 text-xs font-bold text-white hover:bg-[#174866]">View all</button></div>
             <div className="min-h-0 flex-1 overflow-auto">
-              <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="sticky top-0 z-10 bg-slate-50 text-[0.7rem] uppercase tracking-wide text-slate-600"><tr><th className="px-4 py-3">Case ID</th><th className="px-4 py-3">Incident</th><th className="px-4 py-3">Location</th><th className="px-4 py-3">People</th><th className="px-4 py-3">Status</th></tr></thead>
-                <tbody>{recentIncidents.map((item) => <tr key={item.id} className="border-t border-slate-100 hover:bg-slate-50"><td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-bold text-[#173750]">{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td><td className="px-4 py-3">{item.incident_type || 'Incident'}</td><td className="max-w-[16rem] truncate px-4 py-3" title={item.location}>{item.location}</td><td className="px-4 py-3">{item.estimated_people ?? '—'}</td><td className="px-4 py-3"><span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-bold text-blue-700">{statusLabel(item.status)}</span></td></tr>)}</tbody>
+              <table className="w-full min-w-[720px] text-left text-[0.95rem]">
+                <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-4 py-3">Case ID</th><th className="px-4 py-3">Incident</th><th className="px-4 py-3">Location</th><th className="px-4 py-3">People</th><th className="px-4 py-3">Status</th></tr></thead>
+                <tbody>{recentIncidents.map((item) => <tr key={item.id} className="border-t border-slate-100 hover:bg-slate-50"><td className="whitespace-nowrap px-4 py-3 font-mono text-sm font-bold text-[#173750]">{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td><td className="px-4 py-3">{item.incident_type || 'Incident'}</td><td className="max-w-[16rem] truncate px-4 py-3" title={item.location}>{item.location}</td><td className="px-4 py-3">{item.estimated_people ?? '—'}</td><td className="px-4 py-3"><span className="rounded-full bg-blue-100 px-2.5 py-1 text-sm font-bold text-blue-700">{formatIncidentStatus(item.status)}</span></td></tr>)}</tbody>
               </table>
               {!recentIncidents.length ? <p className="p-10 text-center text-sm text-slate-500">{loading ? 'Loading incidents…' : 'No incidents recorded.'}</p> : null}
             </div>

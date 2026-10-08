@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../services/apiClient';
 import AdminShell from '../components/AdminShell';
+import AddAccountDialog, { type AccountRole } from '../components/AddAccountDialog';
 import { d } from '../adminDesign';
 import type { UserAccount } from '../types';
 
@@ -281,10 +282,17 @@ export default function UsersPage(props: Props) {
 
   const status = selectedUser?.verification_status || 'pending';
 
+  async function handleCreated(role: AccountRole) {
+    if (role === 'user') return loadUsers();
+    if (role === 'admin') return props.onOpenAdmin();
+    if (role === 'barangay') return props.onOpenBarangay();
+    return props.onOpenRescuers();
+  }
+
   return (
     <AdminShell
       activeView="users"
-      title="User Account Management"
+      title="Account Management"
       noMainScroll
       onLogout={props.onLogout}
       onOpenDashboard={props.onOpenDashboard}
@@ -296,18 +304,6 @@ export default function UsersPage(props: Props) {
       onOpenFloodMonitoring={props.onOpenFloodMonitoring}
       onOpenEvacuationAreas={props.onOpenEvacuationAreas}
       onOpenPostUpdates={props.onOpenPostUpdates}
-      actions={(
-        <button
-          type="button"
-          onClick={() => setIsNewUsersOpen(true)}
-          className="relative flex h-12 w-12 items-center justify-center rounded-xl border-2 border-[#1f4e79] bg-[#1f4e79] text-white shadow-sm transition hover:bg-[#173b5c]"
-          aria-label={`New users awaiting verification: ${pendingUsers.length}`}
-          title="User verification requests"
-        >
-          <UserPlusIcon />
-          {pendingUsers.length > 0 ? <span className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-red-600" aria-hidden="true" /> : null}
-        </button>
-      )}
     >
       <div className={d.admin.root}>
         <div className={d.admin.headerRow}>
@@ -318,6 +314,17 @@ export default function UsersPage(props: Props) {
               Archive
             </button>
             <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search User Account" className={d.admin.search} />
+            <AddAccountDialog initialRole="user" onCreated={handleCreated} onAuthError={onAuthError} />
+            <button
+              type="button"
+              onClick={() => setIsNewUsersOpen(true)}
+              className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-[#1f4e79] bg-white text-[#1f4e79] transition hover:bg-sky-50"
+              aria-label={`User verification requests: ${pendingUsers.length}`}
+              title="User verification requests"
+            >
+              <UserPlusIcon />
+              {pendingUsers.length > 0 ? <span className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full border-2 border-white bg-red-600" aria-hidden="true" /> : null}
+            </button>
           </div>
         </div>
 

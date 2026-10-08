@@ -4,8 +4,9 @@ import { fetchRoadRoute } from '../services/roadRouting';
 import AdminShell from '../components/AdminShell';
 import IncidentHistoryModal from '../components/IncidentHistoryModal';
 import { d } from '../adminDesign';
-import type { BackupRequest, EvacuationAreaItem, MonitoringReport } from '../types';
+import type { BackupRequest, EvacuationAreaItem, MonitoringReport, RescuerAccount } from '../types';
 import { buildCalambaMapHtml } from '../utils/calambaMapHtml';
+import { formatIncidentStatus, INCIDENT_STATUS_FILTERS, type IncidentStatusFilter } from '../utils/incidentStatus';
 
 type Props = {
   onLogout: () => void;
@@ -50,9 +51,9 @@ type MonitoringLayerVisibility = {
   humidityOverlay: boolean;
   windOverlay: boolean;
 };
+type CityRescuerLocation = RescuerAccount & { kind: 'barangay' | 'cddrmd' };
 
 const ACTIVE_RESCUE_STATUSES = new Set(['pending', 'accepted', 'in_progress']);
-const CDRRMD_LOCATION: Coordinate = { latitude: 14.194052, longitude: 121.159688 };
 
 function isActiveRescueStatus(value?: string | null) {
   return ACTIVE_RESCUE_STATUSES.has(String(value || '').toLowerCase());
@@ -78,20 +79,6 @@ function extractCoordinate(value?: string | null, lat?: number | null, lon?: num
   return { latitude, longitude };
 }
 
-function formatStatus(status?: string | null) {
-  return String(status || 'pending')
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function formatType(value?: string | null) {
-  return String(value || '-')
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
 function distanceSquared(a: Coordinate, b: Coordinate) {
   const dLat = a.latitude - b.latitude;
   const dLon = a.longitude - b.longitude;
@@ -102,7 +89,10 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationAreaItem[]>([]);
   const [reports, setReports] = useState<MonitoringReport[]>([]);
   const [backupRequests, setBackupRequests] = useState<BackupRequest[]>([]);
+  const [cityRescuers, setCityRescuers] = useState<CityRescuerLocation[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<number | null>(backupReportId);
+  const [mapFocusedReportId, setMapFocusedReportId] = useState<number | null>(null);
+  const [mapFocusMode, setMapFocusMode] = useState<'location' | 'route' | null>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<Coordinate[]>([]);
   const [routeDistanceKm, setRouteDistanceKm] = useState<number | null>(null);
   const [routeEtaMinutes, setRouteEtaMinutes] = useState<number | null>(null);
@@ -114,10 +104,13 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   const [actionMode, setActionMode] = useState<ActionMode>(null);
   const [assignmentPreview, setAssignmentPreview] = useState<AssignmentPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<'active' | 'pending' | 'accepted' | 'in_progress' | 'resolved' | 'declined'>('active');
+  const [statusFilter, setStatusFilter] = useState<IncidentStatusFilter>('active');
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [showRainRanking, setShowRainRanking] = useState(false);
   const mapWrapRef = useRef<HTMLElement | null>(null);
+  const mapFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const lastFocusedRescue = useRef('');
+  const [mapReady, setMapReady] = useState(false);
   const [declineExplanation, setDeclineExplanation] = useState('');
   const [layerVisibility] = useState<MonitoringLayerVisibility>({
     boundary: true,
@@ -139,10 +132,12 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     }
 
     try {
-      const [areasResponse, reportsResponse, backupResponse] = await Promise.all([
+      const [areasResponse, reportsResponse, backupResponse, cdrrmdResponse, barangayResponderResponse] = await Promise.all([
         api.get('/content/evacuation-areas'),
         api.get('/reports'),
         api.get('/backup-requests'),
+        api.get('/rescuers/accounts', { params: { role: 'rescuer' } }),
+        api.get('/rescuers/accounts', { params: { role: 'barangay_rescuer' } }),
       ]);
 
       const nextAreas = Array.isArray(areasResponse.data) ? areasResponse.data : [];
@@ -151,6 +146,10 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       setEvacuationAreas(nextAreas);
       setReports(nextReports);
       setBackupRequests(Array.isArray(backupResponse.data) ? backupResponse.data : []);
+      setCityRescuers([
+        ...(Array.isArray(cdrrmdResponse.data) ? cdrrmdResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'cddrmd' as const })),
+        ...(Array.isArray(barangayResponderResponse.data) ? barangayResponderResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'barangay' as const })),
+      ]);
 
       setSelectedReportId((currentId) => {
         if (nextReports.length === 0) return null;
@@ -242,6 +241,11 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     [rescueReports],
   );
 
+  const activeMissionReports = useMemo(
+    () => reports.filter((report) => isActiveRescueStatus(report.status) && Boolean(report.assigned_rescuer_id)),
+    [reports],
+  );
+
   const filteredReports = useMemo(() => {
     if (statusFilter === 'active') {
       return activeRescueReports;
@@ -250,8 +254,11 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   }, [activeRescueReports, rescueReports, statusFilter]);
 
   const selectedReport = useMemo(
-    () => filteredReports.find((item) => item.id === selectedReportId) ?? filteredReports[0] ?? null,
-    [filteredReports, selectedReportId],
+    () => filteredReports.find((item) => item.id === selectedReportId)
+      ?? reports.find((item) => item.id === selectedReportId)
+      ?? filteredReports[0]
+      ?? null,
+    [filteredReports, reports, selectedReportId],
   );
 
   const selectedBackup = useMemo(
@@ -268,11 +275,10 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   );
 
   const liveResponderLocation = useMemo<Coordinate | null>(() => {
-    if (!selectedBackup?.responder_acknowledged_at) return null;
-    const latitude = Number(selectedBackup?.rescuer_latitude);
-    const longitude = Number(selectedBackup?.rescuer_longitude);
+    const latitude = Number(selectedReport?.rescuer_latitude);
+    const longitude = Number(selectedReport?.rescuer_longitude);
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
-  }, [selectedBackup]);
+  }, [selectedReport?.rescuer_latitude, selectedReport?.rescuer_longitude]);
 
   const assignedResponderArea = useMemo(() => {
     if (!selectedReport || !isActiveRescueStatus(selectedReport.status)) {
@@ -314,32 +320,23 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   }, [evacuationAreas, selectedReport]);
 
   const responderLocation = useMemo(() => {
-    if (selectedBackup?.assigned_rescuer_id && !selectedBackup.responder_acknowledged_at) {
-      return null;
-    }
-    if (liveResponderLocation) {
-      return liveResponderLocation;
-    }
-    if (isBackupResponse) {
-      return CDRRMD_LOCATION;
-    }
-    if (!assignedResponderArea) {
-      return null;
-    }
-    return { latitude: assignedResponderArea.latitude, longitude: assignedResponderArea.longitude };
-  }, [assignedResponderArea, isBackupResponse, liveResponderLocation, selectedBackup]);
+    return liveResponderLocation;
+  }, [liveResponderLocation]);
+
+  const selectedReportedLocation = useMemo(
+    () => extractCoordinate(selectedReport?.location, selectedReport?.latitude, selectedReport?.longitude),
+    [selectedReport],
+  );
 
   const selectedIncidentLocation = useMemo(() => {
-    if (!selectedReport || !isActiveRescueStatus(selectedReport.status)) {
-      return null;
-    }
-    if (selectedBackup?.picked_up_at) {
-      const latitude = Number(selectedBackup.evacuation_latitude);
-      const longitude = Number(selectedBackup.evacuation_longitude);
+    if (!selectedReport || !isActiveRescueStatus(selectedReport.status)) return null;
+    if (selectedReport.picked_up_at) {
+      const latitude = Number(selectedReport.evacuation_latitude);
+      const longitude = Number(selectedReport.evacuation_longitude);
       if (Number.isFinite(latitude) && Number.isFinite(longitude)) return { latitude, longitude };
     }
-    return extractCoordinate(selectedReport.location, selectedReport.latitude, selectedReport.longitude);
-  }, [selectedBackup, selectedReport]);
+    return selectedReportedLocation;
+  }, [selectedReport, selectedReportedLocation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -394,40 +391,110 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     }
   }
 
+  const responderPoints = useMemo(() => cityRescuers
+    .map((rescuer) => {
+      const activeAssignment = activeMissionReports.find((report) => Number(report.assigned_rescuer_id) === Number(rescuer.id));
+      return {
+        id: rescuer.id,
+        rescuerId: rescuer.rescuer_id || null,
+        name: [rescuer.first_name, rescuer.last_name].filter(Boolean).join(' ') || rescuer.rescuer_id || 'Rescuer',
+        latitude: rescuer.current_latitude == null ? Number.NaN : Number(rescuer.current_latitude),
+        longitude: rescuer.current_longitude == null ? Number.NaN : Number(rescuer.current_longitude),
+        isAvailable: !activeAssignment && rescuer.is_available !== false,
+        activeReportId: activeAssignment?.id || null,
+        activeReportCode: activeAssignment?.report_code || null,
+        barangayName: rescuer.barangay_name || null,
+        kind: rescuer.kind,
+      };
+    })
+    .filter((rescuer) => Number.isFinite(rescuer.latitude) && Number.isFinite(rescuer.longitude)), [activeMissionReports, cityRescuers]);
+
+  const selectedResponderKind = selectedReport?.dispatch_type === 'cddrmd_backup' ? 'cddrmd' : 'barangay';
+
   const mapHtml = useMemo(
     () => buildCalambaMapHtml(
       evacuationAreas,
-      responderLocation,
-      routeCoordinates,
-      selectedBackup?.picked_up_at ? null : selectedIncidentLocation,
-      selectedReport && isActiveRescueStatus(selectedReport.status)
-        ? (selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`)
-        : null,
-      activeRescueReports
-        .map((item) => ({
-          reportCode: item.report_code || `RPT-${String(item.id).padStart(6, '0')}`,
-          latitude: Number(item.latitude),
-          longitude: Number(item.longitude),
-          status: String(item.status || 'pending'),
-          reportType: String(item.report_type || 'incident'),
-        }))
-        .filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude)),
+      null,
+      [],
+      null,
+      null,
+      [],
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/flood-risk/calamba/barangays`,
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/flood-risk/calamba/raster`,
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/flood-risk/calamba/rain-impact`,
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/weather/wind-field`,
       layerVisibility,
-      liveResponderLocation
-        ? 'Assigned CDRRMD Rescuer live location'
-        : isBackupResponse ? 'CDRRMD - Calamba City Hall' : 'Closest responder base',
+      'Assigned responder location',
       {
-        responderKind: isBackupResponse || liveResponderLocation ? 'cddrmd' : 'barangay',
+        focusOnIncident: true,
+        allowLiveRouteUpdates: true,
+        responderKind: 'generic',
         showForecastTimeline: isMapFullscreen,
-        pickedUp: Boolean(selectedBackup?.picked_up_at),
       },
     ),
-    [activeRescueReports, evacuationAreas, isBackupResponse, isMapFullscreen, layerVisibility, liveResponderLocation, responderLocation, routeCoordinates, selectedBackup?.picked_up_at, selectedIncidentLocation, selectedReport],
+    [evacuationAreas, isMapFullscreen, layerVisibility],
   );
+
+  useEffect(() => {
+    function handleMapMessage(event: MessageEvent) {
+      if (event.source !== mapFrameRef.current?.contentWindow || event.data?.type !== 'select-rescuer-assignment') return;
+      const reportId = Number(event.data.reportId);
+      if (!Number.isFinite(reportId) || !activeMissionReports.some((report) => report.id === reportId)) return;
+      setRouteCoordinates([]);
+      setRouteDistanceKm(null);
+      setRouteEtaMinutes(null);
+      setSelectedReportId(reportId);
+      setMapFocusedReportId(reportId);
+      setMapFocusMode('route');
+    }
+    window.addEventListener('message', handleMapMessage);
+    return () => window.removeEventListener('message', handleMapMessage);
+  }, [activeMissionReports]);
+
+  useEffect(() => {
+    if (mapFocusedReportId && !activeMissionReports.some((report) => report.id === mapFocusedReportId)) {
+      if (mapFocusMode === 'route') {
+        setMapFocusedReportId(null);
+        setMapFocusMode(null);
+      }
+    }
+  }, [activeMissionReports, mapFocusedReportId, mapFocusMode]);
+
+  const postMapUpdate = useCallback((recenter = false) => {
+    if (!mapReady) return;
+    const hasFocusedReport = mapFocusedReportId != null && selectedReport?.id === mapFocusedReportId;
+    const showFocusedRoute = hasFocusedReport && mapFocusMode === 'route';
+    const showFocusedLocation = hasFocusedReport && mapFocusMode === 'location';
+    mapFrameRef.current?.contentWindow?.postMessage({
+      type: 'rescue-map-update',
+      responderLocation: showFocusedRoute ? responderLocation : null,
+      routeCoordinates: showFocusedRoute ? routeCoordinates : [],
+      incidentLocation: showFocusedLocation
+        ? selectedReportedLocation
+        : showFocusedRoute && !selectedReport?.picked_up_at ? selectedIncidentLocation : null,
+      selectedReportCode: hasFocusedReport ? selectedReport?.report_code || null : null,
+      incidentPoints: [], responderPoints,
+      selectedResponderId: showFocusedRoute ? selectedReport?.assigned_rescuer_id || null : null,
+      responderKind: selectedResponderKind,
+      pickedUp: showFocusedRoute && Boolean(selectedReport?.picked_up_at),
+      recenter: hasFocusedReport && recenter,
+    }, '*');
+  }, [mapFocusedReportId, mapFocusMode, mapReady, responderLocation, responderPoints, routeCoordinates, selectedIncidentLocation, selectedReportedLocation, selectedReport?.assigned_rescuer_id, selectedReport?.id, selectedReport?.picked_up_at, selectedReport?.report_code, selectedResponderKind]);
+
+  const focusKey = mapFocusedReportId && selectedReport?.id === mapFocusedReportId
+    ? mapFocusMode === 'location'
+      ? `location:${selectedReport.id}`
+      : mapFocusMode === 'route' && selectedReport.assigned_rescuer_id
+        ? `route:${selectedReport.id}:${selectedReport.assigned_rescuer_id}:${Boolean(selectedReport.picked_up_at)}`
+        : ''
+    : '';
+  useEffect(() => {
+    if (!mapReady) return;
+    const shouldRecenter = Boolean(focusKey) && lastFocusedRescue.current !== focusKey;
+    postMapUpdate(shouldRecenter);
+    if (shouldRecenter) lastFocusedRescue.current = focusKey;
+    if (!focusKey) lastFocusedRescue.current = '';
+  }, [focusKey, mapReady, postMapUpdate]);
 
   const stats = useMemo(() => {
     const now = new Date();
@@ -501,6 +568,94 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     }
   }
 
+  const selectedReportIsResolved = selectedReport?.status === 'resolved';
+  const incidentDetailContent = selectedReport ? (
+    <>
+      <h3 className={d.monitoring.selectedTitle}>Incident Detail</h3>
+      <div className={d.monitoring.incidentDetailGrid}>
+        <div className={d.monitoring.incidentDetailColumn}>
+          <p><strong>ID:</strong> {selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`}</p>
+          <p><strong>Status:</strong> {formatIncidentStatus(selectedReport.status, Boolean(selectedReport.picked_up_at))}</p>
+          <p><strong>Location:</strong> {selectedReport.location}</p>
+          <p><strong>Reporter:</strong> {`${selectedReport.first_name || ''} ${selectedReport.last_name || ''}`.trim() || selectedReport.email || 'N/A'}</p>
+          {selectedReport.are_people_trapped ? <p><strong>People Trapped:</strong> {selectedReport.estimated_people ?? 'Unknown'}</p> : null}
+          <p><strong>Assigned Team:</strong> {selectedReport.assigned_team || 'N/A'}</p>
+        </div>
+        <div className={d.monitoring.incidentDetailMetaColumn}>
+          <p><strong>Contact:</strong> {selectedReport.contact_number || 'N/A'}</p>
+          <p><strong>Reported:</strong> {new Date(selectedReport.created_at).toLocaleString()}</p>
+          {selectedReport.rescuer_name ? <p><strong>Barangay Rescuer:</strong> {selectedReport.rescuer_name}</p> : null}
+          <p><strong>Evacuation Area:</strong> {selectedReport.evacuation_area_name || 'N/A'}</p>
+          {!selectedReportIsResolved ? <p><strong>Route Distance:</strong> {routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : 'Calculating...'}</p> : null}
+          {!selectedReportIsResolved ? <p><strong>Route ETA:</strong> {routeEtaMinutes ? `${routeEtaMinutes} mins` : 'Calculating...'}</p> : null}
+          <p><strong>Admin Notes:</strong> {selectedReport.admin_notes || 'N/A'}</p>
+          <p><strong>Reporter Notes:</strong> {selectedReport.notes || 'N/A'}</p>
+        </div>
+        {!selectedReportIsResolved ? <div className={[d.monitoring.incidentDetailWide, d.monitoring.incidentDetailColumn].join(' ')}>
+          {selectedBackup ? <p><strong>Backup:</strong> {selectedBackup.assigned_rescuer_id ? `Assigned to ${selectedBackup.rescuer_name || selectedBackup.rescuer_account_id}` : selectedBackup.acknowledged_at ? 'Confirmed - awaiting team assignment' : 'Awaiting Admin confirmation'}</p> : null}
+          <p><strong>Route Origin:</strong> {liveResponderLocation
+            ? 'Assigned CDRRMD Rescuer live location'
+            : isBackupResponse ? 'CDRRMD - Calamba City Hall'
+            : assignedResponderArea ? `${assignedResponderArea.name} (${assignedResponderArea.barangay})` : 'No nearby active evacuation area'}</p>
+          {selectedBackup?.picked_up_at ? <p><strong>Current Destination:</strong> {selectedReport.evacuation_area_name || 'Designated evacuation center'}</p> : null}
+        </div> : null}
+      </div>
+    </>
+  ) : <p className={d.monitoring.validationEmpty}>Select a barangay backup request to view its incident details.</p>;
+
+  const backupValidationContent = (
+    <>
+      <h3 className={d.monitoring.validationTitle}>Backup Request Validation</h3>
+      <div className={d.monitoring.validationScrollWrap}>
+        {!selectedReport || !selectedBackup ? (
+          <p className={d.monitoring.validationEmpty}>Select a barangay backup request to validate.</p>
+        ) : (
+          <div className={d.monitoring.validationStack}>
+            <p className={d.monitoring.validationCurrent}>Barangay: {selectedBackup.barangay_name || '-'}</p>
+            <p className={d.monitoring.validationCurrent}>Request status: {selectedBackup.acknowledged_at ? 'Accepted' : 'Pending'}</p>
+            {selectedBackup.acknowledged_at ? (
+              <div className={d.monitoring.actionBox}>
+                <p className={d.monitoring.validationCurrent}>CDRRMD Backup Assignment</p>
+                {selectedBackup.assigned_rescuer_id ? (
+                  <p className={d.monitoring.assignNote}>
+                    Assigned to {selectedBackup.rescuer_name || selectedBackup.rescuer_account_id}. {selectedBackup.responder_acknowledged_at ? 'Dispatch acknowledged; live response is active.' : 'Awaiting responder acknowledgment.'}
+                  </p>
+                ) : <p className="text-amber-700">The system is assigning the nearest available CDRRMD Rescuer automatically.</p>}
+              </div>
+            ) : null}
+            {!selectedBackup.acknowledged_at ? (
+              <div className={d.monitoring.actionRow}>
+                <button onClick={() => void openBackupAcceptance()} className={d.btn.acceptDisabled} disabled={busy}>Accept</button>
+                <button onClick={() => setActionMode('decline')} className={d.btn.declineDisabled} disabled={busy}>Decline</button>
+              </div>
+            ) : null}
+            {actionMode === 'accept' ? (
+              <div className={d.monitoring.actionBox}>
+                <p className={d.monitoring.assignNote}>Accept this backup request from Barangay {selectedBackup.barangay_name || '-'}?</p>
+                <p className={d.monitoring.assignNote}><strong>User notes:</strong> {assignmentPreview?.reportNotes || selectedBackup.report_notes || 'No notes provided.'}</p>
+                <p className={d.monitoring.assignNote}><strong>Barangay notes:</strong> {assignmentPreview?.barangayNotes || selectedBackup.barangay_notes || 'No additional Barangay notes.'}</p>
+                <p className={d.monitoring.assignNote}><strong>Assigned CDRRMD Rescuer:</strong> {previewLoading ? 'Finding nearest available rescuer…' : assignmentPreview?.rescuer ? `${assignmentPreview.rescuer.rescuerName} (${assignmentPreview.rescuer.rescuerAccountId})${assignmentPreview.rescuer.distanceKm != null ? ` · ${assignmentPreview.rescuer.distanceKm.toFixed(2)} km away` : ''}` : 'No available CDRRMD Rescuer'}</p>
+                <div className={d.monitoring.actionRow}>
+                  <button onClick={() => void validateBackupRequest('accepted')} className={d.btn.acceptDisabled} disabled={busy || previewLoading || !assignmentPreview?.rescuer}>Confirm Accept</button>
+                  <button onClick={() => { setActionMode(null); setAssignmentPreview(null); }} className={d.btn.secondaryXs} disabled={busy}>Cancel</button>
+                </div>
+              </div>
+            ) : null}
+            {actionMode === 'decline' ? (
+              <div className={d.monitoring.actionBox}>
+                <textarea value={declineExplanation} onChange={(event) => setDeclineExplanation(event.target.value)} placeholder="Explain why this backup request is declined" className={d.form.textareaSm} />
+                <div className={d.monitoring.actionRow}>
+                  <button onClick={() => void validateBackupRequest('declined')} className={d.btn.declineDisabled} disabled={busy}>Confirm Decline</button>
+                  <button onClick={() => setActionMode(null)} className={d.btn.secondaryXs} disabled={busy}>Cancel</button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </>
+  );
+
   return (
     <AdminShell
       activeView="monitoring"
@@ -524,9 +679,9 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
 
         <section className={d.monitoring.statsGrid}>
           <article className={[d.monitoring.statCardBase, d.monitoring.statReports].join(' ')}><p className={d.monitoring.statLabel}>Reports Today</p><p className={d.monitoring.statValue}>{stats.totalReportsToday}</p></article>
-          <article className={[d.monitoring.statCardBase, d.monitoring.statPending].join(' ')}><p className={d.monitoring.statLabel}>Pending</p><p className={d.monitoring.statValue}>{stats.pending}</p></article>
-          <article className={[d.monitoring.statCardBase, d.monitoring.statInProgress].join(' ')}><p className={d.monitoring.statLabel}>In Progress</p><p className={d.monitoring.statValue}>{stats.inProgress}</p></article>
-          <article className={[d.monitoring.statCardBase, d.monitoring.statResolved].join(' ')}><p className={d.monitoring.statLabel}>Resolved</p><p className={d.monitoring.statValue}>{stats.resolved}</p></article>
+          <article className={[d.monitoring.statCardBase, d.monitoring.statPending].join(' ')}><p className={d.monitoring.statLabel}>{formatIncidentStatus('pending')}</p><p className={d.monitoring.statValue}>{stats.pending}</p></article>
+          <article className={[d.monitoring.statCardBase, d.monitoring.statInProgress].join(' ')}><p className={d.monitoring.statLabel}>{formatIncidentStatus('in_progress')}</p><p className={d.monitoring.statValue}>{stats.inProgress}</p></article>
+          <article className={[d.monitoring.statCardBase, d.monitoring.statResolved].join(' ')}><p className={d.monitoring.statLabel}>{formatIncidentStatus('resolved')}</p><p className={d.monitoring.statValue}>{stats.resolved}</p></article>
         </section>
 
         {/* Map + rainfall/selected-incident side panel */}
@@ -536,7 +691,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
             className={d.monitoring.mapCard}
             style={isMapFullscreen ? { position: 'fixed', inset: 0, zIndex: 9999, borderRadius: 0, minHeight: '100dvh', display: 'flex', flexDirection: 'column' } : { position: 'relative' }}
           >
-            <iframe title="Monitoring map" srcDoc={mapHtml} className={d.monitoring.mapFrame} />
+            <iframe ref={mapFrameRef} onLoad={() => { setMapReady(true); postMapUpdate(Boolean(focusKey)); }} title="Monitoring map" srcDoc={mapHtml} className={d.monitoring.mapFrame} />
             {!isMapFullscreen ? (
               <button
                 onClick={enterMapFullscreen}
@@ -608,27 +763,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
 
             {selectedReport ? (
             <article className={d.monitoring.selectedCard} style={{ overflowY: 'auto', minWidth: 0 }}>
-              <h3 className={d.monitoring.selectedTitle}>Selected Incident</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.8rem' }}>
-                <p><strong>ID:</strong> {selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`}</p>
-                <p><strong>Type:</strong> {formatType(selectedReport.report_type)}</p>
-                <p><strong>Status:</strong> {formatStatus(selectedReport.status)}</p>
-                <p><strong>Location:</strong> {selectedReport.location}</p>
-                <p><strong>Reporter:</strong> {`${selectedReport.first_name || ''} ${selectedReport.last_name || ''}`.trim() || selectedReport.email || 'N/A'}</p>
-                <p><strong>Contact:</strong> {selectedReport.contact_number || 'N/A'}</p>
-                <p><strong>Reported:</strong> {new Date(selectedReport.created_at).toLocaleString()}</p>
-                <p><strong>Assigned Team:</strong> {selectedReport.assigned_team || '-'}</p>
-                {selectedBackup ? <p><strong>Backup:</strong> {selectedBackup.assigned_rescuer_id ? `Assigned to ${selectedBackup.rescuer_name || selectedBackup.rescuer_account_id}` : selectedBackup.acknowledged_at ? 'Confirmed - awaiting team assignment' : 'Awaiting Admin confirmation'}</p> : null}
-                <p><strong>Evacuation Destination:</strong> {selectedReport.evacuation_area_name || '-'}</p>
-                <p><strong>Route Origin:</strong> {liveResponderLocation
-                  ? 'Assigned CDRRMD Rescuer live location'
-                  : isBackupResponse ? 'CDRRMD - Calamba City Hall'
-                  : assignedResponderArea ? `${assignedResponderArea.name} (${assignedResponderArea.barangay})` : 'No nearby active evacuation area'}</p>
-                {selectedBackup?.picked_up_at ? <p><strong>Current Destination:</strong> {selectedReport.evacuation_area_name || 'Designated evacuation center'}</p> : null}
-                <p><strong>Admin Notes:</strong> {selectedReport.admin_notes || '-'}</p>
-                <p><strong>Distance:</strong> {routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : 'Calculating...'}</p>
-                <p><strong>ETA:</strong> {routeEtaMinutes ? `${routeEtaMinutes} mins` : 'Calculating...'}</p>
-              </div>
+              {backupValidationContent}
             </article>
             ) : null}
           </aside>
@@ -639,13 +774,13 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
             <div className={d.monitoring.incidentsHead}>
               <h3 className={d.monitoring.incidentsTitle}>Barangay Backup Requests</h3>
               <div className={d.monitoring.filterWrap}>
-                {(['active', 'pending', 'accepted', 'in_progress', 'resolved', 'declined'] as const).map((status) => (
+                {INCIDENT_STATUS_FILTERS.map((status) => (
                   <button
                     key={status}
                     onClick={() => setStatusFilter(status)}
                     className={[d.monitoring.filterBase, statusFilter === status ? d.monitoring.filterActive : d.monitoring.filterIdle].join(' ')}
                   >
-                    {formatStatus(status)}
+                    {formatIncidentStatus(status)}
                   </button>
                 ))}
               </div>
@@ -654,22 +789,39 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
               <table className={d.monitoring.incidentReportsTable}>
                 <thead>
                   <tr>
-                    <th>Incident ID</th><th>Type</th><th>Location</th><th>Status</th><th>Team</th><th>Proof</th>
+                    <th>Incident ID</th><th>Location</th><th>Status</th><th>Team</th><th>Proof</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredReports.length === 0 ? (
-                    <tr><td colSpan={6} className={d.table.empty}>No barangay backup requests yet.</td></tr>
+                    <tr><td colSpan={5} className={d.table.empty}>No barangay backup requests yet.</td></tr>
                   ) : filteredReports.map((item) => (
                     <tr
                       key={item.id}
-                      onClick={() => setSelectedReportId(item.id)}
+                      onClick={() => {
+                        setSelectedReportId(item.id);
+                        setMapFocusedReportId(null);
+                        setMapFocusMode(null);
+                      }}
                       className={[d.monitoring.rowBase, selectedReport?.id === item.id ? d.monitoring.rowSelected : null].filter(Boolean).join(' ')}
                     >
                       <td>{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td>
-                      <td>{formatType(item.report_type)}</td>
-                      <td className={d.monitoring.rowLocation}>{item.location}</td>
-                      <td><span className={d.monitoring.statusChip}>{formatStatus(item.status)}</span></td>
+                      <td className={d.monitoring.rowLocation}>
+                        <button
+                          type="button"
+                          title={`Show ${item.location} on the map`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedReportId(item.id);
+                            setMapFocusedReportId(item.id);
+                            setMapFocusMode('location');
+                          }}
+                          className="block w-full truncate text-left font-semibold text-[#1f567d] hover:underline"
+                        >
+                          {item.location}
+                        </button>
+                      </td>
+                      <td><span className={d.monitoring.statusChip}>{formatIncidentStatus(item.status, Boolean(item.picked_up_at))}</span></td>
                       <td>{item.assigned_team || '-'}</td>
                       <td>
                         {item.image_base64 ? (
@@ -684,56 +836,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
           </article>
 
           <article className={d.monitoring.validationCard}>
-            <h3 className={d.monitoring.validationTitle}>Backup Request Validation</h3>
-            <div className={d.monitoring.validationScrollWrap}>
-              {!selectedReport || !selectedBackup ? (
-                <p className={d.monitoring.validationEmpty}>Select a barangay backup request to validate.</p>
-              ) : (
-                <div className={d.monitoring.validationStack}>
-                <p className={d.monitoring.validationCurrent}>Barangay: {selectedBackup.barangay_name || '-'}</p>
-                <p className={d.monitoring.validationCurrent}>Request status: {selectedBackup.acknowledged_at ? 'Accepted' : 'Pending'}</p>
-                {selectedBackup?.acknowledged_at ? (
-                  <div className={d.monitoring.actionBox}>
-                    <p className={d.monitoring.validationCurrent}>CDRRMD Backup Assignment</p>
-                    {selectedBackup.assigned_rescuer_id ? (
-                      <p className={d.monitoring.assignNote}>
-                        Assigned to {selectedBackup.rescuer_name || selectedBackup.rescuer_account_id}. {selectedBackup.responder_acknowledged_at ? 'Dispatch acknowledged; live response is active.' : 'Awaiting responder acknowledgment.'}
-                      </p>
-                    ) : (
-                      <p className="text-amber-700">The system is assigning the nearest available CDRRMD Rescuer automatically.</p>
-                    )}
-                  </div>
-                ) : null}
-                {!selectedBackup.acknowledged_at ? (
-                  <div className={d.monitoring.actionRow}>
-                    <button onClick={() => void openBackupAcceptance()} className={d.btn.acceptDisabled} disabled={busy}>Accept</button>
-                    <button onClick={() => setActionMode('decline')} className={d.btn.declineDisabled} disabled={busy}>Decline</button>
-                  </div>
-                ) : null}
-                {actionMode === 'accept' ? (
-                  <div className={d.monitoring.actionBox}>
-                    <p className={d.monitoring.assignNote}>Accept this backup request from Barangay {selectedBackup.barangay_name || '-'}?</p>
-                    <p className={d.monitoring.assignNote}><strong>User notes:</strong> {assignmentPreview?.reportNotes || selectedBackup.report_notes || 'No notes provided.'}</p>
-                    <p className={d.monitoring.assignNote}><strong>Barangay notes:</strong> {assignmentPreview?.barangayNotes || selectedBackup.barangay_notes || 'No additional Barangay notes.'}</p>
-                    <p className={d.monitoring.assignNote}><strong>Assigned CDRRMD Rescuer:</strong> {previewLoading ? 'Finding nearest available rescuer…' : assignmentPreview?.rescuer ? `${assignmentPreview.rescuer.rescuerName} (${assignmentPreview.rescuer.rescuerAccountId})${assignmentPreview.rescuer.distanceKm != null ? ` · ${assignmentPreview.rescuer.distanceKm.toFixed(2)} km away` : ''}` : 'No available CDRRMD Rescuer'}</p>
-                    <div className={d.monitoring.actionRow}>
-                      <button onClick={() => void validateBackupRequest('accepted')} className={d.btn.acceptDisabled} disabled={busy || previewLoading || !assignmentPreview?.rescuer}>Confirm Accept</button>
-                      <button onClick={() => { setActionMode(null); setAssignmentPreview(null); }} className={d.btn.secondaryXs} disabled={busy}>Cancel</button>
-                    </div>
-                  </div>
-                ) : null}
-                {actionMode === 'decline' ? (
-                  <div className={d.monitoring.actionBox}>
-                    <textarea value={declineExplanation} onChange={(event) => setDeclineExplanation(event.target.value)} placeholder="Explain why this backup request is declined" className={d.form.textareaSm} />
-                    <div className={d.monitoring.actionRow}>
-                      <button onClick={() => void validateBackupRequest('declined')} className={d.btn.declineDisabled} disabled={busy}>Confirm Decline</button>
-                      <button onClick={() => setActionMode(null)} className={d.btn.secondaryXs} disabled={busy}>Cancel</button>
-                    </div>
-                  </div>
-                ) : null}
-                </div>
-              )}
-            </div>
+            {incidentDetailContent}
           </article>
         </section>
 

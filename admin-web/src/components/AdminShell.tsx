@@ -1,4 +1,4 @@
-import { type ChangeEvent, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import cdrrmdLogo from '../assets/cdrrmd-logo.png';
 import { d } from '../adminDesign';
 
@@ -93,17 +93,6 @@ export default function AdminShell({
 }: Props) {
   const isAccountsView = activeView === 'admin' || activeView === 'users' || activeView === 'barangay' || activeView === 'rescuers';
 
-  function handleAccountTypeChange(event: ChangeEvent<HTMLSelectElement>) {
-    const accountType = event.target.value as Extract<ActiveView, 'admin' | 'users' | 'barangay' | 'rescuers'>;
-    const accountPages = {
-      admin: onOpenAdmin,
-      users: onOpenUsers,
-      barangay: onOpenBarangay,
-      rescuers: onOpenRescuers,
-    };
-    accountPages[accountType]();
-  }
-
   function openAccounts() {
     if (!isAccountsView) {
       onOpenAdmin();
@@ -179,32 +168,33 @@ export default function AdminShell({
                 <h1 className={d.shell.h1}>{title}</h1>
                 {subtitle ? <p className={d.shell.subtitle}>{subtitle}</p> : null}
               </div>
-              {isAccountsView || actions ? (
-                <div className={isAccountsView ? d.shell.accountActions : d.shell.actions}>
-                  {isAccountsView ? <div className={d.shell.accountActionSlot}>{actions}</div> : actions}
-                  {isAccountsView ? (
-                    <div className={d.shell.accountTypeControl}>
-                      <select
-                        aria-label="Account type"
-                        title="Account type"
-                        value={activeView}
-                        onChange={handleAccountTypeChange}
-                        className={d.shell.accountTypeSelect}
-                      >
-                        <option value="admin">Admin Accounts</option>
-                        <option value="users">User Accounts</option>
-                        <option value="barangay">Barangay Accounts</option>
-                        <option value="rescuers">Rescuer Accounts</option>
-                      </select>
-                      <svg className={d.shell.accountTypeArrow} viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                        <path d="m6 8 4 4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
+              {actions ? <div className={d.shell.actions}>{actions}</div> : null}
             </div>
           </header>
+
+          {isAccountsView ? (
+            <nav className="flex shrink-0 overflow-x-auto border-b border-slate-200 bg-white px-4 py-3 sm:px-6" role="tablist" aria-label="Account roles">
+              <div className="ml-auto flex min-w-max gap-2">
+                {[
+                  ['admin', 'Admin', onOpenAdmin],
+                  ['users', 'User', onOpenUsers],
+                  ['barangay', 'Barangay', onOpenBarangay],
+                  ['rescuers', 'Rescuer', onOpenRescuers],
+                ].map(([key, label, onClick]) => (
+                  <button
+                    key={String(key)}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeView === key}
+                    onClick={onClick as () => void}
+                    className={`min-w-28 rounded-lg px-5 py-2.5 text-sm font-black transition ${activeView === key ? 'bg-[#1f4e79] text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                  >
+                    {String(label)}
+                  </button>
+                ))}
+              </div>
+            </nav>
+          ) : null}
 
           {children}
         </main>

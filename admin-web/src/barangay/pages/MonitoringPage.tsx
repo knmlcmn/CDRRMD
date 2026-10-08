@@ -7,6 +7,7 @@ import IncidentHistoryModal from '../../components/IncidentHistoryModal';
 import { d } from '../barangayDesign';
 import type { IncidentReport, EvacuationAreaItem } from '../../types';
 import { buildCalambaMapHtml, type Coordinate } from '../../utils/calambaMapHtml';
+import { formatIncidentStatus, INCIDENT_STATUS_FILTERS, type IncidentStatusFilter } from '../../utils/incidentStatus';
 
 type Props = {
   barangayName: string;
@@ -37,6 +38,17 @@ type RainRankingItem = {
   barangayName: string;
   rainIntensityMmPerHour: number;
   rainLevel: 'Light' | 'Moderate' | 'Heavy' | 'Severe';
+};
+
+type BarangayRescuerLocation = {
+  id: number;
+  rescuer_id?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  barangay_name?: string | null;
+  current_latitude?: number | string | null;
+  current_longitude?: number | string | null;
+  is_available?: boolean;
 };
 
 type DestinationType = 'resident' | 'evacuation_center';
@@ -77,16 +89,6 @@ function isRescueEnRouteToEvac(report?: IncidentReport | null) {
   return String(report?.status || '').toLowerCase() === 'resolved';
 }
 
-function formatRescueAwareStatus(report?: IncidentReport | null) {
-  if (isRescueReport(report)) {
-    const status = String(report?.status || 'pending').toLowerCase();
-    if (status === 'pending' || status === 'accepted' || status === 'in_progress') return 'Rescue Requested';
-    if (status === 'resolved') return 'Rescued';
-    if (status === 'declined') return 'Declined';
-  }
-  return formatStatus(report?.status);
-}
-
 function extractCoordinate(value?: string | null, lat?: number | null, lon?: number | null): Coordinate | null {
   if (lat !== null && lat !== undefined && lon !== null && lon !== undefined && Number.isFinite(lat) && Number.isFinite(lon)) {
     return { latitude: Number(lat), longitude: Number(lon) };
@@ -106,24 +108,13 @@ function distanceSquared(a: Coordinate, b: Coordinate) {
   return dLat * dLat + dLon * dLon;
 }
 
-function formatStatus(status?: string | null) {
-  return String(status || 'pending')
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatType(value?: string | null) {
-  return String(value || '-')
-    .replace(/_/g, ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard, onOpenFloodMonitoring, onOpenEvacuationCenter, onOpenAccount, onAuthError, focusReportId = null }: Props) {
   const [reports, setReports] = useState<IncidentReport[]>([]);
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationAreaItem[]>([]);
+  const [barangayRescuers, setBarangayRescuers] = useState<BarangayRescuerLocation[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
+  const [mapFocusedReportId, setMapFocusedReportId] = useState<number | null>(null);
+  const [mapFocusMode, setMapFocusMode] = useState<'location' | 'route' | null>(null);
   const [backupRequest, setBackupRequest] = useState<BackupRequestState | null>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<Coordinate[]>([]);
   const [routeDistanceKm, setRouteDistanceKm] = useState<number | null>(null);
@@ -133,7 +124,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   const [showIncidentHistory, setShowIncidentHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState<'active' | 'pending' | 'accepted' | 'in_progress' | 'resolved' | 'declined'>('active');
+  const [statusFilter, setStatusFilter] = useState<IncidentStatusFilter>('active');
   const [showRainRanking, setShowRainRanking] = useState(false);
   const [topRainBarangays, setTopRainBarangays] = useState<RainRankingItem[]>([]);
   const [rainUpdatedAt, setRainUpdatedAt] = useState<string | null>(null);
@@ -161,9 +152,10 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   const loadData = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const [reportsRes, areasRes] = await Promise.allSettled([
+      const [reportsRes, areasRes, personnelRes] = await Promise.allSettled([
         api.get('/barangay/reports/mine'),
         api.get('/barangay/evacuation-centers'),
+        api.get('/barangay/personnel'),
       ]);
 
       const reportsFailed = reportsRes.status === 'rejected';
@@ -184,6 +176,16 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
         setEvacuationAreas((current) => sameData(current, nextAreas) ? current : nextAreas);
       } else {
         setEvacuationAreas([]);
+      }
+
+      if (personnelRes.status === 'fulfilled') {
+        const nextRescuers = Array.isArray(personnelRes.value.data) ? personnelRes.value.data : [];
+        setBarangayRescuers((current) => sameData(current, nextRescuers) ? current : nextRescuers);
+      } else if (personnelRes.reason?.response?.status === 401) {
+        onAuthError();
+        return;
+      } else {
+        setBarangayRescuers([]);
       }
 
       if (reportsFailed && areasFailed) {
@@ -313,16 +315,16 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   }, [evacuationAreas, selectedReport]);
 
   const responderLocation = useMemo<Coordinate | null>(() => {
-    if (!selectedReport?.responder_acknowledged_at || selectedReport.rescuer_latitude == null || selectedReport.rescuer_longitude == null) return null;
+    if (selectedReport?.rescuer_latitude == null || selectedReport.rescuer_longitude == null) return null;
     const latitude = Number(selectedReport.rescuer_latitude);
     const longitude = Number(selectedReport.rescuer_longitude);
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
-  }, [selectedReport?.rescuer_latitude, selectedReport?.rescuer_longitude, selectedReport?.responder_acknowledged_at]);
+  }, [selectedReport?.rescuer_latitude, selectedReport?.rescuer_longitude]);
 
   // Route the assigned first responder to the resident, then to the center
   // after pickup while retaining the live responder marker.
   const routeDestination = useMemo<RouteDestination | null>(() => {
-    if (!selectedReport?.assigned_rescuer_id || !selectedReport.responder_acknowledged_at || !isRescueReport(selectedReport)) return null;
+    if (!selectedReport?.assigned_rescuer_id || !isRescueReport(selectedReport)) return null;
     if (selectedReport.picked_up_at && assignedEvacuationArea) {
       return {
         location: {
@@ -368,7 +370,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
     }
 
     async function calculateRoute() {
-      if (!routeDestination || !responderLocation) {
+      if (!routeDestination) {
         clearRoute();
         return;
       }
@@ -441,13 +443,41 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
     evacuationAreas,
   ]);
 
-  const incidentPoints = useMemo(() => activeReports
-    .map((r) => ({
-      reportCode: r.report_code || `RPT-${String(r.id).padStart(6, '0')}`,
-      latitude: Number(r.latitude), longitude: Number(r.longitude),
-      status: String(r.status || 'pending'), reportType: String(r.report_type || 'incident'),
-    }))
-    .filter((r) => Number.isFinite(r.latitude) && Number.isFinite(r.longitude)), [activeReports]);
+  const responderPoints = useMemo(() => {
+    const barangayPoints = barangayRescuers.map((rescuer) => {
+      const activeAssignment = activeReports.find((report) => Number(report.assigned_rescuer_id) === Number(rescuer.id));
+      return {
+        id: rescuer.id,
+        rescuerId: rescuer.rescuer_id || null,
+        name: [rescuer.first_name, rescuer.last_name].filter(Boolean).join(' ') || rescuer.rescuer_id || 'Barangay Rescuer',
+        latitude: rescuer.current_latitude == null ? Number.NaN : Number(rescuer.current_latitude),
+        longitude: rescuer.current_longitude == null ? Number.NaN : Number(rescuer.current_longitude),
+        isAvailable: !activeAssignment && rescuer.is_available !== false,
+        activeReportId: activeAssignment?.id || null,
+        activeReportCode: activeAssignment?.report_code || null,
+        barangayName: rescuer.barangay_name || null,
+        kind: 'barangay' as const,
+      };
+    });
+    const cdrrmdPoints = activeReports
+      .filter((report) => report.dispatch_type === 'cddrmd_backup' && report.assigned_rescuer_id)
+      .map((report) => ({
+        id: report.assigned_rescuer_id as number,
+        rescuerId: null,
+        name: report.rescuer_name || 'CDRRMD Rescuer',
+        latitude: report.rescuer_latitude == null ? Number.NaN : Number(report.rescuer_latitude),
+        longitude: report.rescuer_longitude == null ? Number.NaN : Number(report.rescuer_longitude),
+        isAvailable: false,
+        activeReportId: report.id,
+        activeReportCode: report.report_code || null,
+        barangayName: null,
+        kind: 'cddrmd' as const,
+      }));
+    return [...barangayPoints, ...cdrrmdPoints]
+      .filter((rescuer) => Number.isFinite(rescuer.latitude) && Number.isFinite(rescuer.longitude));
+  }, [activeReports, barangayRescuers]);
+
+  const selectedResponderKind = selectedReport?.dispatch_type === 'cddrmd_backup' ? 'cddrmd' : 'barangay';
 
   const mapHtml = useMemo(
     () => buildCalambaMapHtml(
@@ -456,7 +486,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
       [],
       null,
       null,
-      incidentPoints,
+      [],
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/flood-risk/calamba/barangays`,
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/flood-risk/calamba/raster`,
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/flood-risk/calamba/rain-impact`,
@@ -465,20 +495,62 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
       'Barangay Rescuer location',
       { focusOnIncident: true, allowLiveRouteUpdates: true, responderKind: 'barangay', showForecastTimeline: isMapFullscreen, jurisdictionBarangayName: barangayName },
     ),
-    [barangayName, evacuationAreas, incidentPoints, isMapFullscreen, layerVisibility],
+    [barangayName, evacuationAreas, isMapFullscreen, layerVisibility],
   );
+
+  useEffect(() => {
+    function handleMapMessage(event: MessageEvent) {
+      if (event.source !== mapFrameRef.current?.contentWindow || event.data?.type !== 'select-rescuer-assignment') return;
+      const reportId = Number(event.data.reportId);
+      if (!Number.isFinite(reportId) || !activeReports.some((report) => report.id === reportId)) return;
+      setRouteCoordinates([]);
+      setRouteDistanceKm(null);
+      setRouteEtaMinutes(null);
+      setRouteOriginLabel(null);
+      setSelectedReportId(reportId);
+      setMapFocusedReportId(reportId);
+      setMapFocusMode('route');
+    }
+    window.addEventListener('message', handleMapMessage);
+    return () => window.removeEventListener('message', handleMapMessage);
+  }, [activeReports]);
+
+  useEffect(() => {
+    if (mapFocusedReportId && !activeReports.some((report) => report.id === mapFocusedReportId)) {
+      if (mapFocusMode === 'route') {
+        setMapFocusedReportId(null);
+        setMapFocusMode(null);
+      }
+    }
+  }, [activeReports, mapFocusedReportId, mapFocusMode]);
 
   const postMapUpdate = useCallback((recenter = false) => {
     if (!mapReady) return;
+    const hasFocusedReport = mapFocusedReportId != null && selectedReport?.id === mapFocusedReportId;
+    const showFocusedRoute = hasFocusedReport && mapFocusMode === 'route';
+    const showFocusedLocation = hasFocusedReport && mapFocusMode === 'location';
     mapFrameRef.current?.contentWindow?.postMessage({
-      type: 'rescue-map-update', responderLocation, routeCoordinates,
-      incidentLocation: selectedReport?.picked_up_at ? null : (routeDestination?.location || selectedResidentLocation),
-      selectedReportCode: selectedReport?.report_code || null,
-      incidentPoints, pickedUp: Boolean(selectedReport?.picked_up_at), recenter,
+      type: 'rescue-map-update',
+      responderLocation: showFocusedRoute ? responderLocation : null,
+      routeCoordinates: showFocusedRoute ? routeCoordinates : [],
+      incidentLocation: showFocusedLocation
+        ? selectedResidentLocation
+        : showFocusedRoute && !selectedReport?.picked_up_at ? (routeDestination?.location || selectedResidentLocation) : null,
+      selectedReportCode: hasFocusedReport ? selectedReport?.report_code || null : null,
+      incidentPoints: [], responderPoints,
+      selectedResponderId: showFocusedRoute ? selectedReport?.assigned_rescuer_id || null : null,
+      responderKind: selectedResponderKind, pickedUp: showFocusedRoute && Boolean(selectedReport?.picked_up_at),
+      recenter: hasFocusedReport && recenter,
     }, '*');
-  }, [incidentPoints, mapReady, responderLocation, routeCoordinates, routeDestination, selectedReport?.picked_up_at, selectedReport?.report_code, selectedResidentLocation]);
+  }, [mapFocusedReportId, mapFocusMode, mapReady, responderLocation, responderPoints, routeCoordinates, routeDestination, selectedReport?.assigned_rescuer_id, selectedReport?.id, selectedReport?.picked_up_at, selectedReport?.report_code, selectedResidentLocation, selectedResponderKind]);
 
-  const focusKey = selectedReport?.assigned_rescuer_id ? `${selectedReport.id}:${selectedReport.assigned_rescuer_id}:${Boolean(selectedReport.responder_acknowledged_at)}:${Boolean(selectedReport.picked_up_at)}` : '';
+  const focusKey = mapFocusedReportId && selectedReport?.id === mapFocusedReportId
+    ? mapFocusMode === 'location'
+      ? `location:${selectedReport.id}`
+      : mapFocusMode === 'route' && selectedReport.assigned_rescuer_id
+        ? `route:${selectedReport.id}:${selectedReport.assigned_rescuer_id}:${Boolean(selectedReport.picked_up_at)}`
+        : ''
+    : '';
   useEffect(() => {
     if (!mapReady) return;
     const shouldRecenter = Boolean(focusKey) && lastFocusedRescue.current !== focusKey;
@@ -499,6 +571,110 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
       resolved: reports.filter((r) => r.status === 'resolved').length,
     };
   }, [reports]);
+
+  const selectedReportIsResolved = selectedReport?.status === 'resolved';
+  const incidentDetailContent = selectedReport ? (
+    <>
+      <h3 className={d.monitoring.selectedTitle}>Incident Detail</h3>
+      <div className={d.monitoring.incidentDetailGrid}>
+        <div className={d.monitoring.incidentDetailColumn}>
+          <p><strong>ID:</strong> {selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`}</p>
+          <p><strong>Status:</strong> {formatIncidentStatus(selectedReport.status, Boolean(selectedReport.picked_up_at))}</p>
+          <p><strong>Location:</strong> {selectedReport.location}</p>
+          <p><strong>Reporter:</strong> {[selectedReport.first_name, selectedReport.last_name].filter(Boolean).join(' ') || selectedReport.email || 'N/A'}</p>
+          {selectedReport.water_level ? <p><strong>Water Level:</strong> {selectedReport.water_level}</p> : null}
+          {selectedReport.are_people_trapped ? <p><strong>People Trapped:</strong> {selectedReport.estimated_people ?? 'Unknown'}</p> : null}
+          <p><strong>Assigned Team:</strong> {selectedReport.assigned_team || 'N/A'}</p>
+        </div>
+        <div className={d.monitoring.incidentDetailMetaColumn}>
+          <p><strong>Contact:</strong> {selectedReport.contact_number || 'N/A'}</p>
+          <p><strong>Reported:</strong> {new Date(selectedReport.created_at).toLocaleString()}</p>
+          {selectedReport.rescuer_name ? <p><strong>Barangay Rescuer:</strong> {selectedReport.rescuer_name}</p> : null}
+          <p><strong>Evacuation Area:</strong> {selectedReport.evacuation_area_name || assignedEvacuationArea?.name || 'N/A'}</p>
+          {!selectedReportIsResolved ? <p><strong>Route Distance:</strong> {routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : isRescueAwaitingPickup(selectedReport) ? 'Calculating...' : 'N/A'}</p> : null}
+          {!selectedReportIsResolved ? <p><strong>Route ETA:</strong> {routeEtaMinutes ? `${routeEtaMinutes} mins` : isRescueAwaitingPickup(selectedReport) ? 'Calculating...' : 'N/A'}</p> : null}
+          <p><strong>Admin Notes:</strong> {selectedReport.admin_notes || 'N/A'}</p>
+          <p><strong>Reporter Notes:</strong> {selectedReport.notes || 'N/A'}</p>
+          {backupRequest?.assigned_rescuer_id ? <p><strong>CDRRMD Backup:</strong> {backupRequest.rescuer_name || backupRequest.rescuer_account_id || 'Assigned team'}</p> : null}
+          {selectedReport.image_base64 ? (
+            <button onClick={() => setPreviewImage(selectedReport.image_base64 || null)} className={d.btn.secondaryXs} style={{ alignSelf: 'flex-start', marginTop: 4 }}>
+              View Proof Photo
+            </button>
+          ) : null}
+        </div>
+        <div className={[d.monitoring.incidentDetailWide, d.monitoring.incidentDetailColumn].join(' ')}>
+          {isRescueAwaitingPickup(selectedReport) && selectedReport.assigned_rescuer_id ? (
+            <>
+              <div
+                style={{
+                  marginTop: 4,
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  fontSize: '1rem',
+                  fontWeight: 700,
+                  background: isRescueAwaitingPickup(selectedReport) ? '#fef2f2' : '#f0fdf4',
+                  border: `1px solid ${isRescueAwaitingPickup(selectedReport) ? '#fecaca' : '#bbf7d0'}`,
+                  color: isRescueAwaitingPickup(selectedReport) ? '#b91c1c' : '#15803d',
+                }}
+              >
+              🚨 Resident evacuation route
+              <div style={{ marginTop: 4, fontWeight: 600 }}>
+                Current destination: {activeRouteDestination?.label || 'Calculating…'}
+              </div>
+              </div>
+              <p style={{ fontSize: '0.95rem', lineHeight: 1.5, color: '#64748b' }}>
+                {routeOriginLabel
+                  ? `Route: ${routeOriginLabel} to ${routeDestination?.label || 'assigned evacuation center'}.`
+                  : 'Calculating the resident-to-evacuation-center route…'}
+              </p>
+            </>
+          ) : null}
+        </div>
+      </div>
+      {!selectedReportIsResolved ? <div style={{ marginTop: 12, padding: '10px 12px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd', fontSize: '0.95rem', lineHeight: 1.5, color: '#0369a1' }}>
+        <strong>ℹ️ Barangay review view.</strong> Accept or decline pending reports from this barangay.
+      </div> : null}
+    </>
+  ) : <p className={d.monitoring.validationEmpty}>Select a report to view its incident details.</p>;
+
+  const reportValidationContent = (
+    <>
+      <h3 className={d.monitoring.validationTitle}>Report Validation</h3>
+      <div className={d.monitoring.validationScrollWrap}>
+        {!selectedReport ? (
+          <p className={d.monitoring.validationEmpty}>Select a report to review.</p>
+        ) : (
+          <div className={d.monitoring.validationStack}>
+            <p className={d.monitoring.validationCurrent}>Current status: {formatIncidentStatus(selectedReport.status, Boolean(selectedReport.picked_up_at))}</p>
+            {isRescueReport(selectedReport) && (selectedReport.evacuation_area_name || assignedEvacuationArea?.name) ? (
+              <p className={d.monitoring.assignNote}>
+                {selectedReport.picked_up_at || isRescueEnRouteToEvac(selectedReport) ? 'Evacuation center (current destination): ' : 'Designated evacuation center: '}
+                {selectedReport.evacuation_area_name || assignedEvacuationArea?.name}
+              </p>
+            ) : null}
+            {selectedReport.status === 'pending' ? (
+              <p className={d.monitoring.assignNote}>Awaiting a decision from the New Resident Rescue Request notification.</p>
+            ) : null}
+            {isRescueReport(selectedReport)
+              && ['accepted', 'in_progress'].includes(selectedReport.status)
+              && Boolean(selectedReport.assigned_rescuer_id)
+              && !selectedReport.picked_up_at ? (
+              <div className={d.monitoring.actionBox}>
+                <p style={{ fontSize: '0.75rem', color: '#334155', margin: 0 }}>
+                  {selectedReport.responder_acknowledged_at ? 'Dispatch acknowledged. GPS proximity will change the report to In Progress when the responder reaches the resident.' : 'The nearest available Barangay Rescuer was assigned automatically and must acknowledge the dispatch before routing begins.'}
+                </p>
+              </div>
+            ) : null}
+            {backupRequest?.report_id === selectedReport.id
+              && backupRequest.acknowledged_at
+              && !backupRequest.assigned_rescuer_id ? (
+                <p className={d.monitoring.assignNote}>Admin confirmed the backup request. Continue responding while a CDRRMD Rescuer team is assigned.</p>
+              ) : null}
+          </div>
+        )}
+      </div>
+    </>
+  );
 
   return (
     <BarangayShell
@@ -526,9 +702,9 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
         {/* Stats */}
         <section className={d.monitoring.statsGrid}>
           <article className={[d.monitoring.statCardBase, d.monitoring.statReports].join(' ')}><p className={d.monitoring.statLabel}>Reports Today</p><p className={d.monitoring.statValue}>{stats.totalToday}</p></article>
-          <article className={[d.monitoring.statCardBase, d.monitoring.statPending].join(' ')}><p className={d.monitoring.statLabel}>Pending</p><p className={d.monitoring.statValue}>{stats.pending}</p></article>
-          <article className={[d.monitoring.statCardBase, d.monitoring.statInProgress].join(' ')}><p className={d.monitoring.statLabel}>In Progress</p><p className={d.monitoring.statValue}>{stats.inProgress}</p></article>
-          <article className={[d.monitoring.statCardBase, d.monitoring.statResolved].join(' ')}><p className={d.monitoring.statLabel}>Resolved</p><p className={d.monitoring.statValue}>{stats.resolved}</p></article>
+          <article className={[d.monitoring.statCardBase, d.monitoring.statPending].join(' ')}><p className={d.monitoring.statLabel}>{formatIncidentStatus('pending')}</p><p className={d.monitoring.statValue}>{stats.pending}</p></article>
+          <article className={[d.monitoring.statCardBase, d.monitoring.statInProgress].join(' ')}><p className={d.monitoring.statLabel}>{formatIncidentStatus('in_progress')}</p><p className={d.monitoring.statValue}>{stats.inProgress}</p></article>
+          <article className={[d.monitoring.statCardBase, d.monitoring.statResolved].join(' ')}><p className={d.monitoring.statLabel}>{formatIncidentStatus('resolved')}</p><p className={d.monitoring.statValue}>{stats.resolved}</p></article>
         </section>
 
         {/* Map + selected report */}
@@ -596,65 +772,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
 
           {selectedReport ? (
             <article className={d.monitoring.selectedCard} style={{ overflowY: 'auto', minWidth: 0 }}>
-              <h3 className={d.monitoring.selectedTitle}>Incident Detail</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: '0.8rem' }}>
-                <p><strong>ID:</strong> {selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`}</p>
-                <p><strong>Type:</strong> {formatType(selectedReport.report_type)}</p>
-                <p><strong>Incident:</strong> {formatType(selectedReport.incident_type)}</p>
-                <p><strong>Status:</strong> {selectedReport.picked_up_at ? 'Transporting to Evacuation Center' : formatRescueAwareStatus(selectedReport)}</p>
-                <p><strong>Location:</strong> {selectedReport.location}</p>
-                <p><strong>Reporter:</strong> {[selectedReport.first_name, selectedReport.last_name].filter(Boolean).join(' ') || selectedReport.email || 'N/A'}</p>
-                <p><strong>Contact:</strong> {selectedReport.contact_number || 'N/A'}</p>
-                <p><strong>Reported:</strong> {new Date(selectedReport.created_at).toLocaleString()}</p>
-                {isRescueAwaitingPickup(selectedReport) && selectedReport.assigned_rescuer_id ? (
-                  <>
-                    <div
-                      style={{
-                        marginTop: 4,
-                        padding: '8px 10px',
-                        borderRadius: 8,
-                        fontSize: '0.78rem',
-                        fontWeight: 700,
-                        background: isRescueAwaitingPickup(selectedReport) ? '#fef2f2' : '#f0fdf4',
-                        border: `1px solid ${isRescueAwaitingPickup(selectedReport) ? '#fecaca' : '#bbf7d0'}`,
-                        color: isRescueAwaitingPickup(selectedReport) ? '#b91c1c' : '#15803d',
-                      }}
-                    >
-                      🚨 Resident evacuation route
-                      <div style={{ marginTop: 4, fontWeight: 600 }}>
-                        Current destination: {activeRouteDestination?.label || 'Calculating…'}
-                      </div>
-                    </div>
-                    <p><strong>Barangay Rescuer:</strong> {selectedReport.rescuer_name || 'Assigned responder'}</p>
-                    <p><strong>Evacuation Area:</strong> {selectedReport.evacuation_area_name || assignedEvacuationArea?.name || 'N/A'}</p>
-                    <p><strong>Route Distance:</strong> {routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : 'Calculating...'}</p>
-                    <p><strong>Route ETA:</strong> {routeEtaMinutes ? `${routeEtaMinutes} mins` : 'Calculating...'}</p>
-                    <p style={{ fontSize: '0.72rem', color: '#64748b' }}>
-                      {routeOriginLabel
-                        ? `Route: ${routeOriginLabel} to ${routeDestination?.label || 'assigned evacuation center'}.`
-                        : 'Calculating the resident-to-evacuation-center route…'}
-                    </p>
-                  </>
-                ) : null}
-                {selectedReport.water_level ? <p><strong>Water Level:</strong> {selectedReport.water_level}</p> : null}
-                {selectedReport.are_people_trapped ? <p><strong>People Trapped:</strong> {selectedReport.estimated_people ?? 'Unknown'}</p> : null}
-                {selectedReport.assigned_team ? <p><strong>Assigned Team:</strong> {selectedReport.assigned_team}</p> : null}
-                {backupRequest?.assigned_rescuer_id ? <p><strong>CDRRMD Backup:</strong> {backupRequest.rescuer_name || backupRequest.rescuer_account_id || 'Assigned team'}</p> : null}
-                {selectedReport.admin_notes ? <p><strong>Admin Notes:</strong> {selectedReport.admin_notes}</p> : null}
-                {selectedReport.notes ? <p><strong>Reporter Notes:</strong> {selectedReport.notes}</p> : null}
-                {selectedReport.image_base64 ? (
-                  <button
-                    onClick={() => setPreviewImage(selectedReport.image_base64 || null)}
-                    className={d.btn.secondaryXs}
-                    style={{ alignSelf: 'flex-start', marginTop: 4 }}
-                  >
-                    View Proof Photo
-                  </button>
-                ) : null}
-              </div>
-              <div style={{ marginTop: 12, padding: '8px 10px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd', fontSize: '0.75rem', color: '#0369a1' }}>
-                <strong>ℹ️ Barangay review view.</strong> Accept or decline pending reports from this barangay.
-              </div>
+              {reportValidationContent}
             </article>
           ) : null}
           </div>
@@ -671,13 +789,13 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
                 </span>
               </h3>
               <div className={d.monitoring.filterWrap}>
-                {(['active', 'pending', 'accepted', 'in_progress', 'resolved', 'declined'] as const).map((status) => (
+                {INCIDENT_STATUS_FILTERS.map((status) => (
                   <button
                     key={status}
                     onClick={() => setStatusFilter(status)}
                     className={[d.monitoring.filterBase, statusFilter === status ? d.monitoring.filterActive : d.monitoring.filterIdle].join(' ')}
                   >
-                    {formatStatus(status)}
+                    {formatIncidentStatus(status)}
                   </button>
                 ))}
               </div>
@@ -687,8 +805,6 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
                 <thead>
                   <tr>
                     <th>Incident ID</th>
-                    <th>Type</th>
-                    <th>Incident</th>
                     <th>Location</th>
                     <th>Status</th>
                     <th>Reported</th>
@@ -697,20 +813,36 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={7} className={d.table.empty}>Loading incidents…</td></tr>
+                    <tr><td colSpan={5} className={d.table.empty}>Loading incidents…</td></tr>
                   ) : filteredReports.length === 0 ? (
-                    <tr><td colSpan={7} className={d.table.empty}>No incidents in this barangay for the selected filter.</td></tr>
+                    <tr><td colSpan={5} className={d.table.empty}>No incidents in this barangay for the selected filter.</td></tr>
                   ) : filteredReports.map((item) => (
                     <tr
                       key={item.id}
-                      onClick={() => setSelectedReportId(item.id)}
+                      onClick={() => {
+                        setSelectedReportId(item.id);
+                        setMapFocusedReportId(null);
+                        setMapFocusMode(null);
+                      }}
                       className={[d.monitoring.rowBase, selectedReport?.id === item.id ? d.monitoring.rowSelected : ''].join(' ')}
                     >
                       <td className="font-mono text-xs">{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td>
-                      <td>{formatType(item.report_type)}</td>
-                      <td>{formatType(item.incident_type)}</td>
-                      <td className={d.monitoring.rowLocation}>{item.location}</td>
-                      <td><span className={d.monitoring.statusChip}>{formatRescueAwareStatus(item)}</span></td>
+                      <td className={d.monitoring.rowLocation}>
+                        <button
+                          type="button"
+                          title={`Show ${item.location} on the map`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedReportId(item.id);
+                            setMapFocusedReportId(item.id);
+                            setMapFocusMode('location');
+                          }}
+                          className="block w-full truncate text-left font-semibold text-[#1f567d] hover:underline"
+                        >
+                          {item.location}
+                        </button>
+                      </td>
+                      <td><span className={d.monitoring.statusChip}>{formatIncidentStatus(item.status, Boolean(item.picked_up_at))}</span></td>
                       <td style={{ fontSize: '0.75rem', color: '#64748b' }}>{new Date(item.created_at).toLocaleDateString()}</td>
                       <td>
                         {item.image_base64 ? (
@@ -728,41 +860,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
           </article>
 
           <article className={d.monitoring.validationCard}>
-            <h3 className={d.monitoring.validationTitle}>Report Validation</h3>
-            <div className={d.monitoring.validationScrollWrap}>
-              {!selectedReport ? (
-                <p className={d.monitoring.validationEmpty}>Select a report to review.</p>
-              ) : (
-                <div className={d.monitoring.validationStack}>
-                <p className={d.monitoring.validationCurrent}>Current status: {selectedReport.picked_up_at ? 'Transporting to Evacuation Center' : formatRescueAwareStatus(selectedReport)}</p>
-                <p className={d.monitoring.validationCurrent}>Report type: {formatType(selectedReport.report_type)}</p>
-                {isRescueReport(selectedReport) && (selectedReport.evacuation_area_name || assignedEvacuationArea?.name) ? (
-                  <p className={d.monitoring.assignNote}>
-                    {selectedReport.picked_up_at || isRescueEnRouteToEvac(selectedReport) ? 'Evacuation center (current destination): ' : 'Designated evacuation center: '}
-                    {selectedReport.evacuation_area_name || assignedEvacuationArea?.name}
-                  </p>
-                ) : null}
-                {selectedReport.status === 'pending' ? (
-                  <p className={d.monitoring.assignNote}>Awaiting a decision from the New Resident Rescue Request notification.</p>
-                ) : null}
-                {isRescueReport(selectedReport)
-                  && ['accepted', 'in_progress'].includes(selectedReport.status)
-                  && Boolean(selectedReport.assigned_rescuer_id)
-                  && !selectedReport.picked_up_at ? (
-                  <div className={d.monitoring.actionBox}>
-                    <p style={{ fontSize: '0.75rem', color: '#334155', margin: 0 }}>
-                      {selectedReport.responder_acknowledged_at ? 'Dispatch acknowledged. GPS proximity will change the report to In Progress when the responder reaches the resident.' : 'The nearest available Barangay Rescuer was assigned automatically and must acknowledge the dispatch before routing begins.'}
-                    </p>
-                  </div>
-                ) : null}
-                {backupRequest?.report_id === selectedReport.id
-                  && backupRequest.acknowledged_at
-                  && !backupRequest.assigned_rescuer_id ? (
-                    <p className={d.monitoring.assignNote}>Admin confirmed the backup request. Continue responding while a CDRRMD Rescuer team is assigned.</p>
-                  ) : null}
-                </div>
-              )}
-            </div>
+            {incidentDetailContent}
           </article>
         </section>
 

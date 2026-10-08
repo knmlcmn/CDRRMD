@@ -1,21 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/apiClient';
+import { fetchRoadRoute } from '../services/roadRouting';
 import AdminShell from '../components/AdminShell';
 import { d } from '../adminDesign';
 import type {
   DashboardIncident,
   DashboardSummary,
   EvacuationAreaItem,
+  MonitoringReport,
+  RescuerAccount,
 } from '../types';
 import { buildCalambaMapHtml } from '../utils/calambaMapHtml';
 import { loadWaterLevelSensors, type WaterLevelSensor } from '../services/waterLevelSensors';
 import WaterLevelAlert, { type WaterLevelNoticeKind } from '../components/WaterLevelAlert';
+import { formatIncidentStatus } from '../utils/incidentStatus';
 
 type RainRankingItem = {
   barangayName: string;
   rainIntensityMmPerHour: number;
   rainLevel: 'Light' | 'Moderate' | 'Heavy' | 'Severe';
 };
+type Coordinate = { latitude: number; longitude: number };
+type CityRescuerLocation = RescuerAccount & { kind: 'barangay' | 'cddrmd' };
 
 type Props = {
   onLogout: () => void;
@@ -54,7 +60,6 @@ function waterLevelRowColor(sensor: WaterLevelSensor) {
 
 function buildMapHtml(
   areas: EvacuationAreaItem[],
-  incidents: DashboardIncident[],
   barangayBoundaryGeoJsonUrl: string,
   rainImpactUrl: string,
   windDataUrl: string,
@@ -66,16 +71,7 @@ function buildMapHtml(
     [],
     null,
     null,
-    incidents
-      .filter((item) => ACTIVE_INCIDENT_STATUSES.has(String(item.status || '').toLowerCase()))
-      .map((item) => ({
-        reportCode: item.caseId || 'Incident',
-        latitude: Number(item.latitude),
-        longitude: Number(item.longitude),
-        status: String(item.status || 'pending'),
-        reportType: String(item.type || 'incident'),
-      }))
-      .filter((item) => Number.isFinite(item.latitude) && Number.isFinite(item.longitude)),
+    [],
     barangayBoundaryGeoJsonUrl,
     '',
     rainImpactUrl,
@@ -91,14 +87,18 @@ function buildMapHtml(
       humidityOverlay: false,
       windOverlay: false,
     },
-    'Closest responder base',
-    { showForecastTimeline },
+    'Assigned responder location',
+    { focusOnIncident: true, allowLiveRouteUpdates: true, responderKind: 'generic', showForecastTimeline },
   );
 }
 
 export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenEvacuationAreas, onOpenMonitoring, onOpenFloodMonitoring, onOpenPostUpdates, onAuthError }: Props) {
   const [areas, setAreas] = useState<EvacuationAreaItem[]>([]);
   const [incidents, setIncidents] = useState<DashboardIncident[]>([]);
+  const [operationalReports, setOperationalReports] = useState<MonitoringReport[]>([]);
+  const [cityRescuers, setCityRescuers] = useState<CityRescuerLocation[]>([]);
+  const [mapFocusedReportId, setMapFocusedReportId] = useState<number | null>(null);
+  const [routeCoordinates, setRouteCoordinates] = useState<Coordinate[]>([]);
   const [waterLevelSensors, setWaterLevelSensors] = useState<WaterLevelSensor[]>([]);
   const [waterLevelAlerts, setWaterLevelAlerts] = useState<WaterLevelSensor[]>([]);
   const [showWaterLevelAlert, setShowWaterLevelAlert] = useState(false);
@@ -119,8 +119,9 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const mapWrapRef = useRef<HTMLDivElement | null>(null);
 
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
   const mapFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const lastFocusedRescue = useRef('');
+  const [mapReady, setMapReady] = useState(false);
 
   const loadFeed = useCallback(async (showLoading = true) => {
     if (showLoading) {
@@ -129,14 +130,22 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     setError(null);
 
     try {
-      const [areasResponse, summaryResponse] = await Promise.all([
+      const [areasResponse, summaryResponse, reportsResponse, cdrrmdResponse, barangayResponderResponse] = await Promise.all([
         api.get('/content/evacuation-areas'),
         api.get('/content/dashboard-summary'),
+        api.get('/reports'),
+        api.get('/rescuers/accounts', { params: { role: 'rescuer' } }),
+        api.get('/rescuers/accounts', { params: { role: 'barangay_rescuer' } }),
       ]);
 
       setAreas(areasResponse.data);
       setCards(summaryResponse.data.cards);
       setIncidents(summaryResponse.data.incidents);
+      setOperationalReports(Array.isArray(reportsResponse.data) ? reportsResponse.data : []);
+      setCityRescuers([
+        ...(Array.isArray(cdrrmdResponse.data) ? cdrrmdResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'cddrmd' as const })),
+        ...(Array.isArray(barangayResponderResponse.data) ? barangayResponderResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'barangay' as const })),
+      ]);
     } catch (err: unknown) {
       const apiError = err as { response?: { status?: number; data?: { message?: string } } };
       if (apiError.response?.status === 401) {
@@ -299,17 +308,120 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     }
   }
 
+  const activeMissionReports = useMemo(() => operationalReports
+    .filter((report) => ACTIVE_INCIDENT_STATUSES.has(String(report.status || '').toLowerCase()) && Boolean(report.assigned_rescuer_id)), [operationalReports]);
+
+  const selectedMapReport = useMemo(() => activeMissionReports
+    .find((report) => report.id === mapFocusedReportId) || null, [activeMissionReports, mapFocusedReportId]);
+
+  const responderLocation = useMemo<Coordinate | null>(() => {
+    const latitude = Number(selectedMapReport?.rescuer_latitude);
+    const longitude = Number(selectedMapReport?.rescuer_longitude);
+    return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
+  }, [selectedMapReport?.rescuer_latitude, selectedMapReport?.rescuer_longitude]);
+
+  const residentLocation = useMemo<Coordinate | null>(() => {
+    const latitude = Number(selectedMapReport?.latitude);
+    const longitude = Number(selectedMapReport?.longitude);
+    return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
+  }, [selectedMapReport?.latitude, selectedMapReport?.longitude]);
+
+  const routeDestination = useMemo<Coordinate | null>(() => {
+    if (!selectedMapReport) return null;
+    if (selectedMapReport.picked_up_at) {
+      const latitude = Number(selectedMapReport.evacuation_latitude);
+      const longitude = Number(selectedMapReport.evacuation_longitude);
+      if (Number.isFinite(latitude) && Number.isFinite(longitude)) return { latitude, longitude };
+    }
+    return residentLocation;
+  }, [residentLocation, selectedMapReport]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!responderLocation || !routeDestination) {
+      setRouteCoordinates([]);
+      return undefined;
+    }
+    fetchRoadRoute(responderLocation, routeDestination)
+      .then((route) => { if (!cancelled) setRouteCoordinates(route.coordinates); })
+      .catch(() => { if (!cancelled) setRouteCoordinates([responderLocation, routeDestination]); });
+    return () => { cancelled = true; };
+  }, [responderLocation, routeDestination]);
+
+  const responderPoints = useMemo(() => cityRescuers
+    .map((rescuer) => {
+      const activeAssignment = activeMissionReports.find((report) => Number(report.assigned_rescuer_id) === Number(rescuer.id));
+      return {
+        id: rescuer.id,
+        rescuerId: rescuer.rescuer_id || null,
+        name: [rescuer.first_name, rescuer.last_name].filter(Boolean).join(' ') || rescuer.rescuer_id || 'Rescuer',
+        latitude: rescuer.current_latitude == null ? Number.NaN : Number(rescuer.current_latitude),
+        longitude: rescuer.current_longitude == null ? Number.NaN : Number(rescuer.current_longitude),
+        isAvailable: !activeAssignment && rescuer.is_available !== false,
+        activeReportId: activeAssignment?.id || null,
+        activeReportCode: activeAssignment?.report_code || null,
+        barangayName: rescuer.barangay_name || null,
+        kind: rescuer.kind,
+      };
+    })
+    .filter((rescuer) => Number.isFinite(rescuer.latitude) && Number.isFinite(rescuer.longitude)), [activeMissionReports, cityRescuers]);
+
   const mapHtml = useMemo(
     () => buildMapHtml(
       areas,
-      incidents,
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/flood-risk/calamba/barangays`,
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/flood-risk/calamba/rain-impact`,
       `${String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '')}/weather/wind-field`,
       isMapFullscreen,
     ),
-    [areas, incidents, isMapFullscreen],
+    [areas, isMapFullscreen],
   );
+
+  useEffect(() => {
+    function handleMapMessage(event: MessageEvent) {
+      if (event.source !== mapFrameRef.current?.contentWindow || event.data?.type !== 'select-rescuer-assignment') return;
+      const reportId = Number(event.data.reportId);
+      if (!Number.isFinite(reportId) || !activeMissionReports.some((report) => report.id === reportId)) return;
+      setRouteCoordinates([]);
+      setMapFocusedReportId(reportId);
+    }
+    window.addEventListener('message', handleMapMessage);
+    return () => window.removeEventListener('message', handleMapMessage);
+  }, [activeMissionReports]);
+
+  useEffect(() => {
+    if (mapFocusedReportId && !activeMissionReports.some((report) => report.id === mapFocusedReportId)) {
+      setMapFocusedReportId(null);
+    }
+  }, [activeMissionReports, mapFocusedReportId]);
+
+  const postMapUpdate = useCallback((recenter = false) => {
+    if (!mapReady) return;
+    const responderKind = selectedMapReport?.dispatch_type === 'cddrmd_backup' ? 'cddrmd' : 'barangay';
+    mapFrameRef.current?.contentWindow?.postMessage({
+      type: 'rescue-map-update',
+      responderLocation,
+      routeCoordinates,
+      incidentLocation: selectedMapReport?.picked_up_at ? null : residentLocation,
+      selectedReportCode: selectedMapReport?.report_code || null,
+      incidentPoints: [], responderPoints,
+      selectedResponderId: selectedMapReport?.assigned_rescuer_id || null,
+      responderKind,
+      pickedUp: Boolean(selectedMapReport?.picked_up_at),
+      recenter: Boolean(selectedMapReport) && recenter,
+    }, '*');
+  }, [mapReady, residentLocation, responderLocation, responderPoints, routeCoordinates, selectedMapReport]);
+
+  const focusKey = selectedMapReport
+    ? `${selectedMapReport.id}:${selectedMapReport.assigned_rescuer_id}:${Boolean(selectedMapReport.picked_up_at)}`
+    : '';
+  useEffect(() => {
+    if (!mapReady) return;
+    const shouldRecenter = Boolean(focusKey) && lastFocusedRescue.current !== focusKey;
+    postMapUpdate(shouldRecenter);
+    if (shouldRecenter) lastFocusedRescue.current = focusKey;
+    if (!focusKey) lastFocusedRescue.current = '';
+  }, [focusKey, mapReady, postMapUpdate]);
 
   const statusRows = useMemo(
     () =>
@@ -411,7 +523,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                       <th>Location</th>
                       <th className={d.dashboard.thHiddenMd}>Requested By</th>
                       <th>Status</th>
-                      <th>Proof</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -423,20 +534,8 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                         <td>
                           {row.status ? (
                             <span className={d.dashboard.statusChip}>
-                              {titleCase(row.status)}
+                              {formatIncidentStatus(row.status)}
                             </span>
-                          ) : (
-                            <span className={d.dashboard.muted}>-</span>
-                          )}
-                        </td>
-                        <td>
-                          {row.imageBase64 ? (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setPreviewImage(row.imageBase64 || null); }}
-                              className={d.btn.secondaryXs}
-                            >
-                              View
-                            </button>
                           ) : (
                             <span className={d.dashboard.muted}>-</span>
                           )}
@@ -445,7 +544,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                     ))}
                     {incidents.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className={d.table.empty}>No incident reports yet.</td>
+                        <td colSpan={4} className={d.table.empty}>No incident reports yet.</td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -483,7 +582,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                 style={isMapFullscreen ? { position: 'fixed', inset: 0, zIndex: 9999, borderRadius: 0, minHeight: '100dvh' } : { position: 'relative' }}
               >
                 <div className="shrink-0 border-b border-slate-200 px-3 py-2"><h2 className="font-black text-[#173750]">Operations Map</h2><p className="text-xs text-slate-500">Active incidents and evacuation centers across Calamba City</p></div>
-                <iframe ref={mapFrameRef} title="Evacuation map" srcDoc={mapHtml} className={d.dashboard.mapFrame} />
+                <iframe ref={mapFrameRef} onLoad={() => { setMapReady(true); postMapUpdate(Boolean(focusKey)); }} title="Operations map" srcDoc={mapHtml} className={d.dashboard.mapFrame} />
                 {!isMapFullscreen ? (
                   <button
                     onClick={enterMapFullscreen}
@@ -584,22 +683,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
             <span className={d.dashboard.postUpdateFabLabel}>Post Update</span>
           </button>
 
-          {previewImage ? (
-            <div className={d.modal.overlay}>
-              <div className={d.modal.card}>
-                <div className={d.modal.header}>
-                  <h4 className={d.modal.title}>Submitted Proof Image</h4>
-                  <button
-                    onClick={() => setPreviewImage(null)}
-                    className={d.modal.close}
-                  >
-                    Close
-                  </button>
-                </div>
-                <img src={previewImage} alt="Submitted proof" className={d.modal.image} />
-              </div>
-            </div>
-          ) : null}
       </div>
     </AdminShell>
   );

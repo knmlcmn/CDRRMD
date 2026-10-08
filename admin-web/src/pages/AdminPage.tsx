@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../services/apiClient';
 import AdminShell from '../components/AdminShell';
+import AddAccountDialog, { type AccountRole } from '../components/AddAccountDialog';
 import { d } from '../adminDesign';
 import type { AdminAccount } from '../types';
 
@@ -100,7 +101,7 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
 
   const isEdit = form.id !== null;
 
-  async function loadAdmins() {
+  const loadAdmins = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -117,11 +118,11 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
     } finally {
       setLoading(false);
     }
-  }
+  }, [onAuthError]);
 
   useEffect(() => {
     loadAdmins();
-  }, []);
+  }, [loadAdmins]);
 
   async function loadArchivedAdmins() {
     setArchiveBusy(true);
@@ -145,11 +146,6 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
     loadArchivedAdmins().catch(() => {});
   }
 
-  function openAddForm() {
-    setForm(EMPTY_FORM);
-    setIsFormOpen(true);
-  }
-
   function openEditForm(admin: AdminAccount) {
     setForm(toForm(admin));
     setIsFormOpen(true);
@@ -171,11 +167,8 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
         contactNumber: form.contactNumber,
       };
 
-      if (isEdit && form.id !== null) {
-        await api.put(`/admins/${form.id}`, payload);
-      } else {
-        await api.post('/admins', payload);
-      }
+      if (form.id === null) return;
+      await api.put(`/admins/${form.id}`, payload);
 
       setIsFormOpen(false);
       setForm(EMPTY_FORM);
@@ -278,10 +271,17 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
     });
   }, [admins, searchTerm]);
 
+  async function handleCreated(role: AccountRole) {
+    if (role === 'admin') return loadAdmins();
+    if (role === 'user') return onOpenUsers();
+    if (role === 'barangay') return onOpenBarangay();
+    return onOpenRescuers();
+  }
+
   return (
     <AdminShell
       activeView="admin"
-      title="Admin Account Management"
+      title="Account Management"
       noMainScroll
       onLogout={onLogout}
       onOpenDashboard={onOpenDashboard}
@@ -293,7 +293,6 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationAreas={onOpenEvacuationAreas}
       onOpenPostUpdates={onOpenPostUpdates}
-      actions={<button onClick={openAddForm} className={d.admin.actionAdd}>Add Admin Account</button>}
     >
       <div className={d.admin.root}>
             <div className={d.admin.headerRow}>
@@ -313,6 +312,7 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
                   placeholder="Search Admin Account"
                   className={d.admin.search}
                 />
+                <AddAccountDialog initialRole="admin" onCreated={handleCreated} onAuthError={onAuthError} />
               </div>
             </div>
 
@@ -321,7 +321,7 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
             {isFormOpen ? (
               <form onSubmit={onSubmitForm} className={d.admin.form}>
                 <div className={d.admin.idBox}>
-                  ID: {isEdit ? form.adminId || form.id : 'Auto-generated after create'}
+                  ID: {form.adminId || form.id}
                 </div>
                 <input value={form.username} onChange={(e) => setForm((prev) => ({ ...prev, username: e.target.value }))} placeholder="Username" className={d.form.inputSm} required />
                 <input value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} placeholder="Email" className={d.form.inputSm} required />
@@ -332,7 +332,7 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
                 <input value={form.address} onChange={(e) => setForm((prev) => ({ ...prev, address: e.target.value }))} placeholder="Address" className={d.form.inputSm} />
                 <div className={d.admin.formActions}>
                   <button disabled={saving} className={d.btn.emerald}>
-                    {isEdit ? 'Save Changes' : 'Create Admin'}
+                    Save Changes
                   </button>
                   <button type="button" onClick={() => setIsFormOpen(false)} className={d.btn.secondary}>
                     Cancel

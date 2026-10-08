@@ -22,6 +22,7 @@ export type MapBehavior = {
   showForecastTimeline?: boolean;
   pickedUp?: boolean;
   jurisdictionBarangayName?: string;
+  headingUpOnRecenter?: boolean;
 };
 
 const MIN_ACTIVE_RAIN_MM_PER_HOUR = 0.1;
@@ -40,6 +41,7 @@ export function buildCalambaMapHtml(
   responderLabel = 'Closest responder base',
   mapBehavior: MapBehavior = {},
 ) {
+  const navigationRotationEnabled = Boolean(mapBehavior.headingUpOnRecenter);
   const payload = JSON.stringify({
     areas,
     responderLocation,
@@ -54,6 +56,8 @@ export function buildCalambaMapHtml(
     layerVisibility,
     responderLabel,
     mapBehavior,
+    responderPoints: [],
+    selectedResponderId: null,
     boundaryGeoJson: {
       type: 'FeatureCollection',
       features: [
@@ -83,9 +87,11 @@ export function buildCalambaMapHtml(
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    ${navigationRotationEnabled ? '<link rel="stylesheet" href="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.css" crossorigin="" />' : ''}
     <style>
       html, body, #map { margin: 0; width: 100%; height: 100%; }
       body { background: #163047; }
+      :root { --lrc-control-size: 42px; }
       .map-legend {
         background: transparent;
         border: 0;
@@ -298,6 +304,7 @@ export function buildCalambaMapHtml(
   <body>
     <div id="map"></div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    ${navigationRotationEnabled ? '<script src="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.umd.min.js" crossorigin=""></script>' : ''}
     <script>
       var payload = ${payload};
       var mapBehavior = payload.mapBehavior || {};
@@ -318,6 +325,12 @@ export function buildCalambaMapHtml(
       var map = L.map('map', {
         zoomControl: true,
         attributionControl: false,
+        rotate: Boolean(mapBehavior.headingUpOnRecenter),
+        dragRotate: Boolean(mapBehavior.headingUpOnRecenter),
+        touchRotate: Boolean(mapBehavior.headingUpOnRecenter),
+        rotateControl: mapBehavior.headingUpOnRecenter
+          ? { position: 'topright', behavior: 'reset', closeOnZeroBearing: false }
+          : false,
         minZoom: 11,
         maxZoom: 18,
         maxBounds: calambaBounds.pad(0.05),
@@ -464,6 +477,7 @@ export function buildCalambaMapHtml(
       var windLoadState = 'idle';
       var areaLayer = L.layerGroup();
       var incidentLayer = L.layerGroup();
+      var responderFleetLayer = L.layerGroup();
       var responderRouteLayer = L.layerGroup();
       var cityAlertControl = null;
       var legendVisible = false;
@@ -1508,7 +1522,7 @@ export function buildCalambaMapHtml(
           .toLowerCase()
           .trim()
           .replace(/[^a-z0-9]+/g, ' ')
-          .replace(/^(barangay|brgy)\s+/, '')
+          .replace(/^(barangay|brgy)\\s+/, '')
           .trim();
       }
 
@@ -2123,6 +2137,31 @@ export function buildCalambaMapHtml(
 
       var residentPinIcon = mapPersonIcon('bxs-user', '#dc2626', 22);
 
+      function renderResponderFleet(extendInitialBounds) {
+        responderFleetLayer.clearLayers();
+        (payload.responderPoints || []).forEach(function(point) {
+          if (payload.responderLocation && String(point.id) === String(payload.selectedResponderId || '')) return;
+          var latitude = Number(point.latitude);
+          var longitude = Number(point.longitude);
+          if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !inCalamba(latitude, longitude)) return;
+          if (extendInitialBounds) fitBounds.extend([latitude, longitude]);
+          var label = escapeHtml(point.name || point.rescuerId || 'Barangay Rescuer');
+          var availability = point.isAvailable === false ? 'Assigned to an active incident' : 'Available';
+          var isCdrrmd = point.kind === 'cddrmd';
+          var icon = mapPersonIcon(isCdrrmd ? 'bxs-ambulance' : 'bxs-shield', isCdrrmd ? '#ea580c' : '#2563eb', 24);
+          var marker = L.marker([latitude, longitude], { icon: icon, zIndexOffset: 900 })
+            .addTo(responderFleetLayer)
+            .bindPopup('<strong>' + label + '</strong><br/>' + availability
+              + (point.barangayName ? '<br/>Barangay: ' + escapeHtml(point.barangayName) : '')
+              + (point.activeReportId ? '<br/>Incident: ' + escapeHtml(point.activeReportCode || 'Active rescue') + '<br/><strong>Click marker to view resident and route</strong>' : ''));
+          if (point.activeReportId) {
+            marker.on('click', function() {
+              window.parent.postMessage({ type: 'select-rescuer-assignment', reportId: Number(point.activeReportId) }, '*');
+            });
+          }
+        });
+      }
+
       function renderIncidents() {
         incidentLayer.clearLayers();
         (payload.incidentPoints || []).forEach(function(point) {
@@ -2173,6 +2212,7 @@ export function buildCalambaMapHtml(
         renderWeatherFillLayer();
         setLayerVisible(areaLayer, showAreas);
         setLayerVisible(incidentLayer, showIncidents);
+        setLayerVisible(responderFleetLayer, showResponderRoute);
         setLayerVisible(responderRouteLayer, showResponderRoute);
 
         if (focusModeActive) {
@@ -2235,12 +2275,48 @@ export function buildCalambaMapHtml(
           );
       });
 
+      function bearingBetween(from, to) {
+        var lat1 = Number(from && from.latitude) * Math.PI / 180;
+        var lat2 = Number(to && to.latitude) * Math.PI / 180;
+        var deltaLongitude = (Number(to && to.longitude) - Number(from && from.longitude)) * Math.PI / 180;
+        if (![lat1, lat2, deltaLongitude].every(Number.isFinite)) return null;
+        var y = Math.sin(deltaLongitude) * Math.cos(lat2);
+        var x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLongitude);
+        return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+      }
+
+      function navigationHeading() {
+        var deviceHeading = Number(payload.responderHeading);
+        if (Number.isFinite(deviceHeading) && deviceHeading >= 0) return deviceHeading % 360;
+        if (!payload.responderLocation) return null;
+
+        var current = payload.responderLocation;
+        var route = Array.isArray(payload.routeCoordinates) ? payload.routeCoordinates : [];
+        for (var index = 0; index < route.length; index += 1) {
+          var point = route[index];
+          var latitude = Number(point && point.latitude);
+          var longitude = Number(point && point.longitude);
+          if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
+          if (map.distance([current.latitude, current.longitude], [latitude, longitude]) >= 8) {
+            return bearingBetween(current, point);
+          }
+        }
+        return payload.incidentLocation ? bearingBetween(current, payload.incidentLocation) : null;
+      }
+
+      function faceNavigationForward() {
+        if (!mapBehavior.headingUpOnRecenter || typeof map.setHeading !== 'function') return;
+        var heading = navigationHeading();
+        if (Number.isFinite(heading)) map.setHeading(heading, { ease: 0.28, deadzone: 0.5 });
+      }
+
       function focusActiveRescue() {
         if (payload.mapBehavior && payload.mapBehavior.focusOnResponder && payload.responderLocation) {
           var responderLatitude = Number(payload.responderLocation.latitude);
           var responderLongitude = Number(payload.responderLocation.longitude);
           if (Number.isFinite(responderLatitude) && Number.isFinite(responderLongitude) && inCalamba(responderLatitude, responderLongitude)) {
             map.setView([responderLatitude, responderLongitude], 17, { animate: true });
+            requestAnimationFrame(faceNavigationForward);
             return;
           }
         }
@@ -2295,6 +2371,7 @@ export function buildCalambaMapHtml(
         }
       }
 
+      renderResponderFleet(true);
       renderResponderRoute(true);
 
       // In-map layer control (top-right)
@@ -2491,8 +2568,13 @@ export function buildCalambaMapHtml(
           payload.incidentLocation = data.incidentLocation || null;
           payload.selectedReportCode = data.selectedReportCode || null;
           payload.incidentPoints = Array.isArray(data.incidentPoints) ? data.incidentPoints : [];
+          payload.responderPoints = Array.isArray(data.responderPoints) ? data.responderPoints : [];
+          payload.selectedResponderId = data.selectedResponderId || null;
           payload.pickedUp = Boolean(data.pickedUp);
+          if (data.responderKind) payload.mapBehavior.responderKind = data.responderKind;
+          payload.responderHeading = Number.isFinite(Number(data.responderHeading)) ? Number(data.responderHeading) : null;
           renderIncidents();
+          renderResponderFleet(false);
           renderResponderRoute(false);
           applyLayerVisibility();
           if (data.recenter === true) focusActiveRescue();

@@ -70,6 +70,7 @@ async function listAccounts(req, res) {
     `SELECT u.id,
             CONCAT($2::text, '-', EXTRACT(YEAR FROM u.created_at)::text, '-', LPAD(u.id::text, 5, '0')) AS rescuer_id,
             u.username, u.email, u.first_name, u.last_name, u.address, u.contact_number, u.barangay_name,
+            u.current_latitude, u.current_longitude, u.location_updated_at,
             u.created_at, u.last_login,
             (COALESCE(u.is_active, FALSE) AND u.last_seen_at >= NOW() - INTERVAL '45 seconds') AS is_online,
             (u.id = $1) AS is_self,

@@ -1,0 +1,1950 @@
+{
+  "type": "FeatureCollection",
+  "name": "calamba_barangay_flood_susceptibility",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Bagong Kalsada",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1617,
+              14.1832
+            ],
+            [
+              121.1681,
+              14.1832
+            ],
+            [
+              121.1681,
+              14.1888
+            ],
+            [
+              121.1617,
+              14.1888
+            ],
+            [
+              121.1617,
+              14.1832
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Banyadero",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1702,
+              14.1832
+            ],
+            [
+              121.1766,
+              14.1832
+            ],
+            [
+              121.1766,
+              14.1888
+            ],
+            [
+              121.1702,
+              14.1888
+            ],
+            [
+              121.1702,
+              14.1832
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Barangay 1",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1787,
+              14.1832
+            ],
+            [
+              121.1851,
+              14.1832
+            ],
+            [
+              121.1851,
+              14.1888
+            ],
+            [
+              121.1787,
+              14.1888
+            ],
+            [
+              121.1787,
+              14.1832
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Barangay 2",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1872,
+              14.1832
+            ],
+            [
+              121.1936,
+              14.1832
+            ],
+            [
+              121.1936,
+              14.1888
+            ],
+            [
+              121.1872,
+              14.1888
+            ],
+            [
+              121.1872,
+              14.1832
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Barangay 3",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1957,
+              14.1832
+            ],
+            [
+              121.2021,
+              14.1832
+            ],
+            [
+              121.2021,
+              14.1888
+            ],
+            [
+              121.1957,
+              14.1888
+            ],
+            [
+              121.1957,
+              14.1832
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Barangay 4",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1599,
+              14.1927
+            ],
+            [
+              121.1663,
+              14.1927
+            ],
+            [
+              121.1663,
+              14.1983
+            ],
+            [
+              121.1599,
+              14.1983
+            ],
+            [
+              121.1599,
+              14.1927
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Barangay 5",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1684,
+              14.1927
+            ],
+            [
+              121.1748,
+              14.1927
+            ],
+            [
+              121.1748,
+              14.1983
+            ],
+            [
+              121.1684,
+              14.1983
+            ],
+            [
+              121.1684,
+              14.1927
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Barangay 6",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1769,
+              14.1927
+            ],
+            [
+              121.1833,
+              14.1927
+            ],
+            [
+              121.1833,
+              14.1983
+            ],
+            [
+              121.1769,
+              14.1983
+            ],
+            [
+              121.1769,
+              14.1927
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Barangay 7",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1854,
+              14.1927
+            ],
+            [
+              121.1918,
+              14.1927
+            ],
+            [
+              121.1918,
+              14.1983
+            ],
+            [
+              121.1854,
+              14.1983
+            ],
+            [
+              121.1854,
+              14.1927
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Lawa",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1939,
+              14.1927
+            ],
+            [
+              121.2003,
+              14.1927
+            ],
+            [
+              121.2003,
+              14.1983
+            ],
+            [
+              121.1939,
+              14.1983
+            ],
+            [
+              121.1939,
+              14.1927
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Lecheria",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1617,
+              14.2022
+            ],
+            [
+              121.1681,
+              14.2022
+            ],
+            [
+              121.1681,
+              14.2078
+            ],
+            [
+              121.1617,
+              14.2078
+            ],
+            [
+              121.1617,
+              14.2022
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Lingga",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1702,
+              14.2022
+            ],
+            [
+              121.1766,
+              14.2022
+            ],
+            [
+              121.1766,
+              14.2078
+            ],
+            [
+              121.1702,
+              14.2078
+            ],
+            [
+              121.1702,
+              14.2022
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Looc",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1787,
+              14.2022
+            ],
+            [
+              121.1851,
+              14.2022
+            ],
+            [
+              121.1851,
+              14.2078
+            ],
+            [
+              121.1787,
+              14.2078
+            ],
+            [
+              121.1787,
+              14.2022
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Parian",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1872,
+              14.2022
+            ],
+            [
+              121.1936,
+              14.2022
+            ],
+            [
+              121.1936,
+              14.2078
+            ],
+            [
+              121.1872,
+              14.2078
+            ],
+            [
+              121.1872,
+              14.2022
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Real",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1957,
+              14.2022
+            ],
+            [
+              121.2021,
+              14.2022
+            ],
+            [
+              121.2021,
+              14.2078
+            ],
+            [
+              121.1957,
+              14.2078
+            ],
+            [
+              121.1957,
+              14.2022
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "San Juan",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1599,
+              14.2117
+            ],
+            [
+              121.1663,
+              14.2117
+            ],
+            [
+              121.1663,
+              14.2173
+            ],
+            [
+              121.1599,
+              14.2173
+            ],
+            [
+              121.1599,
+              14.2117
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Sucol",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1684,
+              14.2117
+            ],
+            [
+              121.1748,
+              14.2117
+            ],
+            [
+              121.1748,
+              14.2173
+            ],
+            [
+              121.1684,
+              14.2173
+            ],
+            [
+              121.1684,
+              14.2117
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Sampiruhan",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1769,
+              14.2117
+            ],
+            [
+              121.1833,
+              14.2117
+            ],
+            [
+              121.1833,
+              14.2173
+            ],
+            [
+              121.1769,
+              14.2173
+            ],
+            [
+              121.1769,
+              14.2117
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Palingon",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1854,
+              14.2117
+            ],
+            [
+              121.1918,
+              14.2117
+            ],
+            [
+              121.1918,
+              14.2173
+            ],
+            [
+              121.1854,
+              14.2173
+            ],
+            [
+              121.1854,
+              14.2117
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Saimsim",
+        "flood_risk_level": "High",
+        "basis": "Classified HIGH due to low-lying setting near Laguna de Bay shoreline and/or major creek corridors (simulated OSM hydro features), with floodplain tendency during intense rainfall.",
+        "style_color": "#1f2a7a"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1939,
+              14.2117
+            ],
+            [
+              121.2003,
+              14.2117
+            ],
+            [
+              121.2003,
+              14.2173
+            ],
+            [
+              121.1939,
+              14.2173
+            ],
+            [
+              121.1939,
+              14.2117
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Banlic",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1237,
+              14.1852
+            ],
+            [
+              121.1301,
+              14.1852
+            ],
+            [
+              121.1301,
+              14.1908
+            ],
+            [
+              121.1237,
+              14.1908
+            ],
+            [
+              121.1237,
+              14.1852
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Halang",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1317,
+              14.1852
+            ],
+            [
+              121.1381,
+              14.1852
+            ],
+            [
+              121.1381,
+              14.1908
+            ],
+            [
+              121.1317,
+              14.1908
+            ],
+            [
+              121.1317,
+              14.1852
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Mayapa",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1397,
+              14.1852
+            ],
+            [
+              121.1461,
+              14.1852
+            ],
+            [
+              121.1461,
+              14.1908
+            ],
+            [
+              121.1397,
+              14.1908
+            ],
+            [
+              121.1397,
+              14.1852
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Paciano Rizal",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1477,
+              14.1852
+            ],
+            [
+              121.1541,
+              14.1852
+            ],
+            [
+              121.1541,
+              14.1908
+            ],
+            [
+              121.1477,
+              14.1908
+            ],
+            [
+              121.1477,
+              14.1852
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "San Cristobal",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1557,
+              14.1852
+            ],
+            [
+              121.1621,
+              14.1852
+            ],
+            [
+              121.1621,
+              14.1908
+            ],
+            [
+              121.1557,
+              14.1908
+            ],
+            [
+              121.1557,
+              14.1852
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "San Jose",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1637,
+              14.1852
+            ],
+            [
+              121.1701,
+              14.1852
+            ],
+            [
+              121.1701,
+              14.1908
+            ],
+            [
+              121.1637,
+              14.1908
+            ],
+            [
+              121.1637,
+              14.1852
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Sirang Lupa",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1219,
+              14.1962
+            ],
+            [
+              121.1283,
+              14.1962
+            ],
+            [
+              121.1283,
+              14.2018
+            ],
+            [
+              121.1219,
+              14.2018
+            ],
+            [
+              121.1219,
+              14.1962
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Turbina",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1299,
+              14.1962
+            ],
+            [
+              121.1363,
+              14.1962
+            ],
+            [
+              121.1363,
+              14.2018
+            ],
+            [
+              121.1299,
+              14.2018
+            ],
+            [
+              121.1299,
+              14.1962
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Uwisan",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1379,
+              14.1962
+            ],
+            [
+              121.1443,
+              14.1962
+            ],
+            [
+              121.1443,
+              14.2018
+            ],
+            [
+              121.1379,
+              14.2018
+            ],
+            [
+              121.1379,
+              14.1962
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Majada Labas",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1459,
+              14.1962
+            ],
+            [
+              121.1523,
+              14.1962
+            ],
+            [
+              121.1523,
+              14.2018
+            ],
+            [
+              121.1459,
+              14.2018
+            ],
+            [
+              121.1459,
+              14.1962
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Prinza",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1539,
+              14.1962
+            ],
+            [
+              121.1603,
+              14.1962
+            ],
+            [
+              121.1603,
+              14.2018
+            ],
+            [
+              121.1539,
+              14.2018
+            ],
+            [
+              121.1539,
+              14.1962
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Punta",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1619,
+              14.1962
+            ],
+            [
+              121.1683,
+              14.1962
+            ],
+            [
+              121.1683,
+              14.2018
+            ],
+            [
+              121.1619,
+              14.2018
+            ],
+            [
+              121.1619,
+              14.1962
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Batino",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1237,
+              14.2072
+            ],
+            [
+              121.1301,
+              14.2072
+            ],
+            [
+              121.1301,
+              14.2128
+            ],
+            [
+              121.1237,
+              14.2128
+            ],
+            [
+              121.1237,
+              14.2072
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Milagrosa",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1317,
+              14.2072
+            ],
+            [
+              121.1381,
+              14.2072
+            ],
+            [
+              121.1381,
+              14.2128
+            ],
+            [
+              121.1317,
+              14.2128
+            ],
+            [
+              121.1317,
+              14.2072
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Palo-Alto",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1397,
+              14.2072
+            ],
+            [
+              121.1461,
+              14.2072
+            ],
+            [
+              121.1461,
+              14.2128
+            ],
+            [
+              121.1397,
+              14.2128
+            ],
+            [
+              121.1397,
+              14.2072
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Kay-Anlog",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1477,
+              14.2072
+            ],
+            [
+              121.1541,
+              14.2072
+            ],
+            [
+              121.1541,
+              14.2128
+            ],
+            [
+              121.1477,
+              14.2128
+            ],
+            [
+              121.1477,
+              14.2072
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Barandal",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1557,
+              14.2072
+            ],
+            [
+              121.1621,
+              14.2072
+            ],
+            [
+              121.1621,
+              14.2128
+            ],
+            [
+              121.1557,
+              14.2128
+            ],
+            [
+              121.1557,
+              14.2072
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Masili",
+        "flood_risk_level": "Moderate",
+        "basis": "Classified MODERATE due to intermediate position from river/creek channels (about 100-300 m in the simulated hydro model) and gently elevated terrain that can still accumulate runoff.",
+        "style_color": "#2563eb"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.1637,
+              14.2072
+            ],
+            [
+              121.1701,
+              14.2072
+            ],
+            [
+              121.1701,
+              14.2128
+            ],
+            [
+              121.1637,
+              14.2128
+            ],
+            [
+              121.1637,
+              14.2072
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Bubuyan",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0527,
+              14.1492
+            ],
+            [
+              121.0591,
+              14.1492
+            ],
+            [
+              121.0591,
+              14.1548
+            ],
+            [
+              121.0527,
+              14.1548
+            ],
+            [
+              121.0527,
+              14.1492
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Bucal",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0647,
+              14.1492
+            ],
+            [
+              121.0711,
+              14.1492
+            ],
+            [
+              121.0711,
+              14.1548
+            ],
+            [
+              121.0647,
+              14.1548
+            ],
+            [
+              121.0647,
+              14.1492
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Bunggo",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0767,
+              14.1492
+            ],
+            [
+              121.0831,
+              14.1492
+            ],
+            [
+              121.0831,
+              14.1548
+            ],
+            [
+              121.0767,
+              14.1548
+            ],
+            [
+              121.0767,
+              14.1492
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Burol",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0887,
+              14.1492
+            ],
+            [
+              121.0951,
+              14.1492
+            ],
+            [
+              121.0951,
+              14.1548
+            ],
+            [
+              121.0887,
+              14.1548
+            ],
+            [
+              121.0887,
+              14.1492
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Camaligan",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0509,
+              14.1652
+            ],
+            [
+              121.0573,
+              14.1652
+            ],
+            [
+              121.0573,
+              14.1708
+            ],
+            [
+              121.0509,
+              14.1708
+            ],
+            [
+              121.0509,
+              14.1652
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Canlubang",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0629,
+              14.1652
+            ],
+            [
+              121.0693,
+              14.1652
+            ],
+            [
+              121.0693,
+              14.1708
+            ],
+            [
+              121.0629,
+              14.1708
+            ],
+            [
+              121.0629,
+              14.1652
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Hornalan",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0749,
+              14.1652
+            ],
+            [
+              121.0813,
+              14.1652
+            ],
+            [
+              121.0813,
+              14.1708
+            ],
+            [
+              121.0749,
+              14.1708
+            ],
+            [
+              121.0749,
+              14.1652
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "La Mesa",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0869,
+              14.1652
+            ],
+            [
+              121.0933,
+              14.1652
+            ],
+            [
+              121.0933,
+              14.1708
+            ],
+            [
+              121.0869,
+              14.1708
+            ],
+            [
+              121.0869,
+              14.1652
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Laguerta",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0527,
+              14.1812
+            ],
+            [
+              121.0591,
+              14.1812
+            ],
+            [
+              121.0591,
+              14.1868
+            ],
+            [
+              121.0527,
+              14.1868
+            ],
+            [
+              121.0527,
+              14.1812
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Mabato",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0647,
+              14.1812
+            ],
+            [
+              121.0711,
+              14.1812
+            ],
+            [
+              121.0711,
+              14.1868
+            ],
+            [
+              121.0647,
+              14.1868
+            ],
+            [
+              121.0647,
+              14.1812
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Makiling",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0767,
+              14.1812
+            ],
+            [
+              121.0831,
+              14.1812
+            ],
+            [
+              121.0831,
+              14.1868
+            ],
+            [
+              121.0767,
+              14.1868
+            ],
+            [
+              121.0767,
+              14.1812
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Mapagong",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0887,
+              14.1812
+            ],
+            [
+              121.0951,
+              14.1812
+            ],
+            [
+              121.0951,
+              14.1868
+            ],
+            [
+              121.0887,
+              14.1868
+            ],
+            [
+              121.0887,
+              14.1812
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Maunong",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0509,
+              14.1972
+            ],
+            [
+              121.0573,
+              14.1972
+            ],
+            [
+              121.0573,
+              14.2028
+            ],
+            [
+              121.0509,
+              14.2028
+            ],
+            [
+              121.0509,
+              14.1972
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Pansol",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0629,
+              14.1972
+            ],
+            [
+              121.0693,
+              14.1972
+            ],
+            [
+              121.0693,
+              14.2028
+            ],
+            [
+              121.0629,
+              14.2028
+            ],
+            [
+              121.0629,
+              14.1972
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Puting Lupa",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0749,
+              14.1972
+            ],
+            [
+              121.0813,
+              14.1972
+            ],
+            [
+              121.0813,
+              14.2028
+            ],
+            [
+              121.0749,
+              14.2028
+            ],
+            [
+              121.0749,
+              14.1972
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "barangay_name": "Ulango",
+        "flood_risk_level": "Low",
+        "basis": "Classified LOW due to relatively elevated terrain associated with western/upland Calamba and Mt. Makiling slopes, generally farther than 300 m from major river and lakeshore influence.",
+        "style_color": "#7dd3fc"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              121.0869,
+              14.1972
+            ],
+            [
+              121.0933,
+              14.1972
+            ],
+            [
+              121.0933,
+              14.2028
+            ],
+            [
+              121.0869,
+              14.2028
+            ],
+            [
+              121.0869,
+              14.1972
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

@@ -70,6 +70,7 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
   const [areasLoaded, setAreasLoaded] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [location, setLocation] = useState<Coordinate | null>(null);
+  const [heading, setHeading] = useState<number | null>(null);
   const [route, setRoute] = useState<Coordinate[]>([]);
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
   const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
@@ -78,6 +79,7 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
   const lastLocationPush = useRef(0);
   const mapFrameRef = useRef<HTMLIFrameElement | null>(null);
   const lastFocusedRescue = useRef('');
+  const hasAutoCenteredOnLocation = useRef(false);
   const [mapReady, setMapReady] = useState(false);
 
   const loadData = useCallback(async () => {
@@ -124,29 +126,32 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
       setError('This device does not support location services.');
       return undefined;
     }
-    const watchId = navigator.geolocation.watchPosition(
-      ({ coords }) => {
-        const now = Date.now();
-        if (now - lastLocationPush.current < 2_000) return;
-        lastLocationPush.current = now;
-        const point = { latitude: coords.latitude, longitude: coords.longitude };
-        setLocation(point);
-        api.patch<LocationUpdate>('/rescuers/location', { ...point, accuracy: coords.accuracy })
-          .then(({ data }) => {
-            if (data.pickupConfirmed) {
-              setError('');
-              void loadData();
-            }
-          })
-          .catch((error: unknown) => {
-            const err = error as ApiError;
-            if (err.response?.status === 401) return onAuthError();
-            if (err.response?.data?.message) setError(err.response.data.message);
-          });
-      },
-      () => setError('Allow device location so the live rescue route can be displayed.'),
-      { enableHighAccuracy: true, maximumAge: 1_000, timeout: 12_000 },
-    );
+
+    const locationOptions: PositionOptions = { enableHighAccuracy: true, maximumAge: 1_000, timeout: 12_000 };
+    const handleLocationError = () => setError('Allow device location so the live rescue route can be displayed.');
+    const handleLocation = ({ coords }: GeolocationPosition) => {
+      const now = Date.now();
+      if (now - lastLocationPush.current < 2_000) return;
+      lastLocationPush.current = now;
+      const point = { latitude: coords.latitude, longitude: coords.longitude };
+      setLocation(point);
+      setHeading(Number.isFinite(coords.heading) && coords.heading !== null ? coords.heading : null);
+      api.patch<LocationUpdate>('/rescuers/location', { ...point, accuracy: coords.accuracy })
+        .then(({ data }) => {
+          if (data.pickupConfirmed) {
+            setError('');
+            void loadData();
+          }
+        })
+        .catch((error: unknown) => {
+          const err = error as ApiError;
+          if (err.response?.status === 401) return onAuthError();
+          if (err.response?.data?.message) setError(err.response.data.message);
+        });
+    };
+
+    navigator.geolocation.getCurrentPosition(handleLocation, handleLocationError, locationOptions);
+    const watchId = navigator.geolocation.watchPosition(handleLocation, handleLocationError, locationOptions);
     return () => navigator.geolocation.clearWatch(watchId);
   }, [loadData, onAuthError]);
 
@@ -212,7 +217,7 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/weather/wind-field`,
     { boundary: true, floodHazard: false, evacuationAreas: true, incidentMarkers: true, responderRoute: true, weatherOverlay: false, temperatureOverlay: false, humidityOverlay: false, windOverlay: false },
     responderRole === 'barangay_rescuer' ? 'Your live Barangay Rescuer location' : 'Your live CDRRMD Rescuer location',
-    { focusOnIncident: true, focusOnResponder: true, allowLiveRouteUpdates: true, responderKind: responderRole === 'barangay_rescuer' ? 'barangay' : 'cddrmd' },
+    { focusOnIncident: true, focusOnResponder: true, allowLiveRouteUpdates: true, headingUpOnRecenter: true, responderKind: responderRole === 'barangay_rescuer' ? 'barangay' : 'cddrmd' },
   ) : '', [areas, areasLoaded, responderRole]);
 
   const postMapUpdate = useCallback((recenter = false) => {
@@ -225,18 +230,27 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
       selectedReportCode: selected?.report_code || null,
       incidentPoints,
       pickedUp: Boolean(selected?.picked_up_at),
+      responderHeading: heading,
       recenter,
     }, '*');
-  }, [destination, incidentPoints, location, mapReady, route, selected?.picked_up_at, selected?.report_code]);
+  }, [destination, heading, incidentPoints, location, mapReady, route, selected?.picked_up_at, selected?.report_code]);
 
   const focusKey = selected ? `${selected.backup_request_id}:${Boolean(selected.responder_acknowledged_at)}:${Boolean(selected.picked_up_at)}` : '';
   useEffect(() => {
-    if (!mapReady) return;
+    if (!mapReady || !location) return;
+
+    if (!hasAutoCenteredOnLocation.current) {
+      hasAutoCenteredOnLocation.current = true;
+      postMapUpdate(true);
+      lastFocusedRescue.current = focusKey;
+      return;
+    }
+
     const shouldRecenter = Boolean(focusKey) && lastFocusedRescue.current !== focusKey;
     postMapUpdate(shouldRecenter);
     if (shouldRecenter) lastFocusedRescue.current = focusKey;
     if (!focusKey) lastFocusedRescue.current = '';
-  }, [focusKey, mapReady, postMapUpdate]);
+  }, [focusKey, location, mapReady, postMapUpdate]);
 
   async function dispatchAssignment() {
     if (!selected || selected.responder_acknowledged_at || busy) return;
@@ -260,7 +274,7 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
       <section className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_400px]">
         <div className="relative min-h-[34rem] overflow-hidden rounded-xl border border-slate-300 bg-slate-800 shadow-lg">
           {areasLoaded ? <iframe ref={mapFrameRef} onLoad={() => setMapReady(true)} title="CDRRMD Rescuer live route" srcDoc={mapHtml} className="absolute inset-0 h-full w-full border-0" /> : <p className="p-4 text-sm text-white">Loading rescue map...</p>}
-          <button type="button" onClick={() => postMapUpdate(true)} disabled={!selected || !mapReady} className="absolute bottom-4 right-4 z-10 rounded-lg border border-white/40 bg-[#12314b]/95 px-4 py-2 text-sm font-black text-white shadow-lg backdrop-blur hover:bg-[#1f4e79] disabled:cursor-not-allowed disabled:opacity-50">Re-center</button>
+          <button type="button" onClick={() => postMapUpdate(true)} disabled={!location || !mapReady} className="absolute bottom-4 right-4 z-10 rounded-lg border border-white/40 bg-[#12314b]/95 px-4 py-2 text-sm font-black text-white shadow-lg backdrop-blur hover:bg-[#1f4e79] disabled:cursor-not-allowed disabled:opacity-50">Re-center</button>
         </div>
 
         <aside className="space-y-3">

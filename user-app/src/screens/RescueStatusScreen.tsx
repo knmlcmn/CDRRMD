@@ -6,6 +6,7 @@ import { editorial } from '../components/EditorialTheme';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { api } from '../services/api';
+import { requireLiveLocation } from '../services/locationAccess';
 import { fetchRoadRoute } from '../services/routingService';
 import PlatformMap from '../components/PlatformMap';
 import { buildCalambaMapHtml } from '../utils/calambaMapHtml';
@@ -95,9 +96,12 @@ export default function RescueStatusScreen() {
   const [report, setReport] = useState<RescueReport | null>(null);
   const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
   const [distanceKm, setDistanceKm] = useState<number | null>(null);
-  const [lastSyncAt, setLastSyncAt] = useState<Date | null>(null);
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationArea[]>([]);
   const [routeCoordinates, setRouteCoordinates] = useState<Coordinate[]>([]);
+  const [userLocation, setUserLocation] = useState<Coordinate | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [locatingUser, setLocatingUser] = useState(false);
+  const [recenterRequestId, setRecenterRequestId] = useState(0);
   const hasReportRef = useRef(false);
   const lastRouteKeyRef = useRef('');
   const syncInFlightRef = useRef(false);
@@ -147,10 +151,9 @@ export default function RescueStatusScreen() {
       hasReportRef.current = true;
       setReport((current) => keepIfEqual(current, normalized));
       setError(null);
-      setLastSyncAt(new Date());
 
       const nextStatus = normalizeStatus(normalized.status);
-      if (!Number.isFinite(normalized.latitude) || !Number.isFinite(normalized.longitude) || nextStatus === 'pending' || nextStatus === 'declined') {
+      if (!Number.isFinite(normalized.latitude) || !Number.isFinite(normalized.longitude) || nextStatus === 'pending' || nextStatus === 'declined' || nextStatus === 'resolved') {
         lastRouteKeyRef.current = '';
         setEtaMinutes(null);
         setDistanceKm(null);
@@ -252,6 +255,8 @@ export default function RescueStatusScreen() {
   );
 
   const status = normalizeStatus(report?.status);
+  const hasDispatchedResponder = Boolean(report?.responder_acknowledged_at);
+  const showLiveResponseDetails = status !== 'resolved';
 
   const progressRatio = useMemo(() => {
     if (status === 'accepted') {
@@ -299,6 +304,7 @@ export default function RescueStatusScreen() {
       ? { latitude: Number(report?.evacuation_latitude), longitude: Number(report?.evacuation_longitude) }
       : incidentLocation
   ), [incidentLocation, report?.evacuation_latitude, report?.evacuation_longitude, report?.picked_up_at]);
+  const responderKind = report?.dispatch_type === 'cddrmd_backup' ? 'cddrmd' : 'barangay';
   const apiBaseUrl = String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '');
   const mapHtml = useMemo(() => buildCalambaMapHtml(
     evacuationAreas,
@@ -313,7 +319,9 @@ export default function RescueStatusScreen() {
     { boundary: true, floodHazard: false, evacuationAreas: true, incidentMarkers: true, responderRoute: true, weatherOverlay: false },
     report?.dispatch_type === 'cddrmd_backup' ? 'Live CDRRMD Rescuer location' : 'Live Barangay Rescuer location',
     Boolean(report?.picked_up_at),
-  ), [apiBaseUrl, evacuationAreas, incidentLocation, report?.dispatch_type, report?.picked_up_at, reportCode, responderLocation, routeCoordinates]);
+    responderKind,
+    userLocation,
+  ), [apiBaseUrl, evacuationAreas, incidentLocation, report?.dispatch_type, report?.picked_up_at, reportCode, responderKind, responderLocation, routeCoordinates, userLocation]);
 
   const mapUpdate = useMemo(() => ({
     type: 'rescue-map-update',
@@ -323,7 +331,24 @@ export default function RescueStatusScreen() {
     selectedReportCode: reportCode,
     responderLabel: report?.dispatch_type === 'cddrmd_backup' ? 'Live CDRRMD Rescuer location' : 'Live Barangay Rescuer location',
     pickedUp: Boolean(report?.picked_up_at),
-  }), [incidentLocation, report?.dispatch_type, report?.picked_up_at, reportCode, responderLocation, routeCoordinates]);
+    responderKind,
+    userLocation,
+    recenterUserRequestId: recenterRequestId,
+  }), [incidentLocation, recenterRequestId, report?.dispatch_type, report?.picked_up_at, reportCode, responderKind, responderLocation, routeCoordinates, userLocation]);
+
+  const recenterOnUser = useCallback(async () => {
+    if (locatingUser) return;
+    setLocatingUser(true);
+    setLocationError(null);
+    const result = await requireLiveLocation(true);
+    if (result.ok) {
+      setUserLocation(result.location);
+      setRecenterRequestId((current) => current + 1);
+    } else {
+      setLocationError(result.message);
+    }
+    setLocatingUser(false);
+  }, [locatingUser]);
 
   if (loading && !report) {
     return (
@@ -349,7 +374,7 @@ export default function RescueStatusScreen() {
         <View style={st.mainCard}>
           <View style={[st.topRow, isSmall && st.topRowSmall]}>
             <Text style={st.statusText}>Status: <Text style={st.statusStrong}>{statusLabel}</Text></Text>
-            <Text style={st.etaText}>{etaMinutes ? `${Math.max(1, etaMinutes - 1)} - ${etaMinutes + 3} mins` : '--'}</Text>
+            {showLiveResponseDetails ? <Text style={st.etaText}>{etaMinutes ? `${Math.max(1, etaMinutes - 1)} - ${etaMinutes + 3} mins` : '--'}</Text> : null}
           </View>
 
           <View style={st.progressTrack}>
@@ -364,10 +389,25 @@ export default function RescueStatusScreen() {
           </View>
         </View>
 
-        {responderLocation ? (
-          <View style={st.mapCard}>
-            <PlatformMap key={reportId} html={mapHtml} baseUrl={apiBaseUrl} style={st.map} preserveState updateMessage={mapUpdate} />
-          </View>
+        {hasDispatchedResponder ? (
+          <>
+            <View style={st.mapCard}>
+              <PlatformMap key={reportId} html={mapHtml} baseUrl={apiBaseUrl} style={st.map} preserveState updateMessage={mapUpdate} />
+              <TouchableOpacity
+                accessibilityLabel="Re-center map on your current location"
+                accessibilityRole="button"
+                disabled={locatingUser}
+                onPress={recenterOnUser}
+                style={[st.recenterButton, locatingUser && st.recenterButtonDisabled]}
+              >
+                {locatingUser
+                  ? <ActivityIndicator color="#0d3558" size="small" />
+                  : <MaterialCommunityIcons name="crosshairs-gps" size={22} color="#0d3558" />}
+                <Text style={st.recenterText}>{locatingUser ? 'Locating...' : 'My location'}</Text>
+              </TouchableOpacity>
+            </View>
+            {locationError ? <Text style={st.locationError}>{locationError}</Text> : null}
+          </>
         ) : null}
 
         <View style={st.infoCard}>
@@ -378,23 +418,24 @@ export default function RescueStatusScreen() {
           <Text style={st.label}>Assigned Team</Text>
           <Text style={st.value}>{report?.assigned_team || 'Waiting assignment'}</Text>
 
-          <Text style={st.label}>Responder Tracking</Text>
-          <Text style={st.value}>{responderLocation ? 'Live location and route active' : report?.assigned_team ? report?.responder_acknowledged_at ? 'Waiting for responder GPS' : 'Waiting for responder acknowledgment' : 'Waiting assignment'}</Text>
+          {showLiveResponseDetails ? (
+            <>
+              <Text style={st.label}>Responder Tracking</Text>
+              <Text style={st.value}>{responderLocation ? 'Live location and route active' : report?.assigned_team ? report?.responder_acknowledged_at ? 'Waiting for responder GPS' : 'Waiting for responder acknowledgment' : 'Waiting assignment'}</Text>
 
-          <Text style={st.label}>Route Distance</Text>
-          <Text style={st.value}>{distanceKm ? `${distanceKm.toFixed(2)} km` : '--'}</Text>
+              <Text style={st.label}>Route Distance</Text>
+              <Text style={st.value}>{distanceKm ? `${distanceKm.toFixed(2)} km` : '--'}</Text>
 
-          <Text style={st.label}>ETA</Text>
-          <Text style={st.value}>{etaMinutes ? `${Math.max(1, etaMinutes - 1)} - ${etaMinutes + 3} mins` : '--'}</Text>
+              <Text style={st.label}>ETA</Text>
+              <Text style={st.value}>{etaMinutes ? `${Math.max(1, etaMinutes - 1)} - ${etaMinutes + 3} mins` : '--'}</Text>
+            </>
+          ) : null}
 
           <Text style={st.label}>Submitted</Text>
           <Text style={st.value}>{report?.created_at ? new Date(report.created_at).toLocaleString() : '-'}</Text>
 
           <Text style={st.label}>Last Update</Text>
           <Text style={st.value}>{report?.updated_at ? new Date(report.updated_at).toLocaleString() : '-'}</Text>
-
-          <Text style={st.label}>Realtime Sync</Text>
-          <Text style={st.value}>{lastSyncAt ? lastSyncAt.toLocaleTimeString() : '-'}</Text>
 
           {status === 'declined' && report?.decline_explanation ? (
             <>
@@ -403,7 +444,6 @@ export default function RescueStatusScreen() {
             </>
           ) : null}
 
-          <Text style={st.metaHint}>Auto-refresh every 4 seconds</Text>
           <Text style={st.metaHint}>Current workflow state: {toTitle(status)}</Text>
         </View>
       </ScrollView>
@@ -487,6 +527,30 @@ const st = StyleSheet.create({
     backgroundColor: editorial.surface,
   },
   map: { flex: 1 },
+  recenterButton: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    minHeight: 42,
+    paddingHorizontal: 12,
+    borderRadius: 22,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    shadowColor: '#0f172a',
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    zIndex: 10,
+    elevation: 4,
+  },
+  recenterButtonDisabled: { opacity: 0.7 },
+  recenterText: { color: '#0d3558', fontSize: 13, fontWeight: '800' },
+  locationError: { color: '#b91c1c', fontSize: 12, fontWeight: '600', marginTop: 6 },
   infoTitle: { color: editorial.ink, fontSize: 18, fontWeight: '400', marginBottom: 10 },
   label: { color: '#475569', fontSize: 12, fontWeight: '700', marginTop: 8 },
   value: { color: '#181818', fontSize: 14, fontWeight: '700', marginTop: 2 },

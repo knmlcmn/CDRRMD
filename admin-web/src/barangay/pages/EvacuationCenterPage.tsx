@@ -141,12 +141,12 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
     } finally { setSavingCount(false); }
   }
 
-  const searchedResolved = useMemo(() => {
+  const rows = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return cases.resolved.filter((item) => !needle || String(item.resident_name || '').toLowerCase().includes(needle));
-  }, [cases.resolved, search]);
+    const tabCases = tab === 'incoming' ? cases.incoming : tab === 'outgoing' ? cases.outgoing : cases.resolved;
+    return tabCases.filter((item) => !needle || String(item.resident_name || '').toLowerCase().includes(needle));
+  }, [cases.incoming, cases.outgoing, cases.resolved, search, tab]);
 
-  const rows = tab === 'incoming' ? cases.incoming : tab === 'outgoing' ? cases.outgoing : searchedResolved;
   const emptyText = tab === 'incoming'
     ? 'No incoming cases awaiting confirmation.'
     : tab === 'outgoing' ? 'No departures awaiting confirmation.' : 'No completed rescue reports found.';
@@ -191,7 +191,7 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
             <div><h2 className="text-lg font-black text-[#173750]">{tab === 'incoming' ? 'Awaiting Arrival Confirmation' : tab === 'outgoing' ? 'Awaiting Departure Confirmation' : 'Completed Rescue Reports'}</h2><p className="text-sm text-slate-500">{tab === 'incoming' ? 'Confirm only after physically verifying the evacuee.' : tab === 'outgoing' ? 'Confirm after the evacuee has left the center.' : 'Search and manage evacuees assigned to this center.'}</p></div>
-            {tab === 'resolved' ? <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search individual by name" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:w-72" /> : null}
+            <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search individual by name" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:w-72" />
           </div>
           <div className="overflow-x-auto rounded-lg border border-slate-200">
             <table className="min-w-[900px] w-full text-left text-sm">

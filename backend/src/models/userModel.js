@@ -890,7 +890,7 @@ async function listReportsByAssignedBarangay(barangayName) {
        ir.dispatched_at, ir.resolved_at, ir.updated_at, ir.created_at,
        ir.evacuation_arrived_at, ir.departure_requested_at, ir.departure_confirmed_at,
        u.id AS reporter_id, u.first_name, u.last_name, u.contact_number, u.email,
-       dispatch.id AS dispatch_id, dispatch.assigned_rescuer_id,
+       dispatch.id AS dispatch_id, dispatch.dispatch_type, dispatch.assigned_rescuer_id,
        dispatch.assigned_at AS rescuer_assigned_at, dispatch.responder_acknowledged_at, dispatch.picked_up_at,
        NULLIF(TRIM(CONCAT_WS(' ', responder.first_name, responder.last_name)), '') AS rescuer_name,
        responder.current_latitude AS rescuer_latitude,
@@ -899,11 +899,13 @@ async function listReportsByAssignedBarangay(barangayName) {
      FROM incident_reports ir
      JOIN users u ON u.id = ir.reported_by
      LEFT JOIN LATERAL (
-       SELECT br.id, br.assigned_rescuer_id, br.assigned_at, br.responder_acknowledged_at, br.picked_up_at
+       SELECT br.id, br.dispatch_type, br.assigned_rescuer_id, br.assigned_at, br.responder_acknowledged_at, br.picked_up_at
        FROM backup_requests br
-       WHERE br.report_id = ir.id AND br.dispatch_type = 'barangay_responder'
+       WHERE br.report_id = ir.id AND br.assigned_rescuer_id IS NOT NULL
          AND br.arrived_at IS NULL AND br.declined_at IS NULL
-       ORDER BY br.id DESC LIMIT 1
+       ORDER BY CASE WHEN br.dispatch_type = 'cddrmd_backup' THEN 0 ELSE 1 END,
+         br.assigned_at DESC NULLS LAST, br.id DESC
+       LIMIT 1
      ) dispatch ON TRUE
      LEFT JOIN users responder ON responder.id = dispatch.assigned_rescuer_id
      WHERE LOWER(ir.assigned_barangay) = LOWER($1)

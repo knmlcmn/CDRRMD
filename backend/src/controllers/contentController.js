@@ -337,7 +337,6 @@ async function getDashboardSummary(req, res) {
          ir.latitude,
          ir.longitude,
          ir.status,
-         ir.image_base64,
          ir.created_at,
          u.first_name,
          u.last_name
@@ -362,7 +361,6 @@ async function getDashboardSummary(req, res) {
       status: item.report_type === 'rescue' ? (item.status || 'pending') : '',
       title: item.incident_type || item.report_type || 'Incident Report',
       createdAt: item.created_at,
-      imageBase64: item.image_base64 || null,
     };
   });
 

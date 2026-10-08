@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import AdminShell from '../components/AdminShell';
+import AddAccountDialog, { type AccountRole } from '../components/AddAccountDialog';
 import { api } from '../services/apiClient';
 import type { RescuerAccount } from '../types';
 import { d } from '../adminDesign';
@@ -113,8 +114,8 @@ export default function RescuerAccountsPage(props: Props) {
         address: form.address.trim(), contactNumber: form.contactNumber.trim(),
         role: accountRole, barangayName: form.barangayName,
       };
-      if (form.id) await api.patch(`/rescuers/accounts/${form.id}`, payload);
-      else await api.post('/rescuers/accounts', payload);
+      if (!form.id) return;
+      await api.patch(`/rescuers/accounts/${form.id}`, payload);
       setShowForm(false);
       setForm(EMPTY_FORM);
       await loadAccounts();
@@ -199,18 +200,19 @@ export default function RescuerAccountsPage(props: Props) {
     setLoading(true);
   }
 
-  function openCreateForm() {
-    setForm({ ...EMPTY_FORM, barangayName: isBarangayRescuer ? BARANGAYS[0] : '' });
-    setShowForm(true);
+  async function handleCreated(role: AccountRole) {
+    if (role === 'rescuer') return loadAccounts();
+    if (role === 'admin') return props.onOpenAdmin();
+    if (role === 'user') return props.onOpenUsers();
+    return props.onOpenBarangay();
   }
 
   return (
     <AdminShell
       {...props}
       activeView="rescuers"
-      title="Rescuer Account Management"
+      title="Account Management"
       noMainScroll
-      actions={<button className={d.admin.actionAdd} onClick={openCreateForm}>Add {accountLabel} Account</button>}
     >
       <div className={d.admin.root}>
         <div className={d.admin.headerRow}>
@@ -225,13 +227,14 @@ export default function RescuerAccountsPage(props: Props) {
             <button type="button" onClick={() => { setShowArchive(true); void loadArchivedAccounts(); }} className={d.admin.archiveButton}><img src={ARCHIVE_ICON} alt="Archive" className={d.admin.archiveIcon} /> Archive</button>
             <select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)} className={d.admin.search} aria-label="Filter rescuer accounts by availability"><option value="all">All Rescuers</option><option value="available">Available</option><option value="assigned">Assigned</option></select>
             <input className={d.admin.search} placeholder={`Search ${accountLabel} Account`} value={search} onChange={(event) => setSearch(event.target.value)} />
+            <AddAccountDialog initialRole="rescuer" initialRescuerRole={accountRole} onCreated={handleCreated} onAuthError={onAuthError} />
           </div>
         </div>
         {error ? <p className={d.page.error}>{error}</p> : null}
 
         {showForm ? (
           <form className={d.admin.form} onSubmit={saveAccount}>
-            <div className={d.admin.idBox}>ID: {form.id ? accounts.find((account) => account.id === form.id)?.rescuer_id || `${isBarangayRescuer ? 'BRS' : 'RSC'}-${form.id}` : 'Auto-generated after create'}</div>
+            <div className={d.admin.idBox}>ID: {accounts.find((account) => account.id === form.id)?.rescuer_id || `${isBarangayRescuer ? 'BRS' : 'RSC'}-${form.id}`}</div>
             <input className={d.form.inputSm} required placeholder="Username" value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} />
             <input className={d.form.inputSm} required type="email" placeholder="Email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
             <input className={d.form.inputSm} required={!form.id} type="password" placeholder={form.id ? 'Password (optional)' : 'Password'} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
@@ -244,7 +247,7 @@ export default function RescuerAccountsPage(props: Props) {
                 {BARANGAYS.map((barangay) => <option key={barangay} value={barangay}>{barangay}</option>)}
               </select>
             ) : null}
-            <div className={d.admin.formActions}><button className={d.btn.primary} disabled={busy}>{busy ? 'Saving…' : form.id ? 'Update Account' : 'Create Account'}</button><button type="button" className={d.btn.secondary} onClick={() => setShowForm(false)}>Cancel</button></div>
+            <div className={d.admin.formActions}><button className={d.btn.primary} disabled={busy}>{busy ? 'Saving…' : 'Update Account'}</button><button type="button" className={d.btn.secondary} onClick={() => setShowForm(false)}>Cancel</button></div>
           </form>
         ) : null}
 

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../services/apiClient';
 import AdminShell from '../components/AdminShell';
+import AddAccountDialog, { type AccountRole } from '../components/AddAccountDialog';
 import { d } from '../adminDesign';
 import type { BarangayAccount } from '../types';
 
@@ -67,6 +68,7 @@ function fmtDate(iso?: string | null) {
 
 const ARCHIVE_ICON = 'https://cdn-icons-png.flaticon.com/512/3143/3143462.png';
 const BARANGAY_OPTIONS = ['Lingga', 'Looc', 'Palingon', 'Parian', 'Sampiruhan', 'Uwisan'];
+type ApiError = { response?: { status?: number; data?: { message?: string } } };
 
 export default function BarangayAccountsPage({
   onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers,
@@ -85,34 +87,29 @@ export default function BarangayAccountsPage({
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
 
-  async function loadAccounts(showLoading = true) {
+  const loadAccounts = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
       const res = await api.get('/barangay/accounts');
       setAccounts(Array.isArray(res.data) ? res.data : []);
       setError(null);
-    } catch (err: any) {
-      if (err?.response?.status === 401) { onAuthError(); return; }
-      setError(err?.response?.data?.message || 'Failed to load barangay accounts.');
+    } catch (error: unknown) {
+      const err = error as ApiError;
+      if (err.response?.status === 401) { onAuthError(); return; }
+      setError(err.response?.data?.message || 'Failed to load barangay accounts.');
     } finally {
       if (showLoading) setLoading(false);
     }
-  }
+  }, [onAuthError]);
 
   useEffect(() => {
     loadAccounts();
     const timer = window.setInterval(() => loadAccounts(false), 10_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [loadAccounts]);
 
   function handleEdit(a: BarangayAccount) {
     setForm(toForm(a));
-    setFormError(null);
-    setIsFormOpen(true);
-  }
-
-  function handleNew() {
-    setForm(EMPTY_FORM);
     setFormError(null);
     setIsFormOpen(true);
   }
@@ -122,9 +119,10 @@ export default function BarangayAccountsPage({
     try {
       const res = await api.get('/barangay/accounts/archived');
       setArchivedAccounts(Array.isArray(res.data) ? res.data : []);
-    } catch (err: any) {
-      if (err?.response?.status === 401) { onAuthError(); return; }
-      setError(err?.response?.data?.message || 'Failed to load archived barangay accounts.');
+    } catch (error: unknown) {
+      const err = error as ApiError;
+      if (err.response?.status === 401) { onAuthError(); return; }
+      setError(err.response?.data?.message || 'Failed to load archived barangay accounts.');
     } finally {
       setArchiveBusy(false);
     }
@@ -142,10 +140,7 @@ export default function BarangayAccountsPage({
       setFormError('Username, email and barangay name are required.');
       return;
     }
-    if (!form.id && !form.password.trim()) {
-      setFormError('Password is required for new accounts.');
-      return;
-    }
+    if (!form.id) return;
     setBusy(true);
     try {
       const payload = {
@@ -158,17 +153,14 @@ export default function BarangayAccountsPage({
         contactNumber: form.contactNumber.trim() || null,
         barangayName: form.barangayName.trim(),
       };
-      if (form.id) {
-        await api.patch(`/barangay/accounts/${form.id}`, payload);
-      } else {
-        await api.post('/barangay/accounts', payload);
-      }
+      await api.patch(`/barangay/accounts/${form.id}`, payload);
       setForm(EMPTY_FORM);
       setIsFormOpen(false);
       await loadAccounts();
-    } catch (err: any) {
-      if (err?.response?.status === 401) { onAuthError(); return; }
-      setFormError(err?.response?.data?.message || 'Failed to save account.');
+    } catch (error: unknown) {
+      const err = error as ApiError;
+      if (err.response?.status === 401) { onAuthError(); return; }
+      setFormError(err.response?.data?.message || 'Failed to save account.');
     } finally {
       setBusy(false);
     }
@@ -182,9 +174,10 @@ export default function BarangayAccountsPage({
       if (form.id === id) setForm(EMPTY_FORM);
       if (form.id === id) setIsFormOpen(false);
       await loadAccounts();
-    } catch (err: any) {
-      if (err?.response?.status === 401) { onAuthError(); return; }
-      alert(err?.response?.data?.message || 'Failed to archive account.');
+    } catch (error: unknown) {
+      const err = error as ApiError;
+      if (err.response?.status === 401) { onAuthError(); return; }
+      alert(err.response?.data?.message || 'Failed to archive account.');
     } finally {
       setBusy(false);
     }
@@ -195,9 +188,10 @@ export default function BarangayAccountsPage({
     try {
       await api.patch(`/barangay/accounts/${account.id}/restore`);
       await Promise.all([loadAccounts(), loadArchivedAccounts()]);
-    } catch (err: any) {
-      if (err?.response?.status === 401) { onAuthError(); return; }
-      setError(err?.response?.data?.message || 'Failed to restore barangay account.');
+    } catch (error: unknown) {
+      const err = error as ApiError;
+      if (err.response?.status === 401) { onAuthError(); return; }
+      setError(err.response?.data?.message || 'Failed to restore barangay account.');
     } finally {
       setArchiveBusy(false);
     }
@@ -209,9 +203,10 @@ export default function BarangayAccountsPage({
     try {
       await api.delete(`/barangay/accounts/${account.id}/permanent`);
       await loadArchivedAccounts();
-    } catch (err: any) {
-      if (err?.response?.status === 401) { onAuthError(); return; }
-      setError(err?.response?.data?.message || 'Failed to permanently delete barangay account.');
+    } catch (error: unknown) {
+      const err = error as ApiError;
+      if (err.response?.status === 401) { onAuthError(); return; }
+      setError(err.response?.data?.message || 'Failed to permanently delete barangay account.');
     } finally {
       setArchiveBusy(false);
     }
@@ -243,13 +238,19 @@ export default function BarangayAccountsPage({
     onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationAreas, onOpenPostUpdates,
   };
 
+  async function handleCreated(role: AccountRole) {
+    if (role === 'barangay') return loadAccounts();
+    if (role === 'admin') return onOpenAdmin();
+    if (role === 'user') return onOpenUsers();
+    return onOpenRescuers();
+  }
+
   return (
     <AdminShell
       {...shellProps}
       activeView="barangay"
-      title="Barangay Account Management"
+      title="Account Management"
       noMainScroll
-      actions={<button onClick={handleNew} className={`${d.admin.actionAdd} !text-sm whitespace-nowrap`}>Add Barangay Account</button>}
     >
       <div className={d.admin.root}>
         <div className={d.admin.headerRow}>
@@ -274,6 +275,7 @@ export default function BarangayAccountsPage({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
+            <AddAccountDialog initialRole="barangay" onCreated={handleCreated} onAuthError={onAuthError} />
           </div>
         </div>
 
@@ -282,7 +284,7 @@ export default function BarangayAccountsPage({
         {isFormOpen ? (
           <form onSubmit={handleSubmit} className={d.admin.form}>
             <div className={d.admin.idBox}>
-              ID: {form.id ? (accounts.find((a) => a.id === form.id)?.barangay_id || `BRG-${form.id}`) : 'Auto-generated after create'}
+              ID: {accounts.find((a) => a.id === form.id)?.barangay_id || `BRG-${form.id}`}
             </div>
 
             <input
@@ -351,7 +353,7 @@ export default function BarangayAccountsPage({
 
             <div className={d.admin.formActions}>
               <button type="submit" className={d.btn.primary} disabled={busy}>
-                {busy ? 'Saving…' : form.id ? 'Update Account' : 'Create Account'}
+                {busy ? 'Saving…' : 'Update Account'}
               </button>
               <button type="button" className={d.btn.secondary} onClick={() => setIsFormOpen(false)}>
                 Cancel

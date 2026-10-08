@@ -40,7 +40,6 @@ export type DashboardIncident = {
   status: string;
   title: string;
   createdAt: string;
-  imageBase64?: string | null;
 };
 
 export type DashboardSummary = {
@@ -115,6 +114,9 @@ export type RescuerAccount = {
   last_login: string | null;
   is_online: boolean;
   is_available: boolean;
+  current_latitude?: number | string | null;
+  current_longitude?: number | string | null;
+  location_updated_at?: string | null;
   archived_at?: string | null;
 };
 
@@ -157,6 +159,8 @@ export type MonitoringReport = {
   status: string;
   evacuation_area_id?: number | null;
   evacuation_area_name?: string | null;
+  evacuation_latitude?: number | null;
+  evacuation_longitude?: number | null;
   evacuees_reserved?: number | null;
   assigned_team?: string | null;
   admin_notes?: string | null;
@@ -167,6 +171,7 @@ export type MonitoringReport = {
   updated_at?: string | null;
   updated_by?: number | null;
   dispatch_id?: number | null;
+  dispatch_type?: 'barangay_responder' | 'cddrmd_backup' | null;
   assigned_rescuer_id?: number | null;
   rescuer_assigned_at?: string | null;
   responder_acknowledged_at?: string | null;

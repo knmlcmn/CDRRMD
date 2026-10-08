@@ -333,6 +333,55 @@ body,
 .climate-badge-humidity-high { color: #818cf8; }
 .climate-badge-unavailable { color: #94a3b8; }
 
+.incident-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(17rem, 0.85fr);
+  column-gap: 2.5rem;
+  row-gap: 1rem;
+  min-width: 0;
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+.incident-detail-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.incident-detail-meta-column {
+  border-left: 1px solid #e2e8f0;
+  padding-left: 2rem;
+}
+
+.incident-detail-wide {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.incident-detail-wide:empty {
+  display: none;
+}
+
+@media (max-width: 700px) {
+  .incident-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .incident-detail-meta-column {
+    border-top: 1px solid #e2e8f0;
+    border-left: 0;
+    padding-top: 1rem;
+    padding-left: 0;
+  }
+
+  .incident-detail-wide {
+    grid-column: auto;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .water-gauge,
   .water-gauge-fill::after,
