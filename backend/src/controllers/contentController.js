@@ -4,6 +4,7 @@ const {
   resolveBarangayAtLocation,
 } = require('../services/barangayBoundaryService');
 const { syncFloodSensorAlerts } = require('../services/floodSensorAlertService');
+const { lockEvacuationCapacity } = require('../services/evacuationRoutingService');
 
 async function resolveCanonicalBarangayName(rawBarangay, latitude, longitude) {
   const result = await pool.query(
@@ -111,8 +112,8 @@ async function getEvacuationAreas(req, res) {
        ea.latitude,
        ea.longitude,
        ea.capacity,
-       ea.evacuees::int AS rescued_evacuees,
-       (ea.evacuees + COALESCE(stats.incoming_total, 0))::int AS evacuees,
+       LEAST(ea.evacuees, ea.capacity)::int AS rescued_evacuees,
+       LEAST(ea.evacuees + COALESCE(stats.incoming_total, 0), ea.capacity)::int AS evacuees,
        GREATEST(ea.capacity - ea.evacuees - COALESCE(stats.incoming_total, 0), 0)::int AS available_slots,
        GREATEST(ea.capacity - ea.evacuees, 0)::int AS rescued_available_slots,
        CASE
@@ -159,8 +160,14 @@ async function createEvacuationArea(req, res) {
     return res.status(400).json({ message: 'Latitude and longitude must be valid numbers.' });
   }
 
-  const cap = Math.max(0, Number(capacity || 0));
-  const evac = Math.max(0, Number(evacuees || 0));
+  const cap = Number(capacity || 0);
+  const evac = Number(evacuees || 0);
+  if (!Number.isSafeInteger(cap) || cap < 0 || !Number.isSafeInteger(evac) || evac < 0) {
+    return res.status(400).json({ message: 'Capacity and evacuees must be non-negative whole numbers.' });
+  }
+  if (evac > cap) {
+    return res.status(400).json({ message: 'The number of evacuees cannot exceed capacity.' });
+  }
   const canonicalBarangay = await resolveCanonicalBarangayName(barangay, lat, lon);
   if (!canonicalBarangay) {
     return res.status(400).json({ message: 'Please select a valid Calamba barangay.' });
@@ -202,40 +209,51 @@ async function updateEvacuationArea(req, res) {
     return res.status(400).json({ message: 'Please select a valid Calamba barangay.' });
   }
 
-  const result = await pool.query(
-    `UPDATE evacuation_areas
-     SET
-       name = $1,
-       barangay = $2,
-       place_type = $3,
-       address = $4,
-       latitude = $5,
-       longitude = $6,
-       capacity = $7,
-       evacuees = $8,
-       is_active = $9
-     WHERE id = $10
-     RETURNING id, name, barangay, place_type, address, latitude, longitude, capacity, evacuees, is_active, created_at`,
-    [
-      String(name || '').trim(),
-      canonicalBarangay,
-      String(placeType || '').trim() || null,
-      String(address || '').trim() || null,
-      lat,
-      lon,
-      Math.max(0, Number(capacity || 0)),
-      Math.max(0, Number(evacuees || 0)),
-      Boolean(isActive ?? true),
-      id,
-    ],
-  );
-
-  const updated = result.rows[0];
-  if (!updated) {
-    return res.status(404).json({ message: 'Evacuation area not found.' });
+  const cap = Number(capacity || 0);
+  const evac = Number(evacuees || 0);
+  if (!Number.isSafeInteger(cap) || cap < 0 || !Number.isSafeInteger(evac) || evac < 0) {
+    return res.status(400).json({ message: 'Capacity and evacuees must be non-negative whole numbers.' });
   }
-
-  return res.json(updated);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await lockEvacuationCapacity(client);
+    const incomingResult = await client.query(
+      `SELECT COALESCE(SUM(evacuees_reserved), 0)::int AS total
+       FROM incident_reports
+       WHERE evacuation_area_id = $1
+         AND report_type = 'rescue'
+         AND status IN ('accepted', 'in_progress')
+         AND evacuation_arrived_at IS NULL`,
+      [id],
+    );
+    const incoming = Number(incomingResult.rows[0]?.total || 0);
+    if (evac + incoming > cap) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ message: `Capacity cannot be lower than the ${evac + incoming} current and incoming evacuees.` });
+    }
+    const result = await client.query(
+      `UPDATE evacuation_areas
+       SET name = $1, barangay = $2, place_type = $3, address = $4,
+           latitude = $5, longitude = $6, capacity = $7, evacuees = $8, is_active = $9
+       WHERE id = $10
+       RETURNING id, name, barangay, place_type, address, latitude, longitude, capacity, evacuees, is_active, created_at`,
+      [String(name || '').trim(), canonicalBarangay, String(placeType || '').trim() || null,
+        String(address || '').trim() || null, lat, lon, cap, evac, Boolean(isActive ?? true), id],
+    );
+    const updated = result.rows[0];
+    if (!updated) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Evacuation area not found.' });
+    }
+    await client.query('COMMIT');
+    return res.json(updated);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function deleteEvacuationArea(req, res) {

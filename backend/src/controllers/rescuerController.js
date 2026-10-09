@@ -2,7 +2,10 @@ const bcrypt = require('bcryptjs');
 const pool = require('../config/db');
 const { httpError } = require('../utils/httpError');
 const { isSupportedBarangay } = require('../services/supportedBarangays');
-const { findNearestAvailableEvacuationArea } = require('../services/evacuationRoutingService');
+const {
+  evacuationAreaStillHasCapacity,
+  findNearestAvailableEvacuationArea,
+} = require('../services/evacuationRoutingService');
 
 function requireRole(req, role) {
   if (req.user?.role !== role) {
@@ -382,7 +385,9 @@ async function updateMyLocation(req, res) {
     const incidentDistanceMeters = incidentCoordinatesAvailable
       ? distanceMeters(latitude, longitude, Number(assignment.incident_latitude), Number(assignment.incident_longitude))
       : Number.POSITIVE_INFINITY;
+    const wasPickedUp = Boolean(assignment.picked_up_at);
     let pickupConfirmed = false;
+    let rerouted = false;
 
     // The server performs the transition atomically with the GPS update. A
     // browser accuracy estimate must not block two markers that have met.
@@ -429,6 +434,50 @@ async function updateMyLocation(req, res) {
       pickupConfirmed = true;
     }
 
+    if (wasPickedUp && assignment.evacuation_area_id) {
+      const requiredSlots = Math.max(1, Number(assignment.evacuees_reserved || 1));
+      const currentArea = await evacuationAreaStillHasCapacity(
+        client,
+        assignment.evacuation_area_id,
+        { requiredSlots, excludeReportId: assignment.report_id },
+      );
+      if (!currentArea) {
+        const replacementArea = await findNearestAvailableEvacuationArea(
+          client,
+          latitude,
+          longitude,
+          { requiredSlots, excludeReportId: assignment.report_id },
+        );
+        if (!replacementArea) {
+          throw httpError(409, 'The assigned evacuation center is full and no reachable alternative currently has enough capacity.');
+        }
+
+        const previousAreaName = assignment.evacuation_area_name;
+        assignment.evacuation_area_id = Number(replacementArea.id);
+        assignment.evacuation_area_name = replacementArea.name;
+        assignment.evacuation_latitude = Number(replacementArea.latitude);
+        assignment.evacuation_longitude = Number(replacementArea.longitude);
+        await client.query(
+          `UPDATE incident_reports
+           SET evacuation_area_id = $1, evacuation_area_name = $2,
+               updated_at = NOW(), updated_by = $3
+           WHERE id = $4`,
+          [replacementArea.id, replacementArea.name, req.user.userId, assignment.report_id],
+        );
+        await client.query(
+          `INSERT INTO report_status_logs (report_id, old_status, new_status, changed_by, action_note, metadata)
+           VALUES ($1, $2, $2, $3, $4, $5::jsonb)`,
+          [assignment.report_id, assignment.status, req.user.userId, `Evacuation center capacity changed. Route redirected from ${previousAreaName || 'the previous center'} to ${replacementArea.name}.`, JSON.stringify({ backupRequestId: assignment.backup_request_id, previousEvacuationAreaName: previousAreaName, evacuationAreaId: replacementArea.id, rerouted: true, automatic: true })],
+        );
+        await client.query(
+          `INSERT INTO user_notifications (user_id, report_id, title, body)
+           VALUES ($1, $2, $3, $4)`,
+          [assignment.reported_by, assignment.report_id, `Evacuation route updated`, `Your assigned evacuation center reached capacity. Your responder is now taking you to ${replacementArea.name}.`],
+        );
+        rerouted = true;
+      }
+    }
+
     const destinationLatitude = Number(assignment.picked_up_at
       ? assignment.evacuation_latitude
       : assignment.incident_latitude);
@@ -445,6 +494,9 @@ async function updateMyLocation(req, res) {
       backupRequestId: assignment.backup_request_id,
       distanceMeters: currentDistanceMeters == null ? null : Math.round(currentDistanceMeters),
       pickupConfirmed,
+      rerouted,
+      evacuationAreaId: assignment.evacuation_area_id,
+      evacuationAreaName: assignment.evacuation_area_name,
     });
   } catch (error) {
     await client.query('ROLLBACK');

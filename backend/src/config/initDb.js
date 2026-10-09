@@ -471,6 +471,22 @@ async function initDb() {
     ON incident_reports (evacuation_area_id, evacuation_arrived_at, departure_confirmed_at)
     WHERE report_type = 'rescue' AND evacuation_area_id IS NOT NULL;
 
+    UPDATE evacuation_areas
+    SET capacity = GREATEST(capacity, 0),
+        evacuees = LEAST(GREATEST(evacuees, 0), GREATEST(capacity, 0))
+    WHERE capacity < 0 OR evacuees < 0 OR evacuees > capacity;
+
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'evacuation_areas_valid_occupancy'
+      ) THEN
+        ALTER TABLE evacuation_areas
+        ADD CONSTRAINT evacuation_areas_valid_occupancy
+        CHECK (capacity >= 0 AND evacuees >= 0 AND evacuees <= capacity);
+      END IF;
+    END $$;
+
     UPDATE incident_reports ir
     SET status = 'accepted', assigned_team = NULL, dispatched_at = NULL, updated_at = NOW()
     WHERE ir.status = 'in_progress'

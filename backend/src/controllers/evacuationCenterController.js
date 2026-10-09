@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const { httpError } = require('../utils/httpError');
+const { lockEvacuationCapacity } = require('../services/evacuationRoutingService');
 
 function requireBarangay(req) {
   if (req.user?.role !== 'barangay') throw httpError(403, 'Barangay access required.');
@@ -23,9 +24,10 @@ async function listCenters(req, res) {
   const barangayName = requireBarangay(req);
   const { rows } = await pool.query(
     `SELECT id, name, barangay, place_type, address, latitude, longitude,
-            capacity, evacuees, evacuees AS current_count,
-            GREATEST(capacity - evacuees, 0)::int AS available_slots,
-            GREATEST(capacity - evacuees, 0)::int AS remaining_capacity,
+            capacity, LEAST(evacuees, capacity)::int AS evacuees,
+            LEAST(evacuees, capacity)::int AS current_count,
+            GREATEST(capacity - LEAST(evacuees, capacity), 0)::int AS available_slots,
+            GREATEST(capacity - LEAST(evacuees, capacity), 0)::int AS remaining_capacity,
             is_active, created_at
      FROM evacuation_areas
      WHERE LOWER(barangay) = LOWER($1)
@@ -83,19 +85,38 @@ async function updateManualCount(req, res) {
   const count = Number(req.body?.count);
   if (!Number.isSafeInteger(centerId) || centerId <= 0) throw httpError(400, 'Invalid evacuation center.');
   if (!Number.isSafeInteger(count) || count < 0) throw httpError(400, 'Current count must be a non-negative whole number.');
-  const { rows } = await pool.query(
-    `UPDATE evacuation_areas SET evacuees = $1
-     WHERE id = $2 AND LOWER(barangay) = LOWER($3) AND $1 <= capacity
-     RETURNING id, capacity, evacuees AS current_count,
-       GREATEST(capacity - evacuees, 0)::int AS remaining_capacity`,
-    [count, centerId, barangayName],
-  );
-  if (!rows[0]) {
-    const center = await findOwnedCenter(pool, centerId, barangayName);
-    if (!center) throw httpError(404, 'Evacuation center not found in your jurisdiction.');
-    throw httpError(400, `Current count cannot exceed the center capacity of ${center.capacity}.`);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await lockEvacuationCapacity(client);
+    const { rows } = await client.query(
+      `UPDATE evacuation_areas ea SET evacuees = $1
+       WHERE ea.id = $2 AND LOWER(ea.barangay) = LOWER($3)
+         AND $1 + COALESCE((
+           SELECT SUM(ir.evacuees_reserved)
+           FROM incident_reports ir
+           WHERE ir.evacuation_area_id = ea.id
+             AND ir.report_type = 'rescue'
+             AND ir.status IN ('accepted', 'in_progress')
+             AND ir.evacuation_arrived_at IS NULL
+         ), 0) <= ea.capacity
+       RETURNING ea.id, ea.capacity, ea.evacuees AS current_count,
+         GREATEST(ea.capacity - ea.evacuees, 0)::int AS remaining_capacity`,
+      [count, centerId, barangayName],
+    );
+    if (!rows[0]) {
+      const center = await findOwnedCenter(client, centerId, barangayName);
+      if (!center) throw httpError(404, 'Evacuation center not found in your jurisdiction.');
+      throw httpError(409, `This count would exceed the capacity of ${center.capacity} after including evacuees already en route.`);
+    }
+    await client.query('COMMIT');
+    return res.json(rows[0]);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
   }
-  return res.json(rows[0]);
 }
 
 async function confirmArrival(req, res) {
@@ -108,6 +129,7 @@ async function confirmArrival(req, res) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    await lockEvacuationCapacity(client);
     const center = await findOwnedCenter(client, centerId, barangayName, true);
     if (!center) throw httpError(404, 'Evacuation center not found in your jurisdiction.');
     const reportResult = await client.query(
@@ -143,7 +165,16 @@ async function confirmArrival(req, res) {
        WHERE report_id = $1 AND arrived_at IS NULL AND declined_at IS NULL`,
       [reportId, req.user.userId],
     );
-    await client.query('UPDATE evacuation_areas SET evacuees = evacuees + $1 WHERE id = $2', [amount, centerId]);
+    const capacityUpdate = await client.query(
+      `UPDATE evacuation_areas
+       SET evacuees = evacuees + $1
+       WHERE id = $2 AND evacuees + $1 <= capacity
+       RETURNING evacuees, capacity`,
+      [amount, centerId],
+    );
+    if (!capacityUpdate.rows[0]) {
+      throw httpError(409, 'This evacuation center no longer has enough capacity. The responder route must be updated.');
+    }
     await client.query(
       `INSERT INTO report_status_logs (report_id, old_status, new_status, changed_by, action_note, metadata)
        VALUES ($1, $2, 'resolved', $3, $4, $5::jsonb)`,

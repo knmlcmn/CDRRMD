@@ -808,7 +808,10 @@ async function updateReportStatus(req, res) {
         // Prefer the evacuation area already assigned to this rescue (set when
         // the resident first requested rescue) as long as it still has room.
         let destinationArea = current.evacuation_area_id
-          ? await evacuationAreaStillHasCapacity(client, current.evacuation_area_id)
+          ? await evacuationAreaStillHasCapacity(client, current.evacuation_area_id, {
+              requiredSlots: Math.max(1, Number(current.evacuees_reserved || 1)),
+              excludeReportId: current.id,
+            })
           : null;
 
         // If the assigned center filled up, calculate another reachable center
@@ -818,6 +821,10 @@ async function updateReportStatus(req, res) {
             client,
             Number(current.latitude),
             Number(current.longitude),
+            {
+              requiredSlots: Math.max(1, Number(current.evacuees_reserved || 1)),
+              excludeReportId: current.id,
+            },
           );
         }
 
@@ -996,7 +1003,11 @@ async function updateReportStatus(req, res) {
         client,
         Number(current.latitude),
         Number(current.longitude),
-        { preferredAreaId: current.evacuation_area_id },
+        {
+          preferredAreaId: current.evacuation_area_id,
+          requiredSlots: effectiveEvacueesReserved,
+          excludeReportId: current.id,
+        },
       );
 
       if (!destinationArea) {
@@ -1025,7 +1036,11 @@ async function updateReportStatus(req, res) {
           client,
           Number(current.latitude),
           Number(current.longitude),
-          { preferredAreaId: current.evacuation_area_id },
+          {
+            preferredAreaId: current.evacuation_area_id,
+            requiredSlots: effectiveEvacueesReserved,
+            excludeReportId: current.id,
+          },
         );
 
         if (!destinationArea) {

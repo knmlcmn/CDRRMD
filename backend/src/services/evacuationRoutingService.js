@@ -2,6 +2,10 @@ const { findShortestReachableDestination } = require('./roadRoutingService');
 
 const ROUTING_LOCK_ID = 880021;
 
+async function lockEvacuationCapacity(client) {
+  await client.query('SELECT pg_advisory_xact_lock($1)', [ROUTING_LOCK_ID]);
+}
+
 function reservationSummary(excludedReportParameter = '') {
   const exclusion = excludedReportParameter ? `AND id <> ${excludedReportParameter}` : '';
   return `
@@ -27,7 +31,7 @@ async function findNearestAvailableEvacuationArea(
     excludeReportId = null,
   } = {},
 ) {
-  await client.query('SELECT pg_advisory_xact_lock($1)', [ROUTING_LOCK_ID]);
+  await lockEvacuationCapacity(client);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
 
   const excludedId = Number(excludeReportId);
@@ -82,21 +86,35 @@ async function findNearestAvailableEvacuationArea(
   return routed?.destination || null;
 }
 
-async function evacuationAreaStillHasCapacity(client, evacuationAreaId) {
+async function evacuationAreaStillHasCapacity(
+  client,
+  evacuationAreaId,
+  { requiredSlots = 1, excludeReportId = null } = {},
+) {
   const id = Number(evacuationAreaId);
   if (!Number.isSafeInteger(id) || id <= 0) return null;
+  await lockEvacuationCapacity(client);
+  const slots = Math.max(1, Number(requiredSlots || 1));
+  const excludedId = Number(excludeReportId);
+  const excludesReport = Number.isSafeInteger(excludedId) && excludedId > 0;
+  const summarySql = reservationSummary(excludesReport ? '$2' : '');
+  const slotsParameter = excludesReport ? '$3' : '$2';
 
   const result = await client.query(
-    `SELECT ea.id, ea.name, ea.barangay, ea.capacity,
+    `SELECT ea.id, ea.name, ea.barangay, ea.latitude, ea.longitude, ea.capacity,
             (ea.evacuees + COALESCE(stats.incoming_total, 0))::int AS total_evacuees
      FROM evacuation_areas ea
-     LEFT JOIN (${reservationSummary()}) stats ON stats.evacuation_area_id = ea.id
+     LEFT JOIN (${summarySql}) stats ON stats.evacuation_area_id = ea.id
      WHERE ea.id = $1 AND ea.is_active = TRUE
+       AND (ea.evacuees + COALESCE(stats.incoming_total, 0) + ${slotsParameter}) <= ea.capacity
      LIMIT 1`,
-    [id],
+    excludesReport ? [id, excludedId, slots] : [id, slots],
   );
-  const area = result.rows[0];
-  return area && Number(area.total_evacuees) < Number(area.capacity) ? area : null;
+  return result.rows[0] || null;
 }
 
-module.exports = { evacuationAreaStillHasCapacity, findNearestAvailableEvacuationArea };
+module.exports = {
+  evacuationAreaStillHasCapacity,
+  findNearestAvailableEvacuationArea,
+  lockEvacuationCapacity,
+};
