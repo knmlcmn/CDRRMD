@@ -15,7 +15,7 @@ const {
   heartbeatPresence,
   markPresenceOffline,
 } = require('../controllers/barangayController');
-const { updateReportStatus } = require('../controllers/reportController');
+const { getReportImage, updateReportStatus } = require('../controllers/reportController');
 const evacuationCenter = require('../controllers/evacuationCenterController');
 const barangayRescuer = require('../controllers/barangayRescuerController');
 const rescuerAccounts = require('../controllers/rescuerController');
@@ -40,6 +40,7 @@ router.delete('/accounts/:id', auth, asyncHandler(archiveAccount));
 router.get('/personnel', auth, asyncHandler(rescuerAccounts.listAccounts));
 router.post('/personnel', auth, asyncHandler(rescuerAccounts.createAccount));
 router.get('/reports/mine', auth, asyncHandler(getMyReports));
+router.get('/reports/:id/image', auth, asyncHandler(getReportImage));
 router.get('/reports/:id/rescuer-preview', auth, asyncHandler(barangayRescuer.previewNearestRescuer));
 router.patch('/reports/:id/status', auth, asyncHandler(updateReportStatus));
 router.get('/evacuation-centers', auth, asyncHandler(evacuationCenter.listCenters));

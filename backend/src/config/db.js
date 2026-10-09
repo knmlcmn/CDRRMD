@@ -20,7 +20,9 @@ const pool = new Pool({
         password: process.env.DB_PASSWORD,
       }),
   ...(ssl === undefined ? {} : { ssl }),
-  max: Number(process.env.DB_POOL_MAX || 5),
+  // A small per-instance pool prevents autoscaled serverless instances from
+  // exhausting the hosted database connection limit.
+  max: Number(process.env.DB_POOL_MAX || (process.env.VERCEL ? 1 : 5)),
   idleTimeoutMillis: 10_000,
   connectionTimeoutMillis: 10_000,
 });

@@ -59,6 +59,7 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
   const [tab, setTab] = useState<Tab>('incoming');
   const [search, setSearch] = useState('');
   const [manualCount, setManualCount] = useState('0');
+  const [isManualCountDirty, setIsManualCountDirty] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [savingCount, setSavingCount] = useState(false);
@@ -108,8 +109,8 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
     return () => window.clearInterval(timer);
   }, [centerId, loadCases, loadCenters]);
   useEffect(() => {
-    if (selectedCenter) setManualCount(String(selectedCenter.current_count));
-  }, [selectedCenter]);
+    if (selectedCenter && !isManualCountDirty) setManualCount(String(selectedCenter.current_count));
+  }, [selectedCenter, isManualCountDirty]);
 
   async function mutate(path: string, success: string, reportId: number) {
     if (!centerId || busyId) return;
@@ -129,9 +130,16 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
     if (!centerId || savingCount) return;
     const count = Number(manualCount);
     if (!Number.isInteger(count) || count < 0) { setError('Enter a non-negative whole number.'); return; }
+    if (selectedCenter && count > selectedCenter.capacity) {
+      setError(`Current count cannot exceed the center capacity of ${selectedCenter.capacity}.`);
+      return;
+    }
     setSavingCount(true); setError(''); setNotice('');
     try {
-      await api.patch(`/barangay/evacuation-centers/${centerId}/count`, { count });
+      const { data } = await api.patch<Pick<Center, 'id' | 'capacity' | 'current_count' | 'remaining_capacity'>>(`/barangay/evacuation-centers/${centerId}/count`, { count });
+      setCenters((current) => current.map((center) => center.id === data.id ? { ...center, ...data } : center));
+      setManualCount(String(data.current_count));
+      setIsManualCountDirty(false);
       await loadCenters();
       setNotice('Current evacuee count updated.');
     } catch (error: unknown) {
@@ -160,7 +168,7 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
         {notice ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{notice}</p> : null}
 
         <label className="block max-w-md text-sm font-bold text-slate-800">Evacuation center
-          <select className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 font-medium" value={centerId ?? ''} onChange={(event) => setCenterId(Number(event.target.value))}>
+          <select className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 font-medium" value={centerId ?? ''} onChange={(event) => { setIsManualCountDirty(false); setCenterId(Number(event.target.value)); }}>
             {centers.map((center) => <option key={center.id} value={center.id}>{center.name}</option>)}
           </select>
         </label>
@@ -176,7 +184,7 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <p className="text-sm font-black text-slate-800">Manual current count</p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
-            <input type="number" min="0" step="1" className="w-48 rounded-lg border border-slate-300 px-3 py-2" value={manualCount} onChange={(event) => setManualCount(event.target.value)} />
+            <input type="number" min="0" max={selectedCenter?.capacity} step="1" className="w-48 rounded-lg border border-slate-300 px-3 py-2" value={manualCount} onChange={(event) => { setManualCount(event.target.value); setIsManualCountDirty(true); }} />
             <button type="button" onClick={() => void saveCount()} disabled={!centerId || savingCount} className="rounded-lg bg-[#1f567d] px-5 py-2 font-bold text-white hover:bg-[#174866] disabled:opacity-50">{savingCount ? 'Saving…' : 'Save Current Count'}</button>
             <span className="text-xs text-slate-500">Arrival and departure confirmations adjust this count automatically.</span>
           </div>

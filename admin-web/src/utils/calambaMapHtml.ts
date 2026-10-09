@@ -2255,26 +2255,26 @@ export function buildCalambaMapHtml(
         iconAnchor: [11, 11],
       });
 
-      (payload.areas || []).forEach(function(area) {
-        if (jurisdictionBarangayKey && normalizeBarangayName(area.barangay) !== jurisdictionBarangayKey) {
-          return;
-        }
-        var lat = Number(area.latitude);
-        var lon = Number(area.longitude);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon) || !inCalamba(lat, lon)) {
-          return;
-        }
-        fitBounds.extend([lat, lon]);
-        L.marker([lat, lon], { icon: areaPinIcon })
-          .addTo(areaLayer)
-          .bindPopup(
-            '<strong>' + area.name + '</strong><br/>' +
-            area.barangay + '<br/>' +
-            'Capacity: ' + area.capacity + '<br/>' +
-            'Evacuees: ' + area.evacuees + '<br/>' +
-            'Status: ' + (area.evacuation_status === 'full' ? 'Full' : (area.evacuation_status === 'nearly_full' ? 'Nearly Full' : 'Available'))
-          );
-      });
+      function renderEvacuationAreas(extendInitialBounds) {
+        areaLayer.clearLayers();
+        (payload.areas || []).forEach(function(area) {
+          if (jurisdictionBarangayKey && normalizeBarangayName(area.barangay) !== jurisdictionBarangayKey) return;
+          var lat = Number(area.latitude);
+          var lon = Number(area.longitude);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon) || !inCalamba(lat, lon)) return;
+          if (extendInitialBounds) fitBounds.extend([lat, lon]);
+          L.marker([lat, lon], { icon: areaPinIcon })
+            .addTo(areaLayer)
+            .bindPopup(
+              '<strong>' + escapeHtml(area.name) + '</strong><br/>' +
+              escapeHtml(area.barangay) + '<br/>' +
+              'Capacity: ' + Number(area.capacity || 0) + '<br/>' +
+              'Evacuees: ' + Number(area.evacuees || 0) + '<br/>' +
+              'Status: ' + (area.evacuation_status === 'full' ? 'Full' : (area.evacuation_status === 'nearly_full' ? 'Nearly Full' : 'Available'))
+            );
+        });
+      }
+      renderEvacuationAreas(true);
 
       function bearingBetween(from, to) {
         var lat1 = Number(from && from.latitude) * Math.PI / 180;
@@ -2518,7 +2518,9 @@ export function buildCalambaMapHtml(
       setRainIntensityFromMmPerHour(0);
       refreshRainImpactData();
       setInterval(renderFloodHazardLayer, 30000);
-      setInterval(refreshRainImpactData, 10000);
+      setInterval(function() {
+        if (document.visibilityState === 'visible') refreshRainImpactData();
+      }, 60000);
       setInterval(function() {
         if (Boolean(visibility.floodHazard)) {
           refreshHardwareFloodLevels();
@@ -2563,6 +2565,12 @@ export function buildCalambaMapHtml(
 
       window.addEventListener('message', function(event) {
         var data = event && event.data ? event.data : null;
+        if (data && data.type === 'evacuation-areas-update') {
+          payload.areas = Array.isArray(data.areas) ? data.areas : [];
+          renderEvacuationAreas(false);
+          applyLayerVisibility();
+          return;
+        }
         if (data && data.type === 'rescue-map-update' && payload.mapBehavior && payload.mapBehavior.allowLiveRouteUpdates) {
           payload.responderLocation = data.responderLocation || null;
           payload.routeCoordinates = Array.isArray(data.routeCoordinates) ? data.routeCoordinates : [];

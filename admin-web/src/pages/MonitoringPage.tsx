@@ -86,6 +86,39 @@ function distanceSquared(a: Coordinate, b: Coordinate) {
   return dLat * dLat + dLon * dLon;
 }
 
+const NON_VISUAL_REFRESH_FIELDS = new Set([
+  'last_seen_at',
+  'location_updated_at',
+  'rescuer_location_updated_at',
+]);
+const REPORT_LIVE_FIELDS = new Set([
+  ...NON_VISUAL_REFRESH_FIELDS,
+  'rescuer_latitude',
+  'rescuer_longitude',
+  'updated_at',
+]);
+const BACKUP_LIVE_FIELDS = new Set([
+  ...NON_VISUAL_REFRESH_FIELDS,
+  'report_latitude',
+  'report_longitude',
+  'rescuer_latitude',
+  'rescuer_longitude',
+]);
+
+function visibleDataSignature(value: unknown, ignoredFields = NON_VISUAL_REFRESH_FIELDS) {
+  return JSON.stringify(value, (key, item) => ignoredFields.has(key) ? undefined : item);
+}
+
+function preserveUnchangedArray<T>(current: T[], next: T[], ignoredFields = NON_VISUAL_REFRESH_FIELDS) {
+  if (visibleDataSignature(current, ignoredFields) === visibleDataSignature(next, ignoredFields)) return current;
+  if (!next.every((item) => (item as { id?: unknown })?.id != null)) return next;
+  const currentById = new Map(current.map((item) => [(item as { id?: unknown })?.id, item]));
+  return next.map((item) => {
+    const previous = currentById.get((item as { id?: unknown })?.id);
+    return previous && visibleDataSignature(previous, ignoredFields) === visibleDataSignature(item, ignoredFields) ? previous : item;
+  });
+}
+
 export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenEvacuationAreas, onOpenPostUpdates, onOpenFloodMonitoring, onOpenBackupRequest, onAuthError, backupReportId = null }: Props) {
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationAreaItem[]>([]);
   const [reports, setReports] = useState<MonitoringReport[]>([]);
@@ -100,6 +133,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   const [error, setError] = useState<string | null>(null);
   const [loadingMap, setLoadingMap] = useState(true);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [proofLoadingId, setProofLoadingId] = useState<number | null>(null);
   const [showIncidentHistory, setShowIncidentHistory] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionMode, setActionMode] = useState<ActionMode>(null);
@@ -110,6 +144,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   const [showRainRanking, setShowRainRanking] = useState(false);
   const mapWrapRef = useRef<HTMLElement | null>(null);
   const mapFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const dataLoadInFlightRef = useRef(false);
   const lastFocusedRescue = useRef('');
   const [mapReady, setMapReady] = useState(false);
   const [declineExplanation, setDeclineExplanation] = useState('');
@@ -127,7 +162,27 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   const [topRainBarangays, setTopRainBarangays] = useState<RainRankingItem[]>([]);
   const [rainLegendUpdatedAt, setRainLegendUpdatedAt] = useState<string | null>(null);
 
+  async function openProofImage(report: MonitoringReport) {
+    if (report.image_base64) {
+      setPreviewImage(report.image_base64);
+      return;
+    }
+    setProofLoadingId(report.id);
+    try {
+      const { data } = await api.get<{ image_base64?: string | null }>(`/reports/${report.id}/image`);
+      if (data.image_base64) setPreviewImage(data.image_base64);
+    } catch (err: unknown) {
+      const apiError = err as { response?: { status?: number; data?: { message?: string } } };
+      if (apiError.response?.status === 401) return onAuthError();
+      setError(apiError.response?.data?.message || 'Failed to load the proof image.');
+    } finally {
+      setProofLoadingId(null);
+    }
+  }
+
   const loadData = useCallback(async (showLoading = true) => {
+    if (dataLoadInFlightRef.current) return;
+    dataLoadInFlightRef.current = true;
     if (showLoading) {
       setLoadingMap(true);
     }
@@ -143,14 +198,16 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
 
       const nextAreas = Array.isArray(areasResponse.data) ? areasResponse.data : [];
       const nextReports = Array.isArray(reportsResponse.data) ? reportsResponse.data : [];
-
-      setEvacuationAreas(nextAreas);
-      setReports(nextReports);
-      setBackupRequests(Array.isArray(backupResponse.data) ? backupResponse.data : []);
-      setCityRescuers([
+      const nextBackupRequests = Array.isArray(backupResponse.data) ? backupResponse.data : [];
+      const nextCityRescuers = [
         ...(Array.isArray(cdrrmdResponse.data) ? cdrrmdResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'cddrmd' as const })),
         ...(Array.isArray(barangayResponderResponse.data) ? barangayResponderResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'barangay' as const })),
-      ]);
+      ];
+
+      setEvacuationAreas((current) => preserveUnchangedArray(current, nextAreas));
+      setReports((current) => preserveUnchangedArray(current, nextReports, REPORT_LIVE_FIELDS));
+      setBackupRequests((current) => preserveUnchangedArray(current, nextBackupRequests, BACKUP_LIVE_FIELDS));
+      setCityRescuers((current) => preserveUnchangedArray(current, nextCityRescuers));
 
       setSelectedReportId((currentId) => {
         if (nextReports.length === 0) return null;
@@ -166,8 +223,11 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
         onAuthError();
         return;
       }
-      setError(apiError.response?.data?.message || 'Failed to load monitoring data.');
+      if (showLoading) {
+        setError(apiError.response?.data?.message || 'Failed to load monitoring data.');
+      }
     } finally {
+      dataLoadInFlightRef.current = false;
       if (showLoading) {
         setLoadingMap(false);
       }
@@ -207,8 +267,9 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
         .filter((item) => item.rainIntensityMmPerHour > 2.5) // Moderate and above only (>2.5 mm/hr)
         .sort((a, b) => b.rainIntensityMmPerHour - a.rainIntensityMmPerHour);
 
-      setTopRainBarangays(ranked);
-      setRainLegendUpdatedAt(rainPayload?.updatedAt || new Date().toISOString());
+      setTopRainBarangays((current) => preserveUnchangedArray(current, ranked));
+      const nextUpdatedAt = rainPayload?.updatedAt || null;
+      setRainLegendUpdatedAt((current) => current === nextUpdatedAt ? current : nextUpdatedAt);
     } catch {
       // Keep existing ranking if rain feed is temporarily unavailable.
     }
@@ -219,12 +280,12 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     loadRainRanking().catch(() => {});
 
     const refreshTimer = setInterval(() => {
-      loadData(false).catch(() => {});
+      if (document.visibilityState === 'visible') loadData(false).catch(() => {});
     }, 5000);
 
     const rainTimer = setInterval(() => {
-      loadRainRanking().catch(() => {});
-    }, 10000);
+      if (document.visibilityState === 'visible') loadRainRanking().catch(() => {});
+    }, 60000);
 
     return () => {
       clearInterval(refreshTimer);
@@ -276,10 +337,11 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   );
 
   const liveResponderLocation = useMemo<Coordinate | null>(() => {
-    const latitude = Number(selectedReport?.rescuer_latitude);
-    const longitude = Number(selectedReport?.rescuer_longitude);
+    const liveResponder = cityRescuers.find((rescuer) => Number(rescuer.id) === Number(selectedReport?.assigned_rescuer_id));
+    const latitude = Number(liveResponder?.current_latitude ?? selectedReport?.rescuer_latitude);
+    const longitude = Number(liveResponder?.current_longitude ?? selectedReport?.rescuer_longitude);
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
-  }, [selectedReport?.rescuer_latitude, selectedReport?.rescuer_longitude]);
+  }, [cityRescuers, selectedReport?.assigned_rescuer_id, selectedReport?.rescuer_latitude, selectedReport?.rescuer_longitude]);
 
   const assignedResponderArea = useMemo(() => {
     if (!selectedReport || !isActiveRescueStatus(selectedReport.status)) {
@@ -324,24 +386,32 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     return liveResponderLocation;
   }, [liveResponderLocation]);
 
+  const selectedReportIdValue = selectedReport?.id;
+  const selectedReportStatus = selectedReport?.status;
+  const selectedReportLocation = selectedReport?.location;
+  const selectedReportLatitude = selectedReport?.latitude;
+  const selectedReportLongitude = selectedReport?.longitude;
+  const selectedReportPickedUpAt = selectedReport?.picked_up_at;
+  const selectedEvacuationLatitude = selectedReport?.evacuation_latitude;
+  const selectedEvacuationLongitude = selectedReport?.evacuation_longitude;
   const selectedReportedLocation = useMemo(
-    () => extractCoordinate(selectedReport?.location, selectedReport?.latitude, selectedReport?.longitude),
-    [selectedReport],
+    () => extractCoordinate(selectedReportLocation, selectedReportLatitude, selectedReportLongitude),
+    [selectedReportLatitude, selectedReportLocation, selectedReportLongitude],
   );
 
   const selectedIncidentLocation = useMemo(() => {
-    if (!selectedReport || !isActiveRescueStatus(selectedReport.status)) return null;
-    if (selectedReport.picked_up_at) {
-      const latitude = Number(selectedReport.evacuation_latitude);
-      const longitude = Number(selectedReport.evacuation_longitude);
+    if (!selectedReportIdValue || !isActiveRescueStatus(selectedReportStatus)) return null;
+    if (selectedReportPickedUpAt) {
+      const latitude = Number(selectedEvacuationLatitude);
+      const longitude = Number(selectedEvacuationLongitude);
       if (Number.isFinite(latitude) && Number.isFinite(longitude)) return { latitude, longitude };
     }
     return selectedReportedLocation;
-  }, [selectedReport, selectedReportedLocation]);
+  }, [selectedEvacuationLatitude, selectedEvacuationLongitude, selectedReportIdValue, selectedReportPickedUpAt, selectedReportStatus, selectedReportedLocation]);
 
   useEffect(() => {
     let cancelled = false;
-    if (!selectedReport || !isActiveRescueStatus(selectedReport.status)) {
+    if (!selectedReportIdValue || !isActiveRescueStatus(selectedReportStatus)) {
       setRouteCoordinates([]);
       setRouteDistanceKm(null);
       setRouteEtaMinutes(null);
@@ -369,7 +439,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
         setRouteEtaMinutes(null);
       });
     return () => { cancelled = true; };
-  }, [responderLocation, selectedIncidentLocation, selectedReport]);
+  }, [responderLocation, selectedIncidentLocation, selectedReportIdValue, selectedReportStatus]);
 
   useEffect(() => {
     const onFsChange = () => {
@@ -414,7 +484,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
 
   const mapHtml = useMemo(
     () => buildCalambaMapHtml(
-      evacuationAreas,
+      [],
       null,
       [],
       null,
@@ -433,8 +503,16 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
         showForecastTimeline: isMapFullscreen,
       },
     ),
-    [evacuationAreas, isMapFullscreen, layerVisibility],
+    [isMapFullscreen, layerVisibility],
   );
+
+  useEffect(() => {
+    if (!mapReady) return;
+    mapFrameRef.current?.contentWindow?.postMessage({
+      type: 'evacuation-areas-update',
+      areas: evacuationAreas,
+    }, '*');
+  }, [evacuationAreas, mapReady]);
 
   useEffect(() => {
     function handleMapMessage(event: MessageEvent) {
@@ -843,8 +921,8 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
                       <td><span className={`${d.monitoring.statusChip} ${backupIsPending ? '!bg-amber-100 !text-amber-800' : ''}`}>{backupIsPending ? 'Pending' : formatIncidentStatus(item.status, Boolean(item.picked_up_at))}</span></td>
                       <td>{item.assigned_team || '-'}</td>
                       <td>
-                        {item.image_base64 ? (
-                          <button onClick={(event) => { event.stopPropagation(); setPreviewImage(item.image_base64 || null); }} className={d.btn.secondaryXs}>View</button>
+                        {item.has_image || item.image_base64 ? (
+                          <button disabled={proofLoadingId === item.id} onClick={(event) => { event.stopPropagation(); void openProofImage(item); }} className={d.btn.secondaryXs}>{proofLoadingId === item.id ? 'Loading…' : 'View'}</button>
                         ) : <span className={d.monitoring.muted}>-</span>}
                       </td>
                       </tr>

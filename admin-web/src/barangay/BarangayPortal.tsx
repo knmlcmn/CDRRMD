@@ -30,6 +30,7 @@ type RescueRequestNotice = {
   are_people_trapped?: boolean | null;
   notes?: string | null;
   image_base64?: string | null;
+  has_image?: boolean;
   status: string;
   created_at: string;
 };
@@ -50,6 +51,8 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
   const [rescueDecisionError, setRescueDecisionError] = useState('');
   const [rescueRouteMetrics, setRescueRouteMetrics] = useState<{ distanceKm: number; etaMinutes: number } | null>();
   const [showRescueImage, setShowRescueImage] = useState(false);
+  const [rescueProofImage, setRescueProofImage] = useState<string | null>(null);
+  const [rescueProofLoading, setRescueProofLoading] = useState(false);
   const [focusReportId, setFocusReportId] = useState<number | null>(null);
   const [notices, setNotices] = useState<Array<{ id: number; alert: WaterLevelSensor; kind: WaterLevelNoticeKind }>>([]);
   const noticeIdRef = useRef(0);
@@ -70,15 +73,18 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
       try {
         const { data } = await api.get<RescueRequestNotice[]>('/barangay/reports/mine');
         if (stopped) return;
-        setPendingRescueRequests((Array.isArray(data) ? data : []).filter((report) =>
+        const next = (Array.isArray(data) ? data : []).filter((report) =>
           String(report.status || '').toLowerCase() === 'pending'
-        ));
+        );
+        setPendingRescueRequests((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next);
       } catch (error: unknown) {
         if ((error as { response?: { status?: number } })?.response?.status === 401) onAuthError();
       }
     };
     void checkRescueRequests();
-    const timer = window.setInterval(() => void checkRescueRequests(), 2_000);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void checkRescueRequests();
+    }, 5_000);
     return () => {
       stopped = true;
       window.clearInterval(timer);
@@ -153,6 +159,8 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
   useEffect(() => {
     setRescueRouteMetrics(undefined);
     setShowRescueImage(false);
+    setRescueProofImage(null);
+    setRescueProofLoading(false);
   }, [activeRescueRequest?.id]);
 
   const standbyRescueRequest = (request: RescueRequestNotice) => {
@@ -199,6 +207,29 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
   const rescueDescription = String(activeRescueRequest?.notes || '').trim();
   const visibleRescueDescription = /^selected evacuation area:/i.test(rescueDescription) ? '' : rescueDescription;
 
+  const openRescueProof = async (request: RescueRequestNotice) => {
+    if (request.image_base64) {
+      setRescueProofImage(request.image_base64);
+      setShowRescueImage(true);
+      return;
+    }
+    setRescueProofLoading(true);
+    setRescueDecisionError('');
+    try {
+      const { data } = await api.get<{ image_base64?: string | null }>(`/barangay/reports/${request.id}/image`);
+      if (data.image_base64) {
+        setRescueProofImage(data.image_base64);
+        setShowRescueImage(true);
+      }
+    } catch (error: unknown) {
+      const apiError = error as { response?: { status?: number; data?: { message?: string } } };
+      if (apiError.response?.status === 401) return onAuthError();
+      setRescueDecisionError(apiError.response?.data?.message || 'Unable to load the proof image.');
+    } finally {
+      setRescueProofLoading(false);
+    }
+  };
+
   const rescuePopup = activeRescueRequest ? (
     <BackupModal title="Urgent Rescue Request" variant="rescue-request" onClose={() => standbyRescueRequest(activeRescueRequest)}>
       <div className="rescue-request-layout">
@@ -214,10 +245,10 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
             <div><dt>Shortest route</dt><dd>{rescueRouteMetrics ? `${rescueRouteMetrics.distanceKm.toFixed(2)} km · about ${rescueRouteMetrics.etaMinutes} min` : rescueRouteMetrics === null ? 'Road route unavailable' : 'Calculating…'}</dd></div>
           </dl>
           {visibleRescueDescription ? <p className="rescue-request-description">{visibleRescueDescription}</p> : null}
-          {activeRescueRequest.image_base64 ? (
+          {activeRescueRequest.has_image || activeRescueRequest.image_base64 ? (
             <div className="rescue-request-meta-row">
               <span>{activeRescueRequest.report_code || `RPT-${String(activeRescueRequest.id).padStart(6, '0')}`}</span>
-              <button type="button" className="rescue-request-view-image" onClick={() => setShowRescueImage(true)}>View Image</button>
+              <button type="button" disabled={rescueProofLoading} className="rescue-request-view-image" onClick={() => void openRescueProof(activeRescueRequest)}>{rescueProofLoading ? 'Loading…' : 'View Image'}</button>
             </div>
           ) : (
             <p className="rescue-request-meta">
@@ -249,9 +280,9 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
   return (
     <>
       {rescuePopup || popup}
-      {showRescueImage && activeRescueRequest?.image_base64 ? (
+      {showRescueImage && activeRescueRequest && rescueProofImage ? (
         <RescueImagePreview
-          image={activeRescueRequest.image_base64}
+          image={rescueProofImage}
           residentName={residentName}
           createdAt={activeRescueRequest.created_at}
           onClose={() => setShowRescueImage(false)}

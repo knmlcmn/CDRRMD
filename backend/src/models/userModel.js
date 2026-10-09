@@ -883,7 +883,8 @@ async function listReportsByAssignedBarangay(barangayName) {
               AND u.current_latitude IS NOT NULL AND u.current_longitude IS NOT NULL
             THEN u.current_longitude ELSE ir.longitude END AS longitude,
        ir.assigned_barangay, ir.incident_type, ir.water_level,
-       ir.are_people_trapped, ir.estimated_people, ir.notes, ir.image_base64,
+       ir.are_people_trapped, ir.estimated_people, ir.notes,
+       (ir.image_base64 IS NOT NULL AND ir.image_base64 <> '') AS has_image,
        ir.status, ir.evacuation_area_id, ir.evacuation_area_name,
        ea.latitude AS evacuation_latitude, ea.longitude AS evacuation_longitude,
        ir.evacuees_reserved, ir.assigned_team, ir.admin_notes,

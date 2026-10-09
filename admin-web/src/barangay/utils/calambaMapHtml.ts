@@ -2179,7 +2179,9 @@ export function buildCalambaMapHtml(
       setRainIntensityFromMmPerHour(0);
       refreshRainImpactData();
       setInterval(renderFloodHazardLayer, 30000);
-      setInterval(refreshRainImpactData, 10000);
+      setInterval(function() {
+        if (document.visibilityState === 'visible') refreshRainImpactData();
+      }, 60000);
       setInterval(function() {
         if (isScalarWeatherVisible() || Boolean(visibility.windOverlay)) {
           windLoadState = 'idle';

@@ -17,8 +17,11 @@ Set these environment variables in Vercel:
 - `NODE_ENV=production`
 - `SEED_DEFAULT_ACCOUNTS` should remain unset/false in production
 - `DB_SSL=true` when required by the provider
+- `INITIALIZE_DATABASE_ON_COLD_START=true` only for the first deployment of a brand-new database; remove it after the schema is initialized
 
 Do not use the local `backend/.env` in production.
+
+Run schema initialization as a release/setup task rather than on normal requests. The API intentionally skips it by default on Vercel so cold starts stay fast.
 
 ## 2. Deploy `admin-web`
 Create another Vercel project with **Root Directory = `admin-web`**.

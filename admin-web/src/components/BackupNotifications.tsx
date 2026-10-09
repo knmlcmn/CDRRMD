@@ -25,7 +25,8 @@ type Request = {
   evacuation_area_name: string | null;
   evacuation_latitude: number | string | null;
   evacuation_longitude: number | string | null;
-  image_base64: string | null;
+  image_base64?: string | null;
+  has_image?: boolean;
 };
 
 export default function BackupNotifications({ reopenReportId, onStandby, onConfirm }: {
@@ -38,6 +39,8 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
   const [busy, setBusy] = useState<'confirm' | null>(null);
   const [error, setError] = useState('');
   const [showImage, setShowImage] = useState(false);
+  const [proofImage, setProofImage] = useState<string | null>(null);
+  const [proofLoading, setProofLoading] = useState(false);
   const [routeMetrics, setRouteMetrics] = useState<{ distanceKm: number; etaMinutes: number } | null>();
   const acknowledging = useRef(false);
   const pending = useRef(false);
@@ -54,8 +57,9 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
       } finally { pending.current = false; }
     };
     void refresh();
-    // Check frequently so a new barangay request opens on the admin page almost immediately.
-    const timer = window.setInterval(() => { void refresh(); }, 1000);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh();
+    }, 5000);
     window.addEventListener('focus', refresh);
     return () => {
       stopped = true;
@@ -70,6 +74,7 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
 
   useEffect(() => {
     setShowImage(false);
+    setProofImage(null);
     setRouteMetrics(undefined);
   }, [active?.id]);
 
@@ -111,6 +116,27 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
   const hasRouteLocations = [residentLatitude, residentLongitude, evacuationLatitude, evacuationLongitude].every(Number.isFinite);
   const reportDescription = String(active.report_notes || '').trim();
   const visibleDescription = /^selected evacuation area:/i.test(reportDescription) ? '' : reportDescription;
+  const openProofImage = async () => {
+    if (active.image_base64) {
+      setProofImage(active.image_base64);
+      setShowImage(true);
+      return;
+    }
+    setProofLoading(true);
+    setError('');
+    try {
+      const { data } = await api.get<{ image_base64?: string | null }>(`/reports/${active.report_id}/image`);
+      if (data.image_base64) {
+        setProofImage(data.image_base64);
+        setShowImage(true);
+      }
+    } catch (requestError: unknown) {
+      const apiError = requestError as { response?: { data?: { message?: string } } };
+      setError(apiError.response?.data?.message || 'Unable to load the proof image.');
+    } finally {
+      setProofLoading(false);
+    }
+  };
 
   return <>
     <BackupModal key={active.id} title="Urgent Backup Request" variant="rescue-request" onClose={standby}>
@@ -127,10 +153,10 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
             <div><dt>Shortest route</dt><dd>{routeMetrics ? `${routeMetrics.distanceKm.toFixed(2)} km · about ${routeMetrics.etaMinutes} min` : routeMetrics === null ? 'Road route unavailable' : 'Calculating…'}</dd></div>
           </dl>
           {visibleDescription ? <p className="rescue-request-description">{visibleDescription}</p> : null}
-          {active.image_base64 ? (
+          {active.has_image || active.image_base64 ? (
             <div className="rescue-request-meta-row">
               <span>{active.report_code}</span>
-              <button type="button" className="rescue-request-view-image" onClick={() => setShowImage(true)}>View Image</button>
+              <button type="button" disabled={proofLoading} className="rescue-request-view-image" onClick={() => void openProofImage()}>{proofLoading ? 'Loading…' : 'View Image'}</button>
             </div>
           ) : <p className="rescue-request-meta">{active.report_code} · Requested {new Date(active.created_at).toLocaleString()}</p>}
         </div>
@@ -152,8 +178,8 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
         <button className="rescue-request-button" disabled={busy !== null} onClick={standby}>Standby Request</button>
       </div>
     </BackupModal>
-    {showImage && active.image_base64 ? (
-      <RescueImagePreview image={active.image_base64} residentName={residentName} createdAt={active.created_at} onClose={() => setShowImage(false)} />
+    {showImage && proofImage ? (
+      <RescueImagePreview image={proofImage} residentName={residentName} createdAt={active.created_at} onClose={() => setShowImage(false)} />
     ) : null}
   </>;
 }

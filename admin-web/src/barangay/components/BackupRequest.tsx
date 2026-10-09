@@ -58,8 +58,9 @@ export default function BackupRequest({ reportId, onRequestChange }: Props) {
       } finally { fetching = false; }
     };
     void refresh();
-    // Reflect an admin acknowledgment on the barangay button promptly.
-    const timer = window.setInterval(() => { void refresh(); }, 1000);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refresh();
+    }, 5000);
     return () => { stopped = true; window.clearInterval(timer); };
   }, [reportId]);
 

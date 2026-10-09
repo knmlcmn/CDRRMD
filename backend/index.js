@@ -1,16 +1,12 @@
 const app = require('./src/app');
-const initializeDatabase = require('./src/config/initializeDatabase');
-
-let initializationPromise;
 
 module.exports = async function handler(req, res) {
-  if (!initializationPromise) {
-    initializationPromise = initializeDatabase().catch((error) => {
-      initializationPromise = undefined;
-      throw error;
-    });
+  // Schema migrations belong in deployment/release setup. Opt in only for a
+  // brand-new database; loading the large initializer on every serverless cold
+  // start adds avoidable latency to every API route.
+  if (process.env.INITIALIZE_DATABASE_ON_COLD_START === 'true') {
+    const initializeDatabase = require('./src/config/initializeDatabase');
+    await initializeDatabase();
   }
-
-  await initializationPromise;
   return app(req, res);
 };

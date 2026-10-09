@@ -42,7 +42,9 @@ app.use(cors({
     return callback(new Error(`Origin ${origin} is not allowed by CORS.`));
   },
 }));
-app.use(morgan('dev'));
+if (process.env.NODE_ENV !== 'production') {
+  app.use(morgan('dev'));
+}
 app.use(express.json({ limit: '35mb' }));
 app.use(express.urlencoded({ extended: true, limit: '35mb' }));
 

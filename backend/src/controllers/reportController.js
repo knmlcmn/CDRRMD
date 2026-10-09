@@ -554,7 +554,7 @@ async function getReports(req, res) {
       r.are_people_trapped,
       r.estimated_people,
       r.notes,
-      r.image_base64,
+      (r.image_base64 IS NOT NULL AND r.image_base64 <> '') AS has_image,
       r.status,
       r.evacuation_area_id,
       r.evacuation_area_name,
@@ -604,6 +604,37 @@ async function getReports(req, res) {
   );
 
   return res.json(result.rows);
+}
+
+async function getReportImage(req, res) {
+  const reportId = Number(req.params.id);
+  if (!Number.isSafeInteger(reportId) || reportId <= 0) {
+    return res.status(400).json({ message: 'Invalid report.' });
+  }
+
+  const role = req.user?.role;
+  if (!['admin', 'barangay'].includes(role)) {
+    return res.status(403).json({ message: 'Admin or barangay access required.' });
+  }
+
+  const params = [reportId];
+  let jurisdictionClause = '';
+  if (role === 'barangay') {
+    const barangayName = String(req.user?.barangayName || '').trim();
+    if (!barangayName) return res.status(403).json({ message: 'No barangay assigned to this account.' });
+    params.push(barangayName);
+    jurisdictionClause = 'AND LOWER(assigned_barangay) = LOWER($2)';
+  }
+
+  const { rows } = await pool.query(
+    `SELECT image_base64 FROM incident_reports
+     WHERE id = $1 ${jurisdictionClause}
+     LIMIT 1`,
+    params,
+  );
+  if (!rows[0]) return res.status(404).json({ message: 'Report not found.' });
+  if (!rows[0].image_base64) return res.status(404).json({ message: 'This report has no proof image.' });
+  return res.json({ image_base64: rows[0].image_base64 });
 }
 
 async function getReportHistory(req, res) {
@@ -1296,6 +1327,7 @@ module.exports = {
   createReport,
   getMyReports,
   getReports,
+  getReportImage,
   getReportHistory,
   updateReportStatus,
   getReportLogs,

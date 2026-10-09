@@ -4,6 +4,7 @@ const {
 	createReport,
 	getMyReports,
 	getReports,
+	getReportImage,
 	getReportHistory,
 	updateReportStatus,
 	getReportLogs,
@@ -22,6 +23,7 @@ router.patch('/notifications/read-all', auth, markAllNotificationsRead);
 router.patch('/notifications/:id/read', auth, markNotificationRead);
 router.get('/history', auth, getReportHistory);
 router.get('/', auth, getReports);
+router.get('/:id/image', auth, getReportImage);
 router.patch('/:id/status', auth, updateReportStatus);
 router.get('/:id/logs', auth, getReportLogs);
 

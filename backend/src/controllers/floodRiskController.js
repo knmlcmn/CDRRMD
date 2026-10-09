@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const { getCalambaWindField } = require('../services/openMeteoWindService');
+const { setPublicCache } = require('../utils/httpCache');
 
 const CALAMBA_CENTER = {
   latitude: 14.206021,
@@ -37,12 +39,11 @@ const CALAMBA_BOUNDARY_RING = [
 ];
 
 const RASTER_CELL_STEP = 0.0032;
-const RAIN_IMPACT_CACHE_TTL_MS = 10 * 1000;
-const BARANGAY_TEMPERATURE_CACHE_TTL_MS = 5 * 60 * 1000;
+const RAIN_IMPACT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 let cachedRainImpactPayload = null;
 let cachedRainImpactAt = 0;
-const cachedBarangayTemperatureByKey = new Map();
+let rainImpactPromise = null;
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -513,43 +514,14 @@ function adjustedTemperatureCelsius(baseTemperature, lat, lon) {
   return Number(baseTemperature.toFixed(2));
 }
 
-async function fetchTemperatureAtPoint(latitude, longitude) {
-  const lat = Number(latitude);
-  const lon = Number(longitude);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-    throw new Error('Invalid coordinate for temperature fetch');
-  }
-
-  const url =
-    'https://api.open-meteo.com/v1/forecast?' +
-    `latitude=${lat}&longitude=${lon}` +
-    '&current=temperature_2m&hourly=temperature_2m&forecast_days=1&timezone=auto';
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Temperature fetch failed: ${response.status}`);
-  }
-
-  const payload = await response.json();
-  const currentTemperature = Number(payload?.current?.temperature_2m);
-  if (Number.isFinite(currentTemperature)) {
-    return Number(currentTemperature.toFixed(2));
-  }
-
-  const series = Array.isArray(payload?.hourly?.temperature_2m) ? payload.hourly.temperature_2m : [];
-  const firstReading = Number(series[0]);
-  if (!Number.isFinite(firstReading)) {
-    throw new Error('No hourly temperature values from Open-Meteo');
-  }
-
-  return Number(firstReading.toFixed(2));
-}
-
-async function fetchBarangayTemperatureLookup(features, fallbackTemperatureCelsius) {
+function buildBarangayTemperatureLookup(features, weatherPoints, fallbackTemperatureCelsius) {
   const lookup = new Map();
-  const now = Date.now();
+  const points = (Array.isArray(weatherPoints) ? weatherPoints : []).filter((point) =>
+    Number.isFinite(Number(point?.latitude)) &&
+    Number.isFinite(Number(point?.longitude)) &&
+    Number.isFinite(Number(point?.temperatureCelsius)),
+  );
 
-  const jobs = [];
   (Array.isArray(features) ? features : []).forEach((feature) => {
     const nameKey = canonicalBarangayKey(feature?.properties?.barangay_name);
     if (!nameKey || lookup.has(nameKey)) {
@@ -557,49 +529,20 @@ async function fetchBarangayTemperatureLookup(features, fallbackTemperatureCelsi
     }
 
     const centroid = centroidFromCoordinates(extractGeometryCoordinates(feature?.geometry)) || CALAMBA_CENTER;
-    const cached = cachedBarangayTemperatureByKey.get(nameKey);
-    if (cached && now - cached.updatedAt <= BARANGAY_TEMPERATURE_CACHE_TTL_MS) {
-      lookup.set(nameKey, Number(cached.value));
-      return;
-    }
-
-    jobs.push({
-      key: nameKey,
-      latitude: Number(centroid.latitude),
-      longitude: Number(centroid.longitude),
-    });
-  });
-
-  const maxConcurrent = 6;
-  for (let index = 0; index < jobs.length; index += maxConcurrent) {
-    const chunk = jobs.slice(index, index + maxConcurrent);
-    const settled = await Promise.allSettled(
-      chunk.map((job) => fetchTemperatureAtPoint(job.latitude, job.longitude)),
-    );
-
-    settled.forEach((result, offset) => {
-      const job = chunk[offset];
-      if (!job) {
-        return;
-      }
-
-      const fallback = adjustedTemperatureCelsius(
+    const nearest = points.reduce((best, point) => {
+      const distance = ((Number(point.latitude) - Number(centroid.latitude)) ** 2) +
+        ((Number(point.longitude) - Number(centroid.longitude)) ** 2);
+      return !best || distance < best.distance ? { point, distance } : best;
+    }, null);
+    const temperature = nearest
+      ? Number(nearest.point.temperatureCelsius)
+      : adjustedTemperatureCelsius(
         Number(fallbackTemperatureCelsius || 30),
-        job.latitude,
-        job.longitude,
+        Number(centroid.latitude),
+        Number(centroid.longitude),
       );
-
-      const value = result.status === 'fulfilled' && Number.isFinite(Number(result.value))
-        ? Number(result.value)
-        : fallback;
-
-      lookup.set(job.key, Number(value));
-      cachedBarangayTemperatureByKey.set(job.key, {
-        value: Number(value),
-        updatedAt: now,
-      });
-    });
-  }
+    lookup.set(nameKey, Number(temperature.toFixed(2)));
+  });
 
   return lookup;
 }
@@ -823,78 +766,41 @@ async function fetchRainfallSignal() {
 }
 
 async function fetchWeatherSignalForRainImpact() {
-  const openMeteoUrl =
-    'https://api.open-meteo.com/v1/forecast?' +
-    `latitude=${CALAMBA_CENTER.latitude}&longitude=${CALAMBA_CENTER.longitude}` +
-    '&current=temperature_2m,wind_speed_10m,wind_direction_10m' +
-    '&hourly=temperature_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_direction_10m,surface_pressure' +
-    '&forecast_hours=24&wind_speed_unit=kmh&timezone=Asia%2FManila';
-
-  const openMeteoResponse = await fetch(openMeteoUrl);
-  if (!openMeteoResponse.ok) {
-    throw new Error('Failed to fetch weather impact signal.');
-  }
-
-  const weather = await openMeteoResponse.json();
-  const precipitation = Array.isArray(weather?.hourly?.precipitation) ? weather.hourly.precipitation : [];
-  const precipitationProbability = Array.isArray(weather?.hourly?.precipitation_probability)
-    ? weather.hourly.precipitation_probability
-    : [];
-  const weatherCode = Array.isArray(weather?.hourly?.weather_code) ? weather.hourly.weather_code : [];
-  const temperatureSeries = Array.isArray(weather?.hourly?.temperature_2m) ? weather.hourly.temperature_2m : [];
-  const windSpeed = Array.isArray(weather?.hourly?.wind_speed_10m) ? weather.hourly.wind_speed_10m : [];
-  const windDirection = Array.isArray(weather?.hourly?.wind_direction_10m) ? weather.hourly.wind_direction_10m : [];
-  const pressureSeries = Array.isArray(weather?.hourly?.surface_pressure) ? weather.hourly.surface_pressure : [];
-
-  const next24hRain = precipitation.slice(0, 24);
-  const next6hRain = precipitation.slice(0, 6);
-  const next24hProb = precipitationProbability.slice(0, 24);
-  const next12hCodes = weatherCode.slice(0, 12);
-  const next24hWind = windSpeed.slice(0, 24);
-  const next24hPressure = pressureSeries.slice(0, 24);
-  const next6hTemperature = temperatureSeries.slice(0, 6).filter((value) => Number.isFinite(Number(value)));
-
-  const rain24hMm = next24hRain.reduce((sum, value) => sum + Number(value || 0), 0);
-  const rainIntensityMmPerHour = next6hRain.length > 0
-    ? next6hRain.reduce((sum, value) => sum + Number(value || 0), 0) / next6hRain.length
-    : 0;
-
-  const thunderCodeDetected = next12hCodes.some((code) => [95, 96, 99].includes(Number(code)));
-  const thunderstormProbabilityPct = next24hProb.reduce((max, value) => Math.max(max, Number(value || 0)), 0);
-  const thunderWithCode = thunderCodeDetected
-    ? Math.max(thunderstormProbabilityPct, 65)
-    : thunderstormProbabilityPct;
-
-  const maxWindKph = next24hWind.reduce((max, value) => Math.max(max, Number(value || 0)), 0);
-  const minPressureHpa = next24hPressure.reduce((min, value) => {
-    const pressure = Number(value);
-    if (!Number.isFinite(pressure)) {
-      return min;
-    }
-    return Math.min(min, pressure);
-  }, Number.POSITIVE_INFINITY);
-
-  const pathLikelyAffectingCalamba =
-    maxWindKph >= 60 ||
-    ((maxWindKph >= 45 || minPressureHpa <= 996) && rain24hMm >= 32);
+  const weatherField = await getCalambaWindField();
+  const frames = Array.from({ length: 24 }, (_, index) => weatherField.frames?.[`hour_${index}`]).filter(Boolean);
+  const next6Hours = frames.slice(0, 6);
+  const rain24hMm = frames.reduce((sum, frame) => sum + Number(frame.averageRainAmountMm || 0), 0);
+  const rainIntensityMmPerHour = next6Hours.length > 0
+    ? next6Hours.reduce((sum, frame) => sum + Number(frame.averageRainAmountMm || 0), 0) / next6Hours.length
+    : Number(weatherField.averageRainAmountMm || 0);
+  const thunderstormProbabilityPct = frames.reduce((maximum, frame) => {
+    const frameMaximum = (Array.isArray(frame.points) ? frame.points : [])
+      .reduce((max, point) => Math.max(max, Number(point.rainProbabilityPct || 0)), 0);
+    return Math.max(maximum, frameMaximum);
+  }, 0);
+  const maxWindKph = frames.reduce((max, frame) => Math.max(max, Number(frame.maximumGustKph || 0)), 0);
+  const pathLikelyAffectingCalamba = maxWindKph >= 60 || (maxWindKph >= 45 && rain24hMm >= 32);
 
   const impactLevel =
     pathLikelyAffectingCalamba ? 'High' :
-      (maxWindKph >= 35 || rain24hMm >= 18 || thunderWithCode >= 65 ? 'Moderate' : 'Low');
-
-  const airTemperatureCelsius = next6hTemperature.length > 0
-    ? next6hTemperature.reduce((sum, value) => sum + Number(value), 0) / next6hTemperature.length
-    : 30;
+      (maxWindKph >= 35 || rain24hMm >= 18 || thunderstormProbabilityPct >= 65 ? 'Moderate' : 'Low');
+  const currentPoints = Array.isArray(weatherField.points) ? weatherField.points : [];
+  const averageU = currentPoints.length > 0
+    ? currentPoints.reduce((sum, point) => sum + Number(point.u || 0), 0) / currentPoints.length
+    : 0;
+  const averageV = currentPoints.length > 0
+    ? currentPoints.reduce((sum, point) => sum + Number(point.v || 0), 0) / currentPoints.length
+    : 0;
+  const windDirectionDegrees = (Math.atan2(-averageU, -averageV) * 180 / Math.PI + 360) % 360;
 
   return {
-    source: 'open-meteo',
+    source: 'open-meteo-grid',
     rainIntensityMmPerHour: Number(Math.max(0, rainIntensityMmPerHour).toFixed(2)),
-    airTemperatureCelsius: Number(airTemperatureCelsius.toFixed(2)),
-    thunderstormProbabilityPct: Number(clamp(thunderWithCode, 0, 100).toFixed(1)),
-    windSpeedKph: Number(Math.max(0, Number(weather?.current?.wind_speed_10m || windSpeed[0] || 0)).toFixed(1)),
-    windDirectionDegrees: Number.isFinite(Number(weather?.current?.wind_direction_10m))
-      ? Number(weather.current.wind_direction_10m)
-      : (Number.isFinite(Number(windDirection[0])) ? Number(windDirection[0]) : 0),
+    airTemperatureCelsius: Number(Number(weatherField.averageTemperatureCelsius || 30).toFixed(2)),
+    thunderstormProbabilityPct: Number(clamp(thunderstormProbabilityPct, 0, 100).toFixed(1)),
+    windSpeedKph: Number(Math.max(0, Number(weatherField.averageSpeedKph || 0)).toFixed(1)),
+    windDirectionDegrees: Number(windDirectionDegrees.toFixed(1)),
+    points: currentPoints,
     typhoonForecast: {
       impactLevel,
       pathLikelyAffectingCalamba,
@@ -908,8 +814,9 @@ async function buildCalambaRainImpactPayload() {
   const weatherSignal = await fetchWeatherSignalForRainImpact();
   const source = mergeMissingBarangayFeatures(await getCalambaBoundaryOutlinesForOverlay());
   const features = Array.isArray(source?.features) ? source.features : [];
-  const temperatureByBarangay = await fetchBarangayTemperatureLookup(
+  const temperatureByBarangay = buildBarangayTemperatureLookup(
     features,
+    weatherSignal.points,
     Number(weatherSignal.airTemperatureCelsius || 30),
   );
 
@@ -1214,16 +1121,24 @@ async function getCalambaRainImpact(req, res) {
   try {
     const now = Date.now();
     if (cachedRainImpactPayload && now - cachedRainImpactAt < RAIN_IMPACT_CACHE_TTL_MS) {
+      setPublicCache(res, { browserSeconds: 60, cdnSeconds: 300 });
       return res.json(cachedRainImpactPayload);
     }
 
-    const payload = await buildCalambaRainImpactPayload();
+    if (!rainImpactPromise) {
+      rainImpactPromise = buildCalambaRainImpactPayload().finally(() => {
+        rainImpactPromise = null;
+      });
+    }
+    const payload = await rainImpactPromise;
     cachedRainImpactPayload = payload;
-    cachedRainImpactAt = now;
+    cachedRainImpactAt = Date.now();
+    setPublicCache(res, { browserSeconds: 60, cdnSeconds: 300 });
     return res.json(payload);
   } catch (error) {
     console.error('Failed to load Calamba rain impact:', error.message);
     if (cachedRainImpactPayload) {
+      setPublicCache(res, { browserSeconds: 30, cdnSeconds: 60 });
       return res.json(cachedRainImpactPayload);
     }
     return res.status(500).json({ message: 'Failed to load Calamba rain impact data.' });

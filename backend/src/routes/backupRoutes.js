@@ -35,7 +35,7 @@ router.get('/', async (req, res) => {
             br.assigned_rescuer_id, br.assigned_at, br.responder_acknowledged_at, br.picked_up_at,
             ir.report_code, ir.report_type, ir.incident_type, ir.status AS report_status,
             ir.location AS report_location, ir.notes AS report_notes, ir.admin_notes AS barangay_notes,
-            ir.image_base64,
+            (ir.image_base64 IS NOT NULL AND ir.image_base64 <> '') AS has_image,
             ir.are_people_trapped, ir.estimated_people,
             CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
                       AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL

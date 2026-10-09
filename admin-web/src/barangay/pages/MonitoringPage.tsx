@@ -121,6 +121,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   const [routeEtaMinutes, setRouteEtaMinutes] = useState<number | null>(null);
   const [routeOriginLabel, setRouteOriginLabel] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [proofLoadingId, setProofLoadingId] = useState<number | null>(null);
   const [showIncidentHistory, setShowIncidentHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -144,6 +145,24 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
     humidityOverlay: false,
     windOverlay: false,
   });
+
+  async function openProofImage(report: IncidentReport) {
+    if (report.image_base64) {
+      setPreviewImage(report.image_base64);
+      return;
+    }
+    setProofLoadingId(report.id);
+    try {
+      const { data } = await api.get<{ image_base64?: string | null }>(`/barangay/reports/${report.id}/image`);
+      if (data.image_base64) setPreviewImage(data.image_base64);
+    } catch (err: unknown) {
+      const apiError = err as ApiError;
+      if (apiError.response?.status === 401) return onAuthError();
+      setError(apiError.response?.data?.message || 'Failed to load the proof image.');
+    } finally {
+      setProofLoadingId(null);
+    }
+  }
 
   useEffect(() => {
     if (focusReportId) setSelectedReportId(focusReportId);
@@ -230,8 +249,12 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   useEffect(() => {
     loadData(true).catch(() => {});
     loadRainRanking().catch(() => {});
-    const rt = setInterval(() => loadData(false).catch(() => {}), 2500);
-    const rr = setInterval(() => loadRainRanking().catch(() => {}), 10000);
+    const rt = setInterval(() => {
+      if (document.visibilityState === 'visible') loadData(false).catch(() => {});
+    }, 5000);
+    const rr = setInterval(() => {
+      if (document.visibilityState === 'visible') loadRainRanking().catch(() => {});
+    }, 60000);
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         loadData(false).catch(() => {});
@@ -595,9 +618,9 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
           <p><strong>Admin Notes:</strong> {selectedReport.admin_notes || 'N/A'}</p>
           <p><strong>Reporter Notes:</strong> {selectedReport.notes || 'N/A'}</p>
           {backupRequest?.assigned_rescuer_id ? <p><strong>CDRRMD Backup:</strong> {backupRequest.rescuer_name || backupRequest.rescuer_account_id || 'Assigned team'}</p> : null}
-          {selectedReport.image_base64 ? (
-            <button onClick={() => setPreviewImage(selectedReport.image_base64 || null)} className={d.btn.secondaryXs} style={{ alignSelf: 'flex-start', marginTop: 4 }}>
-              View Proof Photo
+          {selectedReport.has_image || selectedReport.image_base64 ? (
+            <button disabled={proofLoadingId === selectedReport.id} onClick={() => void openProofImage(selectedReport)} className={d.btn.secondaryXs} style={{ alignSelf: 'flex-start', marginTop: 4 }}>
+              {proofLoadingId === selectedReport.id ? 'Loading…' : 'View Proof Photo'}
             </button>
           ) : null}
         </div>
@@ -839,11 +862,12 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
                       <td><span className={d.monitoring.statusChip}>{formatIncidentStatus(item.status, Boolean(item.picked_up_at))}</span></td>
                       <td style={{ fontSize: '0.75rem', color: '#64748b' }}>{new Date(item.created_at).toLocaleDateString()}</td>
                       <td>
-                        {item.image_base64 ? (
+                        {item.has_image || item.image_base64 ? (
                           <button
-                            onClick={(e) => { e.stopPropagation(); setPreviewImage(item.image_base64 || null); }}
+                            disabled={proofLoadingId === item.id}
+                            onClick={(e) => { e.stopPropagation(); void openProofImage(item); }}
                             className={d.btn.secondaryXs}
-                          >View</button>
+                          >{proofLoadingId === item.id ? 'Loading…' : 'View'}</button>
                         ) : <span className={d.monitoring.muted}>—</span>}
                       </td>
                     </tr>

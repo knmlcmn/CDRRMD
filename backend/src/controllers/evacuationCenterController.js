@@ -85,12 +85,16 @@ async function updateManualCount(req, res) {
   if (!Number.isSafeInteger(count) || count < 0) throw httpError(400, 'Current count must be a non-negative whole number.');
   const { rows } = await pool.query(
     `UPDATE evacuation_areas SET evacuees = $1
-     WHERE id = $2 AND LOWER(barangay) = LOWER($3)
+     WHERE id = $2 AND LOWER(barangay) = LOWER($3) AND $1 <= capacity
      RETURNING id, capacity, evacuees AS current_count,
        GREATEST(capacity - evacuees, 0)::int AS remaining_capacity`,
     [count, centerId, barangayName],
   );
-  if (!rows[0]) throw httpError(404, 'Evacuation center not found in your jurisdiction.');
+  if (!rows[0]) {
+    const center = await findOwnedCenter(pool, centerId, barangayName);
+    if (!center) throw httpError(404, 'Evacuation center not found in your jurisdiction.');
+    throw httpError(400, `Current count cannot exceed the center capacity of ${center.capacity}.`);
+  }
   return res.json(rows[0]);
 }
 

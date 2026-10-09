@@ -157,6 +157,7 @@ export type MonitoringReport = {
   estimated_people?: number | null;
   notes?: string | null;
   image_base64?: string | null;
+  has_image?: boolean;
   status: string;
   evacuation_area_id?: number | null;
   evacuation_area_name?: string | null;
