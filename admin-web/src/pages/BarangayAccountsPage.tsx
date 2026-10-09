@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
 import { api } from '../services/apiClient';
 import AdminShell from '../components/AdminShell';
 import AddAccountDialog, { type AccountRole } from '../components/AddAccountDialog';
+import AccountDetailsModal, { type AccountEditValues } from '../components/AccountDetailsModal';
 import { d } from '../adminDesign';
 import type { BarangayAccount } from '../types';
 
@@ -20,36 +20,8 @@ type Props = {
   onAuthError: () => void;
 };
 
-type BrgyForm = {
-  id: number | null;
-  barangayId: string;
-  username: string;
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-  address: string;
-  contactNumber: string;
-  barangayName: string;
-};
-
-const EMPTY_FORM: BrgyForm = {
-  id: null,
-  barangayId: '',
-  username: '',
-  email: '',
-  password: '',
-  firstName: '',
-  lastName: '',
-  address: '',
-  contactNumber: '',
-  barangayName: '',
-};
-
-function toForm(a: BarangayAccount): BrgyForm {
+function toEditValues(a: BarangayAccount): AccountEditValues {
   return {
-    id: a.id,
-    barangayId: a.barangay_id || '',
     username: a.username || '',
     email: a.email || '',
     password: '',
@@ -83,8 +55,7 @@ export default function BarangayAccountsPage({
   const [search, setSearch] = useState('');
   const [barangayFilter, setBarangayFilter] = useState('all');
   const [archiveBusy, setArchiveBusy] = useState(false);
-  const [form, setForm] = useState<BrgyForm>(EMPTY_FORM);
-  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<BarangayAccount | null>(null);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
 
   const loadAccounts = useCallback(async (showLoading = true) => {
@@ -108,10 +79,9 @@ export default function BarangayAccountsPage({
     return () => window.clearInterval(timer);
   }, [loadAccounts]);
 
-  function handleEdit(a: BarangayAccount) {
-    setForm(toForm(a));
+  function viewAccount(account: BarangayAccount) {
+    setSelectedAccount(account);
     setFormError(null);
-    setIsFormOpen(true);
   }
 
   async function loadArchivedAccounts() {
@@ -133,30 +103,28 @@ export default function BarangayAccountsPage({
     loadArchivedAccounts().catch(() => {});
   }
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function saveAccount(values: AccountEditValues) {
     setFormError(null);
-    if (!form.username.trim() || !form.email.trim() || !form.barangayName.trim()) {
+    if (!values.username.trim() || !values.email.trim() || !values.barangayName.trim()) {
       setFormError('Username, email and barangay name are required.');
       return;
     }
-    if (!form.id) return;
+    if (!selectedAccount) return;
     setBusy(true);
     try {
       const payload = {
-        username: form.username.trim(),
-        email: form.email.trim(),
-        password: form.password.trim() || undefined,
-        firstName: form.firstName.trim() || null,
-        lastName: form.lastName.trim() || null,
-        address: form.address.trim() || null,
-        contactNumber: form.contactNumber.trim() || null,
-        barangayName: form.barangayName.trim(),
+        username: values.username.trim(),
+        email: values.email.trim(),
+        password: values.password.trim() || undefined,
+        firstName: values.firstName.trim() || null,
+        lastName: values.lastName.trim() || null,
+        address: values.address.trim() || null,
+        contactNumber: values.contactNumber.trim() || null,
+        barangayName: values.barangayName.trim(),
       };
-      await api.patch(`/barangay/accounts/${form.id}`, payload);
-      setForm(EMPTY_FORM);
-      setIsFormOpen(false);
+      await api.patch(`/barangay/accounts/${selectedAccount.id}`, payload);
       await loadAccounts();
+      setSelectedAccount(null);
     } catch (error: unknown) {
       const err = error as ApiError;
       if (err.response?.status === 401) { onAuthError(); return; }
@@ -171,8 +139,7 @@ export default function BarangayAccountsPage({
     setBusy(true);
     try {
       await api.delete(`/barangay/accounts/${id}`);
-      if (form.id === id) setForm(EMPTY_FORM);
-      if (form.id === id) setIsFormOpen(false);
+      if (selectedAccount?.id === id) setSelectedAccount(null);
       await loadAccounts();
     } catch (error: unknown) {
       const err = error as ApiError;
@@ -281,87 +248,6 @@ export default function BarangayAccountsPage({
 
         {error ? <p className={d.page.error}>{error}</p> : null}
 
-        {isFormOpen ? (
-          <form onSubmit={handleSubmit} className={d.admin.form}>
-            <div className={d.admin.idBox}>
-              ID: {accounts.find((a) => a.id === form.id)?.barangay_id || `BRG-${form.id}`}
-            </div>
-
-            <input
-              className={d.form.inputSm}
-              placeholder="Username"
-              value={form.username}
-              onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))}
-              required
-            />
-            <input
-              type="email"
-              className={d.form.inputSm}
-              placeholder="Email"
-              value={form.email}
-              onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-              required
-            />
-            <input
-              type="password"
-              className={d.form.inputSm}
-              placeholder={form.id ? 'Password (optional)' : 'Password'}
-              value={form.password}
-              onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-              autoComplete="new-password"
-              required={!form.id}
-            />
-            <input
-              className={d.form.inputSm}
-              placeholder="Barangay Name"
-              value={form.barangayName}
-              onChange={(e) => setForm((p) => ({ ...p, barangayName: e.target.value }))}
-              list="barangay-names-list"
-              required
-            />
-            <datalist id="barangay-names-list">
-              {BARANGAY_OPTIONS.map((b) => (
-                <option key={b} value={b} />
-              ))}
-            </datalist>
-            <input
-              className={d.form.inputSm}
-              placeholder="First Name"
-              value={form.firstName}
-              onChange={(e) => setForm((p) => ({ ...p, firstName: e.target.value }))}
-            />
-            <input
-              className={d.form.inputSm}
-              placeholder="Last Name"
-              value={form.lastName}
-              onChange={(e) => setForm((p) => ({ ...p, lastName: e.target.value }))}
-            />
-            <input
-              className={d.form.inputSm}
-              placeholder="Contact Number"
-              value={form.contactNumber}
-              onChange={(e) => setForm((p) => ({ ...p, contactNumber: e.target.value }))}
-            />
-            <input
-              className={d.form.inputSm}
-              placeholder="Address"
-              value={form.address}
-              onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
-            />
-
-            {formError ? <p className={d.page.error} style={{ gridColumn: '1 / -1' }}>{formError}</p> : null}
-
-            <div className={d.admin.formActions}>
-              <button type="submit" className={d.btn.primary} disabled={busy}>
-                {busy ? 'Saving…' : 'Update Account'}
-              </button>
-              <button type="button" className={d.btn.secondary} onClick={() => setIsFormOpen(false)}>
-                Cancel
-              </button>
-            </div>
-          </form>
-        ) : null}
-
         {loading ? <p className={d.page.loading}>Loading…</p> : null}
 
         {/* Table */}
@@ -390,7 +276,7 @@ export default function BarangayAccountsPage({
               {filtered.map((a) => (
                 <tr
                   key={a.id}
-                  className={[d.admin.row, form.id === a.id ? 'bg-sky-50' : ''].join(' ')}
+                  className={d.admin.row}
                 >
                   <td className="font-mono text-xs text-slate-500">{a.barangay_id || `BRG-${a.id}`}</td>
                   <td className={d.admin.truncate}>
@@ -413,9 +299,9 @@ export default function BarangayAccountsPage({
                       <button
                         type="button"
                         className={d.btn.secondaryXs}
-                        onClick={() => handleEdit(a)}
+                        onClick={() => viewAccount(a)}
                       >
-                        Edit
+                        View
                       </button>
                       <button
                         type="button"
@@ -462,6 +348,30 @@ export default function BarangayAccountsPage({
               </div>
             </div>
           </div>
+        ) : null}
+
+        {selectedAccount ? (
+          <AccountDetailsModal
+            key={selectedAccount.id}
+            title="Barangay Account"
+            accountId={selectedAccount.barangay_id || `BRG-${selectedAccount.id}`}
+            initialValues={toEditValues(selectedAccount)}
+            details={[
+              { label: 'Name', value: [selectedAccount.first_name, selectedAccount.last_name].filter(Boolean).join(' ') || 'N/A' },
+              { label: 'Status', value: selectedAccount.is_active ? 'Online' : 'Offline' },
+              { label: 'Barangay', value: selectedAccount.barangay_name || 'N/A' },
+              { label: 'Username', value: selectedAccount.username || 'N/A' },
+              { label: 'Email', value: selectedAccount.email || 'N/A' },
+              { label: 'Contact', value: selectedAccount.contact_number || 'N/A' },
+              { label: 'Address', value: selectedAccount.address || 'N/A' },
+              { label: 'Last Login', value: fmtDate(selectedAccount.last_login) },
+            ]}
+            barangayOptions={BARANGAY_OPTIONS}
+            busy={busy}
+            error={formError}
+            onClose={() => { setSelectedAccount(null); setFormError(null); }}
+            onSave={saveAccount}
+          />
         ) : null}
       </div>
     </AdminShell>

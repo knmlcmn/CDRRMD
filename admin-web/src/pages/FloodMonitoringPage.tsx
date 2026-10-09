@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminShell from '../components/AdminShell';
 import { d } from '../adminDesign';
-import { api } from '../services/apiClient';
 import { loadFloodReportHistory, type FloodSensorReport } from '../services/floodReportHistory';
 import { HIGH_WATER_LEVEL_THRESHOLD as HIGH_WATER_THRESHOLD, MODERATE_WATER_LEVEL_THRESHOLD as FLOOD_REPORT_THRESHOLD } from '../services/waterLevelHazard';
 
@@ -282,20 +281,6 @@ async function putFirebaseFloodReport(report: FloodSensorReport) {
   }
 }
 
-async function publishResidentFloodAlert(report: FloodSensorReport) {
-  if (!report.active || (report.level !== 'Moderate' && report.level !== 'High')) {
-    return;
-  }
-  await api.post('/content/flood-sensor-alerts', {
-    eventKey: report.reportId,
-    barangayName: report.location,
-    level: report.level,
-    hardwareNo: report.hardwareNo,
-    waterLevelPercentage: report.waterLevelPercentage,
-    updatedAt: report.updatedAt,
-  });
-}
-
 async function syncFirebaseFloodReports(
   slots: HardwareSlot[],
   savedReports: FloodSensorReport[],
@@ -377,17 +362,6 @@ async function syncFirebaseFloodReports(
   });
 
   await Promise.all(writes);
-
-  // Publish every active event on each sync. The backend deduplicates by
-  // hardware event and severity, so failed deliveries are retried safely.
-  const alertResults = await Promise.allSettled(
-    nextReports.filter((report) => report.active).map(publishResidentFloodAlert),
-  );
-  alertResults.forEach((result) => {
-    if (result.status === 'rejected') {
-      console.error('Unable to publish a resident flood alert.', result.reason);
-    }
-  });
 
   return nextReports
     .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime());

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AppState,
   Image,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -155,8 +157,27 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
   useEffect(() => {
     load().catch(() => {});
     const timer = setInterval(() => loadNotifications().catch(() => {}), 8_000);
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') loadNotifications().catch(() => {});
+    });
+    const refreshWhenVisible = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        loadNotifications().catch(() => {});
+      }
+    };
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('focus', refreshWhenVisible);
+      window.addEventListener('online', refreshWhenVisible);
+      document.addEventListener('visibilitychange', refreshWhenVisible);
+    }
     return () => {
       clearInterval(timer);
+      appStateSubscription.remove();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('focus', refreshWhenVisible);
+        window.removeEventListener('online', refreshWhenVisible);
+        document.removeEventListener('visibilitychange', refreshWhenVisible);
+      }
       if (newLabelTimer.current) clearTimeout(newLabelTimer.current);
     };
   }, [load, loadNotifications]);

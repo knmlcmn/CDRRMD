@@ -39,6 +39,8 @@ router.delete('/accounts/:id', auth, asyncHandler(archiveAccount));
 // Barangay: own jurisdiction
 router.get('/personnel', auth, asyncHandler(rescuerAccounts.listAccounts));
 router.post('/personnel', auth, asyncHandler(rescuerAccounts.createAccount));
+router.patch('/personnel/:id', auth, asyncHandler(rescuerAccounts.updateAccount));
+router.delete('/personnel/:id', auth, asyncHandler(rescuerAccounts.archiveAccount));
 router.get('/reports/mine', auth, asyncHandler(getMyReports));
 router.get('/reports/:id/image', auth, asyncHandler(getReportImage));
 router.get('/reports/:id/rescuer-preview', auth, asyncHandler(barangayRescuer.previewNearestRescuer));

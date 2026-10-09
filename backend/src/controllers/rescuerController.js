@@ -36,6 +36,16 @@ function normalizeManagedRole(value) {
   return value === 'barangay_rescuer' ? 'barangay_rescuer' : 'rescuer';
 }
 
+function managedAccountBarangayScope(req) {
+  if (!['admin', 'barangay'].includes(req.user?.role)) {
+    throw httpError(403, 'Admin or barangay access required.');
+  }
+  if (req.user.role === 'admin') return null;
+  const barangayName = String(req.user.barangayName || '').trim();
+  if (!barangayName) throw httpError(403, 'No barangay is assigned to this account.');
+  return barangayName;
+}
+
 function accountPrefix(role) {
   return role === 'barangay_rescuer' ? 'BRS' : 'RSC';
 }
@@ -140,14 +150,15 @@ async function createAccount(req, res) {
 }
 
 async function updateAccount(req, res) {
-  requireRole(req, 'admin');
   const id = Number(req.params.id);
   if (!Number.isSafeInteger(id) || id <= 0) throw httpError(400, 'Invalid rescuer ID.');
+  const barangayScope = managedAccountBarangayScope(req);
   const existingResult = await pool.query(
     `SELECT role, barangay_name FROM users
      WHERE id = $1 AND role IN ('rescuer', 'barangay_rescuer') AND COALESCE(is_archived, FALSE) = FALSE
+       AND ($2::text IS NULL OR (role = 'barangay_rescuer' AND LOWER(barangay_name) = LOWER($2)))
      LIMIT 1`,
-    [id],
+    [id, barangayScope],
   );
   const existing = existingResult.rows[0];
   if (!existing) throw httpError(404, 'Rescuer account not found.');
@@ -162,7 +173,7 @@ async function updateAccount(req, res) {
   if (duplicate.rows[0]) throw httpError(409, 'Email or username is already in use.');
   if (account.password && account.password.length < 6) throw httpError(400, 'Password must be at least 6 characters.');
   const barangayName = existing.role === 'barangay_rescuer'
-    ? String(req.body?.barangayName || existing.barangay_name || '').trim()
+    ? String(barangayScope || req.body?.barangayName || existing.barangay_name || '').trim()
     : null;
   if (existing.role === 'barangay_rescuer' && !isSupportedBarangay(barangayName)) {
     throw httpError(400, 'Select a valid barangay for this rescuer.');
@@ -172,19 +183,30 @@ async function updateAccount(req, res) {
     `UPDATE users SET username = $1, email = $2, first_name = $3, last_name = $4,
        address = $5, contact_number = $6, password_hash = COALESCE($7, password_hash), barangay_name = $8
      WHERE id = $9 AND role = $10 AND COALESCE(is_archived, FALSE) = FALSE
+       AND ($11::text IS NULL OR (role = 'barangay_rescuer' AND LOWER(barangay_name) = LOWER($11)))
      RETURNING id,
        CONCAT(CASE WHEN role = 'barangay_rescuer' THEN 'BRS' ELSE 'RSC' END, '-', EXTRACT(YEAR FROM created_at)::text, '-', LPAD(id::text, 5, '0')) AS rescuer_id,
        username, email, first_name, last_name, address, contact_number, barangay_name, created_at`,
-    [account.username, account.email, account.firstName, account.lastName, account.address, account.contactNumber, passwordHash, barangayName, id, existing.role],
+    [account.username, account.email, account.firstName, account.lastName, account.address, account.contactNumber, passwordHash, barangayName, id, existing.role, barangayScope],
   );
   if (!rows[0]) throw httpError(404, 'Rescuer account not found.');
   return res.json(rows[0]);
 }
 
 async function archiveAccount(req, res) {
-  requireRole(req, 'admin');
   const id = Number(req.params.id);
   if (!Number.isSafeInteger(id) || id <= 0) throw httpError(400, 'Invalid rescuer ID.');
+  const barangayScope = managedAccountBarangayScope(req);
+  const managedAccount = await pool.query(
+    `SELECT id FROM users
+     WHERE id = $1
+       AND role IN ('rescuer', 'barangay_rescuer')
+       AND COALESCE(is_archived, FALSE) = FALSE
+       AND ($2::text IS NULL OR (role = 'barangay_rescuer' AND LOWER(barangay_name) = LOWER($2)))
+     LIMIT 1`,
+    [id, barangayScope],
+  );
+  if (!managedAccount.rows[0]) throw httpError(404, 'Rescuer account not found.');
   const active = await pool.query(
     'SELECT id FROM backup_requests WHERE assigned_rescuer_id = $1 AND arrived_at IS NULL AND declined_at IS NULL LIMIT 1',
     [id],
@@ -192,8 +214,12 @@ async function archiveAccount(req, res) {
   if (active.rows[0]) throw httpError(409, 'This rescuer still has an active incident assignment.');
   const { rows } = await pool.query(
     `UPDATE users SET is_archived = TRUE, archived_at = NOW(), archived_by = $2, is_active = FALSE
-     WHERE id = $1 AND role IN ('rescuer', 'barangay_rescuer') AND COALESCE(is_archived, FALSE) = FALSE RETURNING id`,
-    [id, req.user.userId],
+     WHERE id = $1
+       AND role IN ('rescuer', 'barangay_rescuer')
+       AND COALESCE(is_archived, FALSE) = FALSE
+       AND ($3::text IS NULL OR (role = 'barangay_rescuer' AND LOWER(barangay_name) = LOWER($3)))
+     RETURNING id`,
+    [id, req.user.userId, barangayScope],
   );
   if (!rows[0]) throw httpError(404, 'Rescuer account not found.');
   return res.status(204).send();

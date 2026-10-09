@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Modal, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { AppState, Modal, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AppText as Text } from './Typography';
 import { editorial } from './EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -32,10 +32,18 @@ export default function ResidentFloodAlert({ onTestAccountRemoved }: Props) {
       params: coordinatesRef.current || undefined,
     });
     const notifications = Array.isArray(response.data) ? response.data as FloodNotification[] : [];
-    const latestUnread = notifications.find(
+    const matchingUnread = notifications.filter(
       (item) => item.category === 'flood_sensor' && !item.read_at && item.matches_current_location !== false,
     );
-    setAlert((current) => current || latestUnread || null);
+    const latestUnread = matchingUnread.find(
+      (item) => String(item.severity || '').toLowerCase() === 'high',
+    ) || matchingUnread[0];
+    setAlert((current) => {
+      if (!latestUnread) return current;
+      const incomingIsHigh = String(latestUnread.severity || '').toLowerCase() === 'high';
+      const currentIsHigh = String(current?.severity || '').toLowerCase() === 'high';
+      return !current || (incomingIsHigh && !currentIsHigh) ? latestUnread : current;
+    });
   }, []);
 
   useEffect(() => {
@@ -71,9 +79,28 @@ export default function ResidentFloodAlert({ onTestAccountRemoved }: Props) {
 
     startLocationAlerts().catch(() => {});
     const timer = setInterval(() => checkAlerts().catch(() => {}), 8_000);
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') checkAlerts().catch(() => {});
+    });
+    const refreshWhenVisible = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        checkAlerts().catch(() => {});
+      }
+    };
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      window.addEventListener('focus', refreshWhenVisible);
+      window.addEventListener('online', refreshWhenVisible);
+      document.addEventListener('visibilitychange', refreshWhenVisible);
+    }
     return () => {
       active = false;
       clearInterval(timer);
+      appStateSubscription.remove();
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.removeEventListener('focus', refreshWhenVisible);
+        window.removeEventListener('online', refreshWhenVisible);
+        document.removeEventListener('visibilitychange', refreshWhenVisible);
+      }
       locationSubscription?.remove();
     };
   }, [checkAlerts]);
