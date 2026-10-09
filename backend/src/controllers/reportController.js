@@ -14,6 +14,7 @@ const {
   evacuationAreaStillHasCapacity,
   findNearestAvailableEvacuationArea,
 } = require('../services/evacuationRoutingService');
+const { syncFloodSensorAlerts } = require('../services/floodSensorAlertService');
 
 function buildReportCode(id, createdAt) {
   const year = new Date(createdAt || Date.now()).getFullYear();
@@ -1246,14 +1247,26 @@ async function getMyNotifications(req, res) {
     );
   }
 
+  // Generate sensor notifications on the server instead of depending on an
+  // admin browser tab, which may be suspended by laptop power-saving modes.
+  try {
+    await syncFloodSensorAlerts();
+  } catch (error) {
+    console.error('Unable to synchronize flood sensor alerts.', error);
+  }
+
   const notifications = await pool.query(
     `SELECT n.id, n.user_id, n.report_id, n.title, n.body, n.category, n.severity,
             n.barangay_name, n.source_event_key, n.created_at, n.read_at,
             COALESCE(u.is_test_account, FALSE) AS is_test_account,
             CASE
               WHEN COALESCE(n.category, 'report') <> 'flood_sensor' THEN TRUE
-              WHEN $2::varchar IS NULL THEN FALSE
-              ELSE LOWER(COALESCE(n.barangay_name, '')) = LOWER($2::varchar)
+              ELSE LOWER(COALESCE(n.barangay_name, '')) = LOWER(COALESCE(
+                $2::varchar,
+                u.current_barangay_name,
+                u.barangay_name,
+                ''
+              ))
             END AS matches_current_location
      FROM user_notifications n
      JOIN users u ON u.id = n.user_id
@@ -1294,7 +1307,7 @@ async function markNotificationRead(req, res) {
       `UPDATE user_notifications
        SET read_at = COALESCE(read_at, NOW())
        WHERE id = $1 AND user_id = $2
-       RETURNING id, read_at, category`,
+       RETURNING id, read_at, category, source_event_key`,
       [notificationId, userId],
     );
     if (result.rows.length === 0) {
@@ -1304,6 +1317,16 @@ async function markNotificationRead(req, res) {
 
     let accountDeleted = false;
     if (result.rows[0].category === 'flood_sensor') {
+      if (result.rows[0].source_event_key) {
+        await client.query(
+          `UPDATE user_notifications
+           SET read_at = COALESCE(read_at, NOW())
+           WHERE user_id = $1
+             AND category = 'flood_sensor'
+             AND source_event_key = $2`,
+          [userId, result.rows[0].source_event_key],
+        );
+      }
       const deleted = await client.query(
         `DELETE FROM users
          WHERE id = $1 AND COALESCE(is_test_account, FALSE) = TRUE

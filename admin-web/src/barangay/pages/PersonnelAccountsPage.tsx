@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api } from '../../services/apiClient';
+import AccountDetailsModal, { type AccountEditValues } from '../../components/AccountDetailsModal';
 import BarangayShell from '../components/BarangayShell';
 import { d } from '../barangayDesign';
 import type { BarangayUser, RescuerAccount } from '../../types';
@@ -29,7 +30,6 @@ type ModalName = 'profile' | 'personnel' | null;
 type ApiError = { response?: { status?: number; data?: { message?: string } } };
 
 type AccountRow = {
-  key: string;
   accountId: string;
   firstName: string | null;
   lastName: string | null;
@@ -38,7 +38,6 @@ type AccountRow = {
   contactNumber: string | null;
   isOnline: boolean;
   lastLogin: string | null;
-  isSelf: boolean;
 };
 
 const EMPTY_PROFILE: ProfileForm = {
@@ -73,6 +72,19 @@ function accountIdForUser(user: BarangayUser): string {
     : `BRG-${String(user.id).padStart(5, '0')}`;
 }
 
+function personnelEditValues(account: RescuerAccount): AccountEditValues {
+  return {
+    username: account.username || '',
+    email: account.email || '',
+    password: '',
+    firstName: account.first_name || '',
+    lastName: account.last_name || '',
+    address: account.address || '',
+    contactNumber: account.contact_number || '',
+    barangayName: account.barangay_name || '',
+  };
+}
+
 export default function PersonnelAccountsPage({ barangayName, onLogout, onOpenDashboard, onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationCenter, onAuthError }: Props) {
   const [user, setUser] = useState<BarangayUser | null>(null);
   const [personnel, setPersonnel] = useState<RescuerAccount[]>([]);
@@ -85,6 +97,7 @@ export default function PersonnelAccountsPage({ barangayName, onLogout, onOpenDa
   const [searchTerm, setSearchTerm] = useState('');
   const [profileForm, setProfileForm] = useState<ProfileForm>(EMPTY_PROFILE);
   const [personnelForm, setPersonnelForm] = useState<PersonnelForm>(EMPTY_PERSONNEL);
+  const [selectedPersonnel, setSelectedPersonnel] = useState<RescuerAccount | null>(null);
 
   const loadAccounts = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -125,11 +138,9 @@ export default function PersonnelAccountsPage({ barangayName, onLogout, onOpenDa
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [modal, saving]);
 
-  const rows = useMemo<AccountRow[]>(() => {
-    const result: AccountRow[] = [];
-    if (user) {
-      result.push({
-        key: `self-${user.id}`,
+  const myAccountRow = useMemo<AccountRow | null>(() => {
+    if (!user) return null;
+    return {
         accountId: accountIdForUser(user),
         firstName: user.firstName,
         lastName: user.lastName,
@@ -138,37 +149,17 @@ export default function PersonnelAccountsPage({ barangayName, onLogout, onOpenDa
         contactNumber: user.contactNumber,
         isOnline: user.isActive !== false,
         lastLogin: user.lastLogin || null,
-        isSelf: true,
-      });
-    }
-    personnel.forEach((account) => {
-      result.push({
-        key: `personnel-${account.id}`,
-        accountId: account.rescuer_id,
-        firstName: account.first_name,
-        lastName: account.last_name,
-        email: account.email,
-        username: account.username,
-        contactNumber: account.contact_number,
-        isOnline: account.is_online,
-        lastLogin: account.last_login,
-        isSelf: false,
-      });
-    });
-    return result;
-  }, [personnel, user]);
+      };
+  }, [user]);
 
-  const myAccountRow = rows.find((row) => row.isSelf) || null;
-
-  const filteredPersonnelRows = useMemo(() => {
+  const filteredPersonnel = useMemo(() => {
     const needle = searchTerm.trim().toLowerCase();
-    const personnelRows = rows.filter((row) => !row.isSelf);
-    if (!needle) return personnelRows;
-    return personnelRows.filter((row) => [
-      row.accountId, row.firstName, row.lastName, row.email,
-      row.username, row.contactNumber,
+    if (!needle) return personnel;
+    return personnel.filter((account) => [
+      account.rescuer_id, account.first_name, account.last_name, account.email,
+      account.username, account.contact_number,
     ].some((value) => String(value || '').toLowerCase().includes(needle)));
-  }, [rows, searchTerm]);
+  }, [personnel, searchTerm]);
 
   function openProfileModal() {
     if (!user) return;
@@ -250,6 +241,59 @@ export default function PersonnelAccountsPage({ barangayName, onLogout, onOpenDa
     }
   }
 
+  async function savePersonnel(values: AccountEditValues) {
+    if (!selectedPersonnel) return;
+    setSaving(true);
+    setModalError('');
+    try {
+      await api.patch(`/barangay/personnel/${selectedPersonnel.id}`, {
+        username: values.username.trim(),
+        email: values.email.trim().toLowerCase(),
+        firstName: values.firstName.trim() || null,
+        lastName: values.lastName.trim() || null,
+        contactNumber: values.contactNumber.trim() || null,
+        address: values.address.trim() || null,
+        password: values.password.trim() || undefined,
+        barangayName,
+      });
+      const displayName = `${values.firstName.trim()} ${values.lastName.trim()}`.trim() || values.username.trim();
+      setSelectedPersonnel(null);
+      setSuccessMessage(`${displayName}'s account was updated.`);
+      await loadAccounts(false);
+    } catch (error: unknown) {
+      const err = error as ApiError;
+      if (err.response?.status === 401) {
+        onAuthError();
+        return;
+      }
+      setModalError(err.response?.data?.message || 'We could not save this rescuer account. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deletePersonnel(account: RescuerAccount) {
+    const displayName = `${account.first_name || ''} ${account.last_name || ''}`.trim() || account.username;
+    if (!window.confirm(`Delete ${displayName}'s Barangay Rescuer account?`)) return;
+    setSaving(true);
+    setError('');
+    try {
+      await api.delete(`/barangay/personnel/${account.id}`);
+      if (selectedPersonnel?.id === account.id) setSelectedPersonnel(null);
+      setSuccessMessage(`${displayName}'s account was deleted.`);
+      await loadAccounts(false);
+    } catch (error: unknown) {
+      const err = error as ApiError;
+      if (err.response?.status === 401) {
+        onAuthError();
+        return;
+      }
+      setError(err.response?.data?.message || 'We could not delete this rescuer account. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <BarangayShell
       activeView="account"
@@ -313,28 +357,54 @@ export default function PersonnelAccountsPage({ barangayName, onLogout, onOpenDa
               <table className={d.table.main}>
                 <caption className="sr-only">Barangay rescuer accounts</caption>
                 <thead className={d.admin.tableHead}>
-                  <tr><th>ID</th><th>Name</th><th className={d.admin.thHiddenMd}>Email</th><th className={d.admin.thHiddenLg}>Username</th><th className={d.admin.thHiddenLg}>Contact</th><th className={d.admin.thHiddenMd}>Status</th><th className={d.admin.thHiddenXl}>Last Login</th></tr>
+                  <tr><th>ID</th><th>Name</th><th className={d.admin.thHiddenMd}>Email</th><th className={d.admin.thHiddenLg}>Username</th><th className={d.admin.thHiddenLg}>Contact</th><th className={d.admin.thHiddenMd}>Status</th><th className={d.admin.thHiddenXl}>Last Login</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
-                  {!loading && filteredPersonnelRows.map((row) => (
-                    <tr key={row.key} className={d.admin.row}>
-                      <td className="font-mono text-xs text-slate-500">{row.accountId}</td>
-                      <td className={d.admin.truncate}>{`${row.firstName || ''} ${row.lastName || ''}`.trim() || 'Not provided'}</td>
-                      <td className={d.admin.tdHiddenTruncateMd}>{row.email}</td>
-                      <td className={d.admin.tdHiddenLg}>{row.username}</td>
-                      <td className={d.admin.tdHiddenLg}>{row.contactNumber || 'Not provided'}</td>
-                      <td className={d.admin.thHiddenMd}><span className={['status-chip', row.isOnline ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'].join(' ')}>{row.isOnline ? 'Online' : 'Offline'}</span></td>
-                      <td className={`${d.admin.tdHiddenTruncateXl} text-xs text-slate-500`}>{formatLastLogin(row.lastLogin)}</td>
+                  {!loading && filteredPersonnel.map((account) => (
+                    <tr key={account.id} className={d.admin.row}>
+                      <td className="font-mono text-xs text-slate-500">{account.rescuer_id}</td>
+                      <td className={d.admin.truncate}>{`${account.first_name || ''} ${account.last_name || ''}`.trim() || 'Not provided'}</td>
+                      <td className={d.admin.tdHiddenTruncateMd}>{account.email}</td>
+                      <td className={d.admin.tdHiddenLg}>{account.username}</td>
+                      <td className={d.admin.tdHiddenLg}>{account.contact_number || 'Not provided'}</td>
+                      <td className={d.admin.thHiddenMd}><span className={['status-chip', account.is_online ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'].join(' ')}>{account.is_online ? 'Online' : 'Offline'}</span></td>
+                      <td className={`${d.admin.tdHiddenTruncateXl} text-xs text-slate-500`}>{formatLastLogin(account.last_login)}</td>
+                      <td><div className={d.admin.actions}><button type="button" onClick={() => { setSelectedPersonnel(account); setModalError(''); setSuccessMessage(''); }} className={d.btn.secondaryXs}>View</button><button type="button" onClick={() => void deletePersonnel(account)} className={d.btn.dangerXs} disabled={saving}>Delete</button></div></td>
                     </tr>
                   ))}
-                  {!loading && filteredPersonnelRows.length === 0 ? (
-                    <tr><td colSpan={7} className={d.table.empty}>{searchTerm.trim() ? 'No rescuers match your search.' : 'No Barangay Rescuer accounts yet. Select Add Personnel to create one.'}</td></tr>
+                  {!loading && filteredPersonnel.length === 0 ? (
+                    <tr><td colSpan={8} className={d.table.empty}>{searchTerm.trim() ? 'No rescuers match your search.' : 'No Barangay Rescuer accounts yet. Select Add Personnel to create one.'}</td></tr>
                   ) : null}
                 </tbody>
               </table>
             </div>
           </section>
         </div>
+
+        {selectedPersonnel ? (
+          <AccountDetailsModal
+            key={selectedPersonnel.id}
+            title="Barangay Rescuer Account"
+            accountId={selectedPersonnel.rescuer_id}
+            initialValues={personnelEditValues(selectedPersonnel)}
+            details={[
+              { label: 'Name', value: [selectedPersonnel.first_name, selectedPersonnel.last_name].filter(Boolean).join(' ') || 'N/A' },
+              { label: 'Status', value: selectedPersonnel.is_online ? 'Online' : 'Offline' },
+              { label: 'Availability', value: selectedPersonnel.is_available ? 'Available' : 'Assigned' },
+              { label: 'Barangay', value: selectedPersonnel.barangay_name || barangayName },
+              { label: 'Username', value: selectedPersonnel.username || 'N/A' },
+              { label: 'Email', value: selectedPersonnel.email || 'N/A' },
+              { label: 'Contact', value: selectedPersonnel.contact_number || 'N/A' },
+              { label: 'Address / Team Base', value: selectedPersonnel.address || 'N/A' },
+              { label: 'Last Login', value: formatLastLogin(selectedPersonnel.last_login) },
+            ]}
+            addressPlaceholder="Address / Team Base"
+            busy={saving}
+            error={modalError}
+            onClose={() => { if (!saving) { setSelectedPersonnel(null); setModalError(''); } }}
+            onSave={savePersonnel}
+          />
+        ) : null}
 
         {modal === 'profile' && user ? (
           <div className={d.modal.overlay} role="dialog" aria-modal="true" aria-labelledby="edit-account-title" onMouseDown={(event) => { if (event.target === event.currentTarget) closeModal(); }}>
