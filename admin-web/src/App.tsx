@@ -12,6 +12,7 @@ import PostUpdatesPage from './pages/PostUpdatesPage';
 import BarangayAccountsPage from './pages/BarangayAccountsPage';
 import RescuerAccountsPage from './pages/RescuerAccountsPage';
 import RescuerDashboardPage from './pages/RescuerDashboardPage';
+import RescuerAssignmentModal from './components/RescuerAssignmentModal';
 import RescuerFloodMonitoringPage from './pages/RescuerFloodMonitoringPage';
 import RescuerAccountPage from './pages/RescuerAccountPage';
 import type { StaffPortal } from './services/authService';
@@ -196,9 +197,17 @@ function App() {
       onOpenFloodMonitoring: () => setRescuerView('flood-monitoring'),
       onOpenAccount: () => setRescuerView('account'),
     };
-    if (rescuerView === 'flood-monitoring') return <RescuerFloodMonitoringPage {...rescuerProps} />;
-    if (rescuerView === 'account') return <RescuerAccountPage {...rescuerProps} />;
-    return <RescuerDashboardPage {...rescuerProps} />;
+    const rescuerPage = rescuerView === 'flood-monitoring'
+      ? <RescuerFloodMonitoringPage {...rescuerProps} />
+      : rescuerView === 'account'
+        ? <RescuerAccountPage {...rescuerProps} />
+        : <RescuerDashboardPage {...rescuerProps} />;
+    return (
+      <>
+        <RescuerAssignmentModal responderRole={role} onAuthError={onLogout} onOpenIncidents={() => setRescuerView('incidents')} />
+        {rescuerPage}
+      </>
+    );
   }
 
   if (role === 'barangay') {

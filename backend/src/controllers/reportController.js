@@ -196,6 +196,7 @@ async function createReport(req, res) {
     fullName,
     contactNumber,
     testModeBypassServiceArea,
+    floodAlertNotificationId,
   } = req.body || {};
 
   const normalizedType = String(reportType || '').trim().toLowerCase();
@@ -238,7 +239,24 @@ async function createReport(req, res) {
   const rescuePartySize = normalizedType === 'rescue' ? estimatedPeopleInt : 1;
 
   const safeImageBase64 = String(imageBase64 || '').trim() || null;
-  if (!safeImageBase64) {
+  const parsedFloodAlertNotificationId = Number(floodAlertNotificationId);
+  let verifiedFloodAlertProof = null;
+  if (normalizedType === 'rescue'
+    && Number.isSafeInteger(parsedFloodAlertNotificationId)
+    && parsedFloodAlertNotificationId > 0) {
+    const proofResult = await pool.query(
+      `SELECT id, source_event_key
+       FROM user_notifications
+       WHERE id = $1 AND user_id = $2
+         AND category = 'flood_sensor'
+         AND severity IN ('moderate', 'high')
+         AND read_at IS NULL
+       LIMIT 1`,
+      [parsedFloodAlertNotificationId, userId],
+    );
+    verifiedFloodAlertProof = proofResult.rows[0] || null;
+  }
+  if (!safeImageBase64 && !verifiedFloodAlertProof) {
     return res.status(400).json({ message: 'Uploaded photo is required.' });
   }
 
@@ -436,6 +454,7 @@ async function createReport(req, res) {
           evacuationAreaId: resolvedAreaId,
           evacuationAreaName: resolvedAreaName,
           evacuationReassigned,
+          floodAlertNotificationId: verifiedFloodAlertProof?.id || null,
         },
       );
     } catch (logError) {
@@ -454,6 +473,17 @@ async function createReport(req, res) {
     } catch (notificationError) {
       // Keep report creation successful even if notification insert fails.
       console.error('Failed to write initial report notification:', notificationError.message);
+    }
+
+    if (verifiedFloodAlertProof) {
+      await client.query(
+        `UPDATE user_notifications
+         SET read_at = COALESCE(read_at, NOW())
+         WHERE user_id = $1
+           AND category = 'flood_sensor'
+           AND (id = $2 OR ($3::varchar IS NOT NULL AND source_event_key = $3))`,
+        [userId, verifiedFloodAlertProof.id, verifiedFloodAlertProof.source_event_key || null],
+      );
     }
 
     await client.query('COMMIT');

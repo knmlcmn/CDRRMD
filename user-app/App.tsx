@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { BottomTabBarProps, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ActivityIndicator, Animated, AppState, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -93,6 +93,7 @@ async function syncMissingServerProfile(
 }
 
 const Tab = createBottomTabNavigator();
+const navigationRef = createNavigationContainerRef<any>();
 
 type NavigationTabButtonProps = {
   name: string;
@@ -229,6 +230,7 @@ function AppContent() {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [session, setSession] = useState<SessionData | null>(null);
   const [testModeEnabled, setTestModeEnabled] = useState(false);
+  const [floodAlertRescueRequest, setFloodAlertRescueRequest] = useState<{ notificationId: number; requestedAt: number } | null>(null);
   const [locationChecking, setLocationChecking] = useState(false);
   const [locationGate, setLocationGate] = useState<{ message: string; activeSession: boolean } | null>(null);
   const sessionRef = useRef<SessionData | null>(null);
@@ -510,6 +512,11 @@ function AppContent() {
     setAuthMode('login');
   }
 
+  function handleFloodAlertRescue(notificationId: number) {
+    setFloodAlertRescueRequest({ notificationId, requestedAt: Date.now() });
+    if (navigationRef.isReady()) navigationRef.navigate('SOS');
+  }
+
   async function handleLocationRetry() {
     setLocationChecking(true);
     try {
@@ -604,8 +611,8 @@ function AppContent() {
 
   return (
     <View style={styles.appRoot}>
-      <NavigationContainer>
-        <ResidentFloodAlert onTestAccountRemoved={handleLogout} />
+      <NavigationContainer ref={navigationRef}>
+        <ResidentFloodAlert onTestAccountRemoved={handleLogout} onSendRescue={handleFloodAlertRescue} />
         <Tab.Navigator
         id="MainTabs"
         tabBar={(props) => <UserTabBar {...props} />}
@@ -618,7 +625,7 @@ function AppContent() {
         </Tab.Screen>
         <Tab.Screen name="Weather" component={WeatherScreen} />
         <Tab.Screen name="SOS">
-          {() => <RescueMapScreen testModeEnabled={testModeEnabled} />}
+          {() => <RescueMapScreen testModeEnabled={testModeEnabled} floodAlertRescueRequest={floodAlertRescueRequest} />}
         </Tab.Screen>
         <Tab.Screen name="Family">
           {() => <FamilyScreen appUserId={session.appUserId ?? ''} />}

@@ -53,9 +53,11 @@ async function insertAlert(client, { eventKey, barangayName, hardwareNo, level, 
   );
   if (inserted.rows.length === 0) return { published: false, recipients: 0 };
 
-  const severityLabel = level === 'high' ? 'High' : 'Medium';
-  const title = `${severityLabel} flood warning`;
-  const body = `Barangay ${barangayName} has reached a ${severityLabel.toLowerCase()} water level (${Math.round(percentage)}%) according to ${hardwareNo || 'the local water sensor'}. Stay alert and follow barangay safety instructions.`;
+  const high = level === 'high';
+  const title = high ? 'Immediate evacuation required' : 'Prepare to evacuate';
+  const body = high
+    ? `Water levels are rising and have reached a dangerous level in Barangay ${barangayName} (${Math.round(percentage)}%, ${hardwareNo || 'local water sensor'}). Proceed immediately to a safe evacuation area. If you cannot evacuate safely or require assistance, send a rescue request now.`
+    : `Water levels are rising in Barangay ${barangayName} (${Math.round(percentage)}%, ${hardwareNo || 'local water sensor'}). Prepare to move to a safe evacuation area immediately. If you are trapped or require assistance, send a rescue request now.`;
   const recipients = await client.query(
     `INSERT INTO user_notifications
        (user_id, report_id, title, body, category, severity, barangay_name, source_event_key)

@@ -263,6 +263,7 @@ async function listMyIncidents(req, res) {
             br.acknowledged_at, br.assigned_at, br.responder_acknowledged_at, br.picked_up_at,
             ir.id, ir.report_code, ir.report_type, ir.incident_type, ir.status,
             ir.location,
+            ir.latitude AS reported_latitude, ir.longitude AS reported_longitude,
             CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
                 AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
               THEN reporter.current_latitude ELSE ir.latitude END AS latitude,

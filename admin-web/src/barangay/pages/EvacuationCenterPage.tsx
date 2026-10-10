@@ -23,6 +23,9 @@ type Center = {
 
 type EvacueeCase = {
   id: number;
+  evacuation_area_id: number;
+  evacuation_area_name: string;
+  evacuation_area_barangay: string;
   report_code: string;
   incident_type: string;
   location: string;
@@ -112,12 +115,12 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
     if (selectedCenter && !isManualCountDirty) setManualCount(String(selectedCenter.current_count));
   }, [selectedCenter, isManualCountDirty]);
 
-  async function mutate(path: string, success: string, reportId: number) {
-    if (!centerId || busyId) return;
+  async function mutate(path: string, success: string, reportId: number, targetCenterId = centerId) {
+    if (!targetCenterId || busyId) return;
     setBusyId(reportId); setError(''); setNotice('');
     try {
-      await api.patch(`/barangay/evacuation-centers/${centerId}/cases/${reportId}/${path}`);
-      await Promise.all([loadCases(centerId), loadCenters()]);
+      await api.patch(`/barangay/evacuation-centers/${targetCenterId}/cases/${reportId}/${path}`);
+      await Promise.all([centerId ? loadCases(centerId) : Promise.resolve(), loadCenters()]);
       setNotice(success);
     } catch (error: unknown) {
       const err = error as ApiError;
@@ -167,7 +170,7 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
         {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p> : null}
         {notice ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{notice}</p> : null}
 
-        <label className="block max-w-md text-sm font-bold text-slate-800">Evacuation center
+        <label className="block max-w-md text-sm font-bold text-slate-800">Evacuation center for capacity and manual count
           <select className="mt-1 block w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 font-medium" value={centerId ?? ''} onChange={(event) => { setIsManualCountDirty(false); setCenterId(Number(event.target.value)); }}>
             {centers.map((center) => <option key={center.id} value={center.id}>{center.name}</option>)}
           </select>
@@ -198,7 +201,7 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-            <div><h2 className="text-lg font-black text-[#173750]">{tab === 'incoming' ? 'Awaiting Arrival Confirmation' : tab === 'outgoing' ? 'Awaiting Departure Confirmation' : 'Completed Rescue Reports'}</h2><p className="text-sm text-slate-500">{tab === 'incoming' ? 'Confirm only after physically verifying the evacuee.' : tab === 'outgoing' ? 'Confirm after the evacuee has left the center.' : 'Search and manage evacuees assigned to this center.'}</p></div>
+            <div><h2 className="text-lg font-black text-[#173750]">{tab === 'incoming' ? 'Awaiting Arrival Confirmation' : tab === 'outgoing' ? 'Awaiting Departure Confirmation' : 'Completed Rescue Reports'}</h2><p className="text-sm text-slate-500">{tab === 'incoming' ? `Automatically showing incoming arrivals across Barangay ${barangayName}. Confirm only after physically verifying the evacuee.` : tab === 'outgoing' ? `Automatically showing pending departures across Barangay ${barangayName}. Confirm after the evacuee has left the center.` : `Automatically showing resolved evacuation records across Barangay ${barangayName}.`}</p></div>
             <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search individual by name" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:w-72" />
           </div>
           <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -208,13 +211,13 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
                 {rows.map((item) => <tr key={item.id} className="border-t border-slate-200">
                   <td className="px-3 py-3"><p className="font-bold text-slate-900">{item.resident_name || 'Unnamed resident'}</p><p className="text-xs text-slate-500">{item.contact_number || 'No contact'}</p></td>
                   <td className="px-3 py-3"><p className="font-mono text-xs font-bold">{item.report_code}</p><p className="text-xs text-slate-500">{item.incident_type.replace(/_/g, ' ')}</p></td>
-                  <td className="px-3 py-3">{barangayName}</td><td className="px-3 py-3">{selectedCenter?.name}</td>
+                  <td className="px-3 py-3">{item.evacuation_area_barangay || barangayName}</td><td className="px-3 py-3">{item.evacuation_area_name || selectedCenter?.name}</td>
                   <td className="px-3 py-3 text-xs">{formatDate(tab === 'incoming' ? item.picked_up_at : tab === 'outgoing' ? item.departure_requested_at : item.evacuation_arrived_at)}</td>
                   <td className="px-3 py-3"><span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-bold text-blue-700">{tab === 'incoming' ? 'Transporting' : tab === 'outgoing' ? 'Leaving' : item.departure_confirmed_at ? 'Departed' : 'Inside Center'}</span></td>
                   <td className="px-3 py-3">{tab === 'incoming'
-                    ? <button disabled={busyId === item.id} onClick={() => void mutate('arrival', 'Arrival confirmed.', item.id)} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Confirm Arrival</button>
-                    : tab === 'outgoing' ? <button disabled={busyId === item.id} onClick={() => void mutate('departure', 'Departure confirmed.', item.id)} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Confirm Departure</button>
-                      : !item.departure_requested_at && !item.departure_confirmed_at ? <button disabled={busyId === item.id} onClick={() => void mutate('departure-request', 'Departure recorded.', item.id)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Record Departure</button> : <span className="text-xs text-slate-500">{item.departure_confirmed_at ? 'Completed' : 'Awaiting confirmation'}</span>}
+                    ? <button disabled={busyId === item.id} onClick={() => void mutate('arrival', 'Arrival confirmed.', item.id, item.evacuation_area_id)} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Confirm Arrival</button>
+                    : tab === 'outgoing' ? <button disabled={busyId === item.id} onClick={() => void mutate('departure', 'Departure confirmed.', item.id, item.evacuation_area_id)} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">Confirm Departure</button>
+                      : !item.departure_requested_at && !item.departure_confirmed_at ? <button disabled={busyId === item.id} onClick={() => void mutate('departure-request', 'Departure recorded.', item.id, item.evacuation_area_id)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Record Departure</button> : <span className="text-xs text-slate-500">{item.departure_confirmed_at ? 'Completed' : 'Awaiting confirmation'}</span>}
                   </td>
                 </tr>)}
                 {!rows.length ? <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500">{loading ? 'Loading evacuation-center data…' : emptyText}</td></tr> : null}

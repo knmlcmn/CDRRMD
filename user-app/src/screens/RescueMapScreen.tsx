@@ -73,6 +73,7 @@ type UserMapLayerVisibility = {
 
 type Props = {
   testModeEnabled?: boolean;
+  floodAlertRescueRequest?: { notificationId: number; requestedAt: number } | null;
 };
 
 function normalizeRescueStatus(value: unknown): RescueRecord['status'] {
@@ -260,14 +261,16 @@ function buildLeafletHtml(
       .flood-info table{border-collapse:collapse;width:100%}
       .flood-info td{border:1px solid #cbd5e1;padding:6px 8px}
       .flood-info td:first-child{background:#f8fafc;font-weight:700;width:42%}
-      .evacuation-popup .leaflet-popup-content{margin:8px 12px 10px;width:min(218px,calc(100vw - 72px))!important}
-      .evac-info{font:11px/1.25 Arial,sans-serif;min-width:0;width:100%}
-      .evac-info .head{background:#0f766e;color:#fff;font-size:13px;font-weight:800;line-height:1.15;margin:-8px -12px 6px;padding:6px 8px}
+      .evacuation-detail-overlay{background:#fff;border:1px solid #99a8b8;border-radius:9px;box-shadow:0 5px 18px rgba(15,23,42,.3);box-sizing:border-box;left:50%;max-width:calc(100% - 76px);overflow:hidden;position:absolute;top:46px;transform:translateX(-50%);width:208px;z-index:800}
+      .evacuation-detail-overlay[hidden]{display:none}
+      .evacuation-detail-close{align-items:center;background:transparent;border:0;color:#dbeafe;cursor:pointer;display:flex;font:700 17px/1 Arial,sans-serif;height:27px;justify-content:center;padding:0;position:absolute;right:2px;top:1px;width:27px;z-index:1}
+      .evac-info{font:10px/1.2 Arial,sans-serif;min-width:0;width:100%}
+      .evac-info .head{background:#0f766e;color:#fff;font-size:12px;font-weight:800;line-height:1.15;min-height:16px;padding:6px 31px 6px 8px}
       .evac-info .selected{color:#ccfbf1;display:block;font-size:8px;font-weight:700;letter-spacing:.02em;margin-top:2px;text-transform:uppercase}
       .evac-info table{border-collapse:collapse;width:100%}
-      .evac-info td{border:1px solid #cbd5e1;padding:3px 5px;vertical-align:top}
-      .evac-info td:first-child{background:#f8fafc;font-weight:700;width:34%}
-      .evac-status{border-radius:999px;display:inline-block;font-size:9px;font-weight:800;padding:2px 5px}
+      .evac-info td{border:1px solid #d6dee8;padding:2px 4px;vertical-align:top}
+      .evac-info td:first-child{background:#f8fafc;font-weight:700;width:32%}
+      .evac-status{border-radius:999px;display:inline-block;font-size:8px;font-weight:800;padding:1px 4px}
       .evac-status.available{background:#dcfce7;color:#166534}
       .evac-status.full{background:#fee2e2;color:#991b1b}
       .map-rain-canvas{left:0;opacity:.5;pointer-events:none;position:absolute;top:0;z-index:429}.map-wind-canvas{left:0;opacity:.5;pointer-events:none;position:absolute;top:0;z-index:430}.forecast-timebar{backdrop-filter:blur(9px);background:rgba(7,17,24,.94);border:1px solid rgba(148,163,184,.35);border-radius:18px;bottom:10px;box-shadow:0 5px 18px rgba(0,0,0,.38);color:#fff;display:none;left:50%;max-width:calc(100% - 16px);padding:8px 10px 7px;pointer-events:auto;position:absolute;transform:translateX(-50%);width:calc(100% - 16px);z-index:700}.forecast-time-track{position:relative}.forecast-time-labels{display:flex;justify-content:space-between;margin:0 5px 3px}.forecast-time-label{color:#f8fafc;font:700 10px/1.1 Arial,sans-serif;text-align:center}.forecast-time-date{color:#cbd5e1;display:block;font:8px/1 Arial,sans-serif}.forecast-time-range{appearance:none;background:repeating-linear-gradient(90deg,rgba(203,213,225,.7) 0 1px,transparent 1px 9px);border:0;display:block;height:26px;margin:0;outline:none;width:100%}.forecast-time-range::-webkit-slider-thumb{appearance:none;background:#f97316;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px rgba(249,115,22,.3);cursor:grab;height:17px;width:5px}.forecast-time-range::-moz-range-thumb{background:#f97316;border:2px solid #fff;border-radius:50%;cursor:grab;height:17px;width:5px}.forecast-time-summary{color:#dbeafe;font:700 9px/1.3 Arial,sans-serif;overflow:hidden;text-align:center;text-overflow:ellipsis;white-space:nowrap}
@@ -304,6 +307,36 @@ function buildLeafletHtml(
         maxBounds: calambaBounds.pad(0.08),
         maxBoundsViscosity: 0.8,
       }).setView([data.userLocation.latitude, data.userLocation.longitude], 14);
+
+      var evacuationDetail = L.DomUtil.create('div', 'evacuation-detail-overlay');
+      evacuationDetail.hidden = true;
+      evacuationDetail.setAttribute('role', 'dialog');
+      evacuationDetail.setAttribute('aria-label', 'Evacuation center details');
+      evacuationDetail.innerHTML = '<button class="evacuation-detail-close" type="button" aria-label="Close evacuation details">&times;</button><div class="evacuation-detail-content"></div>';
+      map.getContainer().appendChild(evacuationDetail);
+      L.DomEvent.disableClickPropagation(evacuationDetail);
+      L.DomEvent.disableScrollPropagation(evacuationDetail);
+      evacuationDetail.querySelector('.evacuation-detail-close').addEventListener('click', function() {
+        evacuationDetail.hidden = true;
+      });
+
+      function showEvacuationDetail(area, isSelected) {
+        evacuationDetail.querySelector('.evacuation-detail-content').innerHTML =
+          '<div class="evac-info">' +
+            '<div class="head">' + escapeHtml(area.name) +
+              (isSelected ? '<span class="selected">Selected evacuation center</span>' : '') +
+            '</div>' +
+            '<table>' +
+              '<tr><td>Type</td><td>' + escapeHtml(area.placeType || 'Evacuation Site') + '</td></tr>' +
+              '<tr><td>Barangay</td><td>' + escapeHtml(area.barangay) + '</td></tr>' +
+              '<tr><td>Location</td><td>' + escapeHtml(area.locationText) + '</td></tr>' +
+              '<tr><td>Capacity</td><td>' + escapeHtml(area.capacity) + '</td></tr>' +
+              '<tr><td>Evacuees</td><td>' + escapeHtml(area.evacuees) + '</td></tr>' +
+              '<tr><td>Status</td><td><span class="evac-status ' + (area.status === 'full' ? 'full' : 'available') + '">' + (area.status === 'full' ? 'Full' : 'Available') + '</span></td></tr>' +
+            '</table>' +
+          '</div>';
+        evacuationDetail.hidden = false;
+      }
 
       var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: ''
@@ -1201,22 +1234,10 @@ function buildLeafletHtml(
           var isSelected = area.id === data.selectedAreaId;
           var marker = L.marker([area.latitude, area.longitude], {
             icon: isSelected ? selectedAreaPinIcon : areaPinIcon
-          }).addTo(areaLayer).bindPopup(
-            '<div class="evac-info">' +
-              '<div class="head">' + escapeHtml(area.name) +
-                (isSelected ? '<span class="selected">Selected evacuation center</span>' : '') +
-              '</div>' +
-              '<table>' +
-                '<tr><td>Type</td><td>' + escapeHtml(area.placeType || 'Evacuation Site') + '</td></tr>' +
-                '<tr><td>Barangay</td><td>' + escapeHtml(area.barangay) + '</td></tr>' +
-                '<tr><td>Location</td><td>' + escapeHtml(area.locationText) + '</td></tr>' +
-                '<tr><td>Capacity</td><td>' + escapeHtml(area.capacity) + '</td></tr>' +
-                '<tr><td>Evacuees</td><td>' + escapeHtml(area.evacuees) + '</td></tr>' +
-                '<tr><td>Status</td><td><span class="evac-status ' + (area.status === 'full' ? 'full' : 'available') + '">' + (area.status === 'full' ? 'Full' : 'Available') + '</span></td></tr>' +
-              '</table>' +
-            '</div>',
-            { className: 'evacuation-popup', maxWidth: 242, minWidth: 0 }
-          );
+          }).addTo(areaLayer);
+          marker.on('click', function() {
+            showEvacuationDetail(area, isSelected);
+          });
 
           if (isSelected) {
             selectedAreaMarker = marker;
@@ -1265,7 +1286,10 @@ function buildLeafletHtml(
       renderLayerControl();
       applyLayerVisibility();
       if (selectedAreaMarker) {
-        window.setTimeout(function() { selectedAreaMarker.openPopup(); }, 200);
+        var selectedArea = data.allAreas.find(function(area) { return area.id === data.selectedAreaId; });
+        if (selectedArea) {
+          window.setTimeout(function() { showEvacuationDetail(selectedArea, true); }, 200);
+        }
       } else {
         userMarker.openPopup();
       }
@@ -1279,7 +1303,7 @@ function buildLeafletHtml(
 `;
 }
 
-export default function RescueMapScreen({ testModeEnabled = false }: Props) {
+export default function RescueMapScreen({ testModeEnabled = false, floodAlertRescueRequest = null }: Props) {
   const { showNotice, noticeModal } = useNoticeModal();
   const navigation = useNavigation<any>();
   const { isSmall, horizontalPadding, uiScale } = useResponsiveLayout(MAX_MAP_CONTENT_WIDTH);
@@ -1296,6 +1320,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
   const [routingRecommendation, setRoutingRecommendation] = useState(false);
   const [rescueNotes, setRescueNotes] = useState('');
   const [peopleCount, setPeopleCount] = useState(1);
+  const [floodAlertNotificationId, setFloodAlertNotificationId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationArea[]>([]);
   const [mapEvacuationAreas, setMapEvacuationAreas] = useState<EvacuationArea[]>([]);
@@ -1314,6 +1339,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const recordSyncInFlightRef = useRef(false);
   const appliedRoadPlanAreaIdRef = useRef<EvacuationArea['id'] | null>(null);
+  const handledFloodAlertRequestRef = useRef<number | null>(null);
 
   const loadEvacuationAreas = useCallback(async (updateMap = true) => {
     try {
@@ -1414,6 +1440,18 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
       setRoutingRecommendation(false);
     }
   }, [loadEvacuationAreas, showNotice, userLocation]);
+
+  useEffect(() => {
+    if (!floodAlertRescueRequest || !userLocation
+      || handledFloodAlertRequestRef.current === floodAlertRescueRequest.requestedAt) return;
+    handledFloodAlertRequestRef.current = floodAlertRescueRequest.requestedAt;
+    setFloodAlertNotificationId(floodAlertRescueRequest.notificationId);
+    setPeopleCount(1);
+    setRescueNotes('');
+    setProofImageUri(null);
+    setProofImageBase64(null);
+    void beginRescueRequest();
+  }, [beginRescueRequest, floodAlertRescueRequest, userLocation]);
 
   const loadRecentRescueRecords = useCallback(async () => {
     if (recordSyncInFlightRef.current) {
@@ -1627,7 +1665,8 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
   }
 
   async function handleSubmitRescue() {
-    if (!userLocation || !selectedArea || !proofImageUri || !proofImageBase64 || submitting) {
+    const hasVerifiedAlertProof = Number.isInteger(floodAlertNotificationId);
+    if (!userLocation || !selectedArea || (!hasVerifiedAlertProof && (!proofImageUri || !proofImageBase64)) || submitting) {
       return;
     }
 
@@ -1683,7 +1722,8 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
         evacuationAreaName: refreshedSelected.name,
         arePeopleTrapped: true,
         estimatedPeople: peopleCount,
-        imageBase64: proofImageBase64,
+        imageBase64: hasVerifiedAlertProof ? null : proofImageBase64,
+        floodAlertNotificationId: hasVerifiedAlertProof ? floodAlertNotificationId : null,
         fullName,
         contactNumber,
         notes: rescueNotes.trim()
@@ -1697,13 +1737,16 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
       setProofImageBase64(null);
       setRescueNotes('');
       setPeopleCount(1);
+      setFloodAlertNotificationId(null);
       setRouteCoordinates([]);
       setRouteDistanceKm(null);
       setRouteEtaText(null);
       setRouteSource(null);
       await loadRecentRescueRecords();
 
-      showNotice('Request submitted', 'Your rescue request has been submitted with image proof.');
+      showNotice('Request submitted', hasVerifiedAlertProof
+        ? 'Your rescue request has been submitted using the official water-level alert as verification.'
+        : 'Your rescue request has been submitted with image proof.');
     } catch (err: any) {
       const status = Number(err?.response?.status || 0);
       const errorCode = String(err?.response?.data?.code || '');
@@ -1759,6 +1802,8 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
     return status;
   }
 
+  const isAlertVerifiedRequest = Number.isInteger(floodAlertNotificationId);
+
   return (
     <View style={st.root}>
       {noticeModal}
@@ -1798,24 +1843,35 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             style={st.mapBottomActionsWrap}
           >
-            <View style={[st.bottomActionRow, isSmall && st.stackOnSmall]}>
-              <TouchableOpacity style={[st.uploadBtn, isSmall && st.fullWidthButton]} activeOpacity={0.88} onPress={handleUploadProof}>
-                <Text style={st.uploadBtnText}>{proofImageUri ? '✓ Image Uploaded' : 'Upload Image'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  st.submitBtn,
-                  isSmall && st.fullWidthButton,
-                  !proofImageUri || !proofImageBase64 || !selectedArea || routeSource !== 'osrm' || routingRecommendation || submitting
-                    ? st.submitBtnDisabled
-                    : null,
-                ]}
-                activeOpacity={0.88}
-                disabled={!proofImageUri || !proofImageBase64 || !selectedArea || routeSource !== 'osrm' || routingRecommendation || submitting}
-                onPress={handleSubmitRescue}
-              >
-                {submitting ? <ActivityIndicator color="#fff" /> : <Text style={st.submitBtnText}>Submit</Text>}
-              </TouchableOpacity>
+            <View style={[
+              st.bottomActionRow,
+              (isSmall || isAlertVerifiedRequest) && st.stackOnSmall,
+            ]}>
+              {!isAlertVerifiedRequest ? (
+                <TouchableOpacity style={[st.uploadBtn, isSmall && st.fullWidthButton]} activeOpacity={0.88} onPress={handleUploadProof}>
+                  <Text style={st.uploadBtnText}>{proofImageUri ? '✓ Image Uploaded' : 'Upload Image'}</Text>
+                </TouchableOpacity>
+              ) : null}
+              <View style={[
+                st.submitButtonContainer,
+                (isSmall || isAlertVerifiedRequest) && st.fullWidthButton,
+                isAlertVerifiedRequest && st.centeredSubmitContainer,
+              ]}>
+                <TouchableOpacity
+                  style={[
+                    st.submitBtn,
+                    isAlertVerifiedRequest && st.centeredSubmitButton,
+                    (!isAlertVerifiedRequest && (!proofImageUri || !proofImageBase64)) || !selectedArea || routeSource !== 'osrm' || routingRecommendation || submitting
+                      ? st.submitBtnDisabled
+                      : null,
+                  ]}
+                  activeOpacity={0.88}
+                  disabled={(!isAlertVerifiedRequest && (!proofImageUri || !proofImageBase64)) || !selectedArea || routeSource !== 'osrm' || routingRecommendation || submitting}
+                  onPress={handleSubmitRescue}
+                >
+                  {submitting ? <ActivityIndicator color="#fff" /> : <Text style={st.submitBtnText}>Submit</Text>}
+                </TouchableOpacity>
+              </View>
             </View>
             <View style={[st.peopleSelector, isSmall && st.stackOnSmall]}>
               <View style={st.peopleSelectorCopy}>
@@ -1853,7 +1909,9 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
               textAlignVertical="top"
               maxLength={500}
             />
-            <Text style={st.areaCountText}>Image proof is required before submitting.</Text>
+            <Text style={st.areaCountText}>{Number.isInteger(floodAlertNotificationId)
+              ? 'The official water-level alert serves as verification. No image upload is required.'
+              : 'Image proof is required before submitting.'}</Text>
           </KeyboardAvoidingView>
         ) : null}
 
@@ -1874,6 +1932,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
               activeOpacity={0.88}
               disabled={routingRecommendation}
               onPress={() => {
+                setFloodAlertNotificationId(null);
                 beginRescueRequest().catch(() => {
                   setRequestStarted(true);
                 });
@@ -1985,6 +2044,7 @@ export default function RescueMapScreen({ testModeEnabled = false }: Props) {
             setProofImageBase64(null);
             setRescueNotes('');
             setPeopleCount(1);
+            setFloodAlertNotificationId(null);
             setRouteCoordinates([]);
             setRouteDistanceKm(null);
             setRouteEtaText(null);
@@ -2024,7 +2084,7 @@ const st = StyleSheet.create({
     padding: 10, zIndex: 9999,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.4, shadowRadius: 5, elevation: 8,
   },
-  mapBottomActionsWrap: { marginTop: 8 },
+  mapBottomActionsWrap: { width: '100%', marginTop: 8, alignSelf: 'center' },
 
   notesInput: {
     marginTop: 10,
@@ -2096,9 +2156,12 @@ const st = StyleSheet.create({
   },
   floatingCancelText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
 
-  bottomActionRow: { flexDirection: 'row', marginTop: 10, gap: 8 },
-  stackOnSmall: { flexDirection: 'column', alignItems: 'stretch' },
+  bottomActionRow: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 10, gap: 8 },
+  stackOnSmall: { flexDirection: 'column', alignItems: 'center' },
   fullWidthButton: { flex: 0, width: '100%' },
+  submitButtonContainer: { flex: 1, alignItems: 'stretch' },
+  centeredSubmitContainer: { alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' },
+  centeredSubmitButton: { alignSelf: 'center', maxWidth: 340, minHeight: 46 },
   peopleSelector: { marginTop: 10, borderWidth: 1, borderColor: editorial.border, borderRadius: 12, backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 10, flexDirection: 'row', alignItems: 'center', gap: 12 },
   peopleSelectorCopy: { flex: 1, minWidth: 0 },
   peopleSelectorLabel: { color: editorial.ink, fontSize: 13, fontWeight: '900' },
@@ -2118,7 +2181,7 @@ const st = StyleSheet.create({
   },
   uploadBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
   submitBtn: {
-    flex: 1,
+    width: '100%',
     backgroundColor: '#15803d',
     borderRadius: 10,
     alignItems: 'center',

@@ -48,12 +48,15 @@ async function listCases(req, res) {
     `SELECT ir.id, ir.report_code, ir.incident_type, ir.location, ir.status,
             ir.evacuees_reserved, ir.created_at, ir.resolved_at,
             ir.evacuation_arrived_at, ir.departure_requested_at, ir.departure_confirmed_at,
+            ir.evacuation_area_id, ea.name AS evacuation_area_name,
+            ea.barangay AS evacuation_area_barangay,
             NULLIF(TRIM(CONCAT_WS(' ', resident.first_name, resident.last_name)), '') AS resident_name,
             resident.contact_number,
             dispatch.id AS dispatch_id, dispatch.picked_up_at, dispatch.arrived_at,
             dispatch.assigned_rescuer_id,
             NULLIF(TRIM(CONCAT_WS(' ', rescuer.first_name, rescuer.last_name)), '') AS rescuer_name
      FROM incident_reports ir
+     JOIN evacuation_areas ea ON ea.id = ir.evacuation_area_id
      JOIN users resident ON resident.id = ir.reported_by
      LEFT JOIN LATERAL (
        SELECT br.id, br.picked_up_at, br.arrived_at, br.assigned_rescuer_id
@@ -65,13 +68,15 @@ async function listCases(req, res) {
      ) dispatch ON TRUE
      LEFT JOIN users rescuer ON rescuer.id = dispatch.assigned_rescuer_id
      WHERE ir.report_type = 'rescue'
-       AND ir.evacuation_area_id = $1
+       AND LOWER(ea.barangay) = LOWER($1)
      ORDER BY COALESCE(ir.evacuation_arrived_at, dispatch.picked_up_at, ir.created_at) DESC`,
-    [centerId],
+    [barangayName],
   );
 
   return res.json({
     center,
+    // Every case list is jurisdiction-wide. The selected center is returned
+    // only for its capacity and manual occupancy controls.
     incoming: rows.filter((item) => item.picked_up_at && !item.evacuation_arrived_at && !item.arrived_at),
     outgoing: rows.filter((item) => item.evacuation_arrived_at && item.departure_requested_at && !item.departure_confirmed_at),
     current: rows.filter((item) => item.evacuation_arrived_at && !item.departure_confirmed_at),
