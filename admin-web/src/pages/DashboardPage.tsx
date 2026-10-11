@@ -127,19 +127,27 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     setError(null);
 
     try {
-      const [areasResponse, summaryResponse, reportsResponse, backupResponse, cdrrmdResponse, barangayResponderResponse] = await Promise.all([
+      const [areasResponse, summaryResponse, reportsResponse] = await Promise.all([
         api.get('/content/evacuation-areas'),
         api.get('/content/dashboard-summary'),
         api.get('/reports'),
-        api.get('/backup-requests'),
-        api.get('/rescuers/accounts', { params: { role: 'rescuer' } }),
-        api.get('/rescuers/accounts', { params: { role: 'barangay_rescuer' } }),
       ]);
 
       setAreas(areasResponse.data);
       setCards(summaryResponse.data.cards);
       setIncidents(summaryResponse.data.incidents);
       setOperationalReports(Array.isArray(reportsResponse.data) ? reportsResponse.data : []);
+
+      // Load secondary map feeds after the core dashboard. This halves the
+      // initial request burst against a connection-limited serverless database.
+      const [backupResponse, cdrrmdResponse, barangayResponderResponse] = await Promise.all([
+        // These feeds enhance the dashboard, but a temporary failure in one of
+        // them must not discard the core summary, reports, and evacuation data.
+        api.get('/backup-requests').catch(() => ({ data: [] })),
+        api.get('/rescuers/accounts', { params: { role: 'rescuer' } }).catch(() => ({ data: [] })),
+        api.get('/rescuers/accounts', { params: { role: 'barangay_rescuer' } }).catch(() => ({ data: [] })),
+      ]);
+
       setBackupRequests(Array.isArray(backupResponse.data) ? backupResponse.data : []);
       setCityRescuers([
         ...(Array.isArray(cdrrmdResponse.data) ? cdrrmdResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'cddrmd' as const })),
@@ -621,7 +629,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
           </section>
 
           <section className={d.dashboard.insightsRow}>
-            <section className={d.dashboard.waterLevels} aria-labelledby="dashboard-flood-monitoring-title">
+            <section className={`${d.dashboard.waterLevels} order-2`} aria-labelledby="dashboard-flood-monitoring-title">
               <div className={d.dashboard.waterLevelsHead}>
                 <h3 id="dashboard-flood-monitoring-title" className={d.dashboard.waterLevelsTitle}>Flood Monitoring</h3>
                 <button type="button" onClick={onOpenFloodMonitoring} className={d.dashboard.waterLevelsLink}>View details</button>
@@ -644,7 +652,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
               </div>
             </section>
 
-            <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="order-1 flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="shrink-0 border-b border-slate-200 px-3 py-2">
                 <h3 className={d.dashboard.reportsTitle}>Incident Reports Overview of Barangay</h3>
                 <p className="text-xs text-slate-500">User-app rescue requests assigned across all six barangays</p>

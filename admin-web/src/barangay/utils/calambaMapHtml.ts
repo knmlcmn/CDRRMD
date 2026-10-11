@@ -301,6 +301,7 @@ export function buildCalambaMapHtml(
         humidityOverlay: false,
         windOverlay: false
       }, payload.layerVisibility || {});
+      normalizeDataLayerVisibility();
       var calambaCenter = [14.206021, 121.1556496];
       var calambaBounds = L.latLngBounds([[14.137703, 121.0218057], [14.2662133, 121.2214277]]);
       var map = L.map('map', {
@@ -420,6 +421,7 @@ export function buildCalambaMapHtml(
       var fitBounds = L.latLngBounds([calambaCenter]);
       var boundaryLayer = L.layerGroup();
       var floodHazardLayer = L.layerGroup();
+      var hardwareClimateLayer = L.layerGroup();
       var barangayBoundaryLayer = L.layerGroup();
       var barangayBoundaryGeoJsonData = null;
       var weatherFillGeoJsonData = null;
@@ -477,6 +479,27 @@ export function buildCalambaMapHtml(
 
       function isScalarWeatherVisible() {
         return Boolean(visibility.weatherOverlay) || Boolean(visibility.temperatureOverlay) || Boolean(visibility.humidityOverlay);
+      }
+
+      function isWeatherLayerVisible() {
+        return isScalarWeatherVisible() || Boolean(visibility.windOverlay);
+      }
+
+      function normalizeDataLayerVisibility() {
+        var activeKey = Boolean(visibility.weatherOverlay)
+          ? 'weatherOverlay'
+          : Boolean(visibility.temperatureOverlay)
+            ? 'temperatureOverlay'
+            : Boolean(visibility.humidityOverlay)
+              ? 'humidityOverlay'
+              : Boolean(visibility.windOverlay)
+                ? 'windOverlay'
+                : null;
+        visibility.weatherOverlay = activeKey === 'weatherOverlay';
+        visibility.temperatureOverlay = activeKey === 'temperatureOverlay';
+        visibility.humidityOverlay = activeKey === 'humidityOverlay';
+        visibility.windOverlay = activeKey === 'windOverlay';
+        visibility.floodHazard = activeKey === null;
       }
 
       function activeScalarMetric() {
@@ -581,9 +604,6 @@ export function buildCalambaMapHtml(
       }
 
       function pointScalarValue(point) {
-        var metric = activeScalarMetric();
-        if (metric === 'temperature') return Number(point && point.temperatureCelsius);
-        if (metric === 'humidity') return Number(point && point.relativeHumidityPct);
         return Math.max(0, Number(point && point.rainAmountMm) || 0);
       }
 
@@ -612,7 +632,7 @@ export function buildCalambaMapHtml(
       function updateForecastTimebar() {
         if (!forecastTimebar) return;
         var visible = Boolean(payload.showForecastTimeline)
-          && (isScalarWeatherVisible() || Boolean(visibility.windOverlay));
+          && (Boolean(visibility.weatherOverlay) || Boolean(visibility.windOverlay));
         forecastTimebar.style.display = visible ? 'block' : 'none';
         if (!visible) return;
         var range = forecastTimebar.querySelector('.forecast-time-range');
@@ -633,11 +653,7 @@ export function buildCalambaMapHtml(
           summary.textContent = 'Loading Open-Meteo forecast...';
           return;
         }
-        if (Boolean(visibility.temperatureOverlay)) {
-          summary.textContent = String(frame.label || 'Day') + ' ' + String(frame.dateLabel || '') + ' ' + String(frame.hourLabel || '') + ' - Temperature ' + Number(frame.averageTemperatureCelsius || 0).toFixed(1) + '\u00b0C';
-        } else if (Boolean(visibility.humidityOverlay)) {
-          summary.textContent = String(frame.label || 'Day') + ' ' + String(frame.dateLabel || '') + ' ' + String(frame.hourLabel || '') + ' - Relative humidity ' + Number(frame.averageRelativeHumidityPct || 0).toFixed(0) + '%';
-        } else if (Boolean(visibility.weatherOverlay)) {
+        if (Boolean(visibility.weatherOverlay)) {
           summary.textContent = String(frame.label || 'Day') + ' ' + String(frame.dateLabel || '') + ' ' + String(frame.hourLabel || '') + ' - Rain ' + Number(frame.averageRainAmountMm || 0).toFixed(1) + ' mm - Wind ' + Number(frame.averageSpeedKph || 0).toFixed(0) + ' km/h';
         } else {
           summary.textContent = String(frame.label || 'Wind') + ': ' +
@@ -790,7 +806,7 @@ export function buildCalambaMapHtml(
       function renderRainAccumulationSurface() {
         if (!rainCtx || !rainCanvas) return;
         rainCtx.clearRect(0, 0, rainCanvas.width, rainCanvas.height);
-        if (!isScalarWeatherVisible()) return;
+        if (!Boolean(visibility.weatherOverlay)) return;
 
         var samples = rainSamplesForMap();
         if (samples.length === 0) return;
@@ -863,7 +879,7 @@ export function buildCalambaMapHtml(
           return;
         }
 
-        var enabled = isScalarWeatherVisible();
+        var enabled = Boolean(visibility.weatherOverlay);
         if (enabled) {
           rainCanvas.style.display = 'block';
           if (rainMotionCanvas) rainMotionCanvas.style.display = Boolean(visibility.weatherOverlay) ? 'block' : 'none';
@@ -871,8 +887,8 @@ export function buildCalambaMapHtml(
         } else {
           rainCanvas.style.opacity = '0';
           setTimeout(function() {
-            if (!isScalarWeatherVisible()) rainCanvas.style.display = 'none';
-            if (!isScalarWeatherVisible() && rainMotionCanvas) rainMotionCanvas.style.display = 'none';
+            if (!visibility.weatherOverlay) rainCanvas.style.display = 'none';
+            if (!visibility.weatherOverlay && rainMotionCanvas) rainMotionCanvas.style.display = 'none';
           }, 300);
         }
         updateWeatherHud();
@@ -1498,12 +1514,14 @@ export function buildCalambaMapHtml(
             rainSection =
               '<div class="legend-section-label"><span class="legend-section-dot" style="background:#fb7185;"></span>Temperature (\u00b0C)</div>' +
               '<div style="height:10px;border-radius:999px;margin:6px 0 3px;background:linear-gradient(90deg,#313695,#4575b4,#74add1,#fee090,#f46d43,#a50026);"></div>' +
-              '<div style="display:flex;justify-content:space-between;color:#475569;font-size:9px;"><span>16</span><span>22</span><span>26</span><span>30</span><span>34</span><span>40</span></div>';
+              '<div style="display:flex;justify-content:space-between;color:#475569;font-size:9px;"><span>16</span><span>22</span><span>26</span><span>30</span><span>34</span><span>40</span></div>' +
+              '<div class="updated">Source: hardware sensors</div>';
           } else if (Boolean(visibility.humidityOverlay)) {
             rainSection =
               '<div class="legend-section-label"><span class="legend-section-dot" style="background:#38bdf8;"></span>Relative humidity (%)</div>' +
               '<div style="height:10px;border-radius:999px;margin:6px 0 3px;background:linear-gradient(90deg,#78350f,#f59e0b,#facc15,#22d3ee,#2563eb,#312e81);"></div>' +
-              '<div style="display:flex;justify-content:space-between;color:#475569;font-size:9px;"><span>0</span><span>30</span><span>50</span><span>70</span><span>85</span><span>100</span></div>';
+              '<div style="display:flex;justify-content:space-between;color:#475569;font-size:9px;"><span>0</span><span>30</span><span>50</span><span>70</span><span>85</span><span>100</span></div>' +
+              '<div class="updated">Source: hardware sensors</div>';
           } else {
             rainSection =
             '<div class="legend-section-label" style="margin-top:' + (floodOn ? '6px' : '0') + '">' +
@@ -1761,6 +1779,32 @@ export function buildCalambaMapHtml(
 
       function renderWeatherFillLayer() {
         renderRainAccumulationSurface();
+        hardwareClimateLayer.clearLayers();
+        if (!Boolean(visibility.temperatureOverlay) && !Boolean(visibility.humidityOverlay)) return;
+        var source = weatherFillGeoJsonData;
+        if (!source || !Array.isArray(source.features)) return;
+        var metric = Boolean(visibility.temperatureOverlay) ? 'temperature' : 'humidity';
+        var features = source.features.filter(function(feature) {
+          var props = feature && feature.properties ? feature.properties : {};
+          var key = normalizeBarangayName(props.barangay_name || props.barangayName || props.name);
+          var impact = weatherImpactByBarangay[key];
+          var value = metric === 'temperature' ? impact && impact.temperatureCelsius : impact && impact.humidityPercentage;
+          return value != null && Number.isFinite(Number(value));
+        });
+        L.geoJSON({ type: 'FeatureCollection', features: features }, {
+          interactive: false,
+          style: function(feature) {
+            var props = feature && feature.properties ? feature.properties : {};
+            var key = normalizeBarangayName(props.barangay_name || props.barangayName || props.name);
+            var impact = weatherImpactByBarangay[key] || {};
+            var value = metric === 'temperature' ? impact.temperatureCelsius : impact.humidityPercentage;
+            var color = scalarColor(Number(value));
+            return { color: 'transparent', weight: 0, fill: true, fillColor: 'rgb(' + color[0] + ',' + color[1] + ',' + color[2] + ')', fillOpacity: 0.58 };
+          },
+          onEachFeature: function(_feature, layer) {
+            if (typeof layer.bringToBack === 'function') layer.bringToBack();
+          },
+        }).addTo(hardwareClimateLayer);
       }
 
       function renderFloodHazardLayer() {
@@ -1873,6 +1917,7 @@ export function buildCalambaMapHtml(
                 averageRainfallMmPerHour: item.averageRainfallMmPerHour,
                 stormRisk: item.stormRisk,
                 temperatureCelsius: item.temperatureCelsius,
+                humidityPercentage: item.humidityPercentage,
                 thunderstormProbabilityPct: item.thunderstormProbabilityPct,
                 typhoonForecastImpact: item.typhoonForecastImpact,
               };
@@ -1965,15 +2010,17 @@ export function buildCalambaMapHtml(
         applyBasemap();
 
         var showBoundary = Boolean(visibility.boundary);
-        var showFloodHazard = Boolean(visibility.floodHazard);
+        var showFloodHazard = Boolean(visibility.floodHazard) && !isWeatherLayerVisible();
         var showBarangayBoundary = Boolean(visibility.boundary);
         var showAreas = Boolean(visibility.evacuationAreas);
         var showIncidents = Boolean(visibility.incidentMarkers);
         var showResponderRoute = Boolean(visibility.responderRoute);
+        var showHardwareClimate = Boolean(visibility.temperatureOverlay) || Boolean(visibility.humidityOverlay);
 
         setLayerVisible(boundaryLayer, showBoundary);
         setLayerVisible(floodHazardLayer, showFloodHazard);
         setLayerVisible(barangayBoundaryLayer, showBarangayBoundary);
+        setLayerVisible(hardwareClimateLayer, showHardwareClimate);
         renderBarangayBoundaryLayer();
         renderWeatherFillLayer();
         setLayerVisible(areaLayer, showAreas);
@@ -2111,27 +2158,29 @@ export function buildCalambaMapHtml(
 
             L.DomEvent.on(item, 'click', function() {
               var key = def.key;
-              visibility[key] = !visibility[key];
+              if (key === 'floodHazard') {
+                visibility.floodHazard = true;
+                visibility.weatherOverlay = false;
+                visibility.temperatureOverlay = false;
+                visibility.humidityOverlay = false;
+                visibility.windOverlay = false;
+              } else {
+                visibility[key] = !visibility[key];
+              }
               var nowOn = Boolean(visibility[key]);
 
-              // Mutual exclusion: weather overlay ↔ flood hazard
+              // Weather modes are mutually exclusive with each other and flood hazard.
               if ((key === 'weatherOverlay' || key === 'temperatureOverlay' || key === 'humidityOverlay') && nowOn) {
-                visibility.floodHazard = false;
                 visibility.windOverlay = false;
                 visibility.weatherOverlay = key === 'weatherOverlay';
                 visibility.temperatureOverlay = key === 'temperatureOverlay';
                 visibility.humidityOverlay = key === 'humidityOverlay';
-              } else if (key === 'floodHazard' && nowOn) {
-                visibility.weatherOverlay = false;
-                visibility.temperatureOverlay = false;
-                visibility.humidityOverlay = false;
-                visibility.windOverlay = false;
               } else if (key === 'windOverlay' && nowOn) {
                 visibility.weatherOverlay = false;
                 visibility.temperatureOverlay = false;
                 visibility.humidityOverlay = false;
-                visibility.floodHazard = false;
               }
+              normalizeDataLayerVisibility();
 
               // Re-render all icon states
               grid.querySelectorAll('.layer-icon-item').forEach(function(el) {
@@ -2150,7 +2199,7 @@ export function buildCalambaMapHtml(
               if (Boolean(visibility.weatherOverlay)) {
                 refreshRainImpactData();
               }
-              if (isScalarWeatherVisible() || Boolean(visibility.windOverlay)) {
+              if (Boolean(visibility.weatherOverlay) || Boolean(visibility.windOverlay)) {
                 loadWindFieldData();
               }
             });
@@ -2183,14 +2232,14 @@ export function buildCalambaMapHtml(
         if (document.visibilityState === 'visible') refreshRainImpactData();
       }, 60000);
       setInterval(function() {
-        if (isScalarWeatherVisible() || Boolean(visibility.windOverlay)) {
+        if (Boolean(visibility.weatherOverlay) || Boolean(visibility.windOverlay)) {
           windLoadState = 'idle';
           loadWindFieldData();
         }
       }, 10 * 60 * 1000);
       renderIncidents();
       applyLayerVisibility();
-      if (isScalarWeatherVisible() || Boolean(visibility.windOverlay)) {
+      if (Boolean(visibility.weatherOverlay) || Boolean(visibility.windOverlay)) {
         loadWindFieldData();
       }
       renderLegendControl();

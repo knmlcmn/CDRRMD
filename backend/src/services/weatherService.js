@@ -1,4 +1,5 @@
 const { httpError } = require('../utils/httpError');
+const { loadHardwareSensorSnapshot, nearestHardwareClimate } = require('./hardwareSensorService');
 
 async function getWeatherForecast(query) {
   const latitude = Number(query?.latitude ?? 14.2117);
@@ -9,14 +10,30 @@ async function getWeatherForecast(query) {
     throw httpError(400, 'Invalid weather coordinates.');
   }
 
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,wind_speed_10m,weather_code,relative_humidity_2m,apparent_temperature,precipitation&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,precipitation,precipitation_probability&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max,precipitation_sum,precipitation_probability_max&forecast_days=${forecastDays}&timezone=auto`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=wind_speed_10m,weather_code,precipitation&hourly=wind_speed_10m,weather_code,precipitation,precipitation_probability&daily=weather_code,wind_speed_10m_max,precipitation_sum,precipitation_probability_max&forecast_days=${forecastDays}&timezone=auto`;
 
-  const response = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+  const [response, hardwareSnapshot] = await Promise.all([
+    fetch(url, { signal: AbortSignal.timeout(12_000) }),
+    loadHardwareSensorSnapshot(),
+  ]);
   if (!response.ok) {
     throw httpError(502, 'Failed to fetch weather from Open-Meteo.');
   }
 
-  return response.json();
+  const weather = await response.json();
+  const sensor = nearestHardwareClimate(hardwareSnapshot, latitude, longitude);
+  return {
+    ...weather,
+    climate_source: hardwareSnapshot.source,
+    climate_sensor_id: sensor?.id || null,
+    climate_barangay_name: sensor?.barangayName || null,
+    climate_updated_at: sensor?.updatedAt || hardwareSnapshot.updatedAt,
+    current: {
+      ...(weather.current || {}),
+      temperature_2m: Number.isFinite(sensor?.temperatureCelsius) ? sensor.temperatureCelsius : null,
+      relative_humidity_2m: Number.isFinite(sensor?.humidityPercentage) ? sensor.humidityPercentage : null,
+    },
+  };
 }
 
 module.exports = { getWeatherForecast };

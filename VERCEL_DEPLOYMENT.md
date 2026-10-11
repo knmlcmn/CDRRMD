@@ -17,11 +17,15 @@ Set these environment variables in Vercel:
 - `NODE_ENV=production`
 - `SEED_DEFAULT_ACCOUNTS` should remain unset/false in production
 - `DB_SSL=true` when required by the provider
-- `INITIALIZE_DATABASE_ON_COLD_START=true` only for the first deployment of a brand-new database; remove it after the schema is initialized
+- Leave `INITIALIZE_DATABASE_ON_COLD_START` unset. Database migrations now run
+  once during the Vercel build, before the new serverless deployment becomes active.
 
 Do not use the local `backend/.env` in production.
 
-Run schema initialization as a release/setup task rather than on normal requests. The API intentionally skips it by default on Vercel so cold starts stay fast.
+The backend's `vercel-build` script applies idempotent schema updates on every
+deployment. A migration failure stops the deployment instead of publishing API
+code that is incompatible with the current database. Normal API cold starts do
+not run migrations, so request latency remains low.
 
 ## 2. Deploy `admin-web`
 Create another Vercel project with **Root Directory = `admin-web`**.

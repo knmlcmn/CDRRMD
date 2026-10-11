@@ -11,8 +11,6 @@ import { editorial } from '../components/EditorialTheme';
 import { DashboardHeader } from '../components/DashboardHeader';
 import {
   MetricAccent,
-  TemperatureArtwork,
-  temperatureIconFromCelsius,
   WeatherConditionArtwork,
   weatherAdvice,
   weatherIconFromCode,
@@ -26,15 +24,12 @@ type WeatherResponse = {
   current?: {
     time?: string;
     temperature_2m?: number;
-    apparent_temperature?: number;
     relative_humidity_2m?: number;
     wind_speed_10m?: number;
     weather_code?: number;
   };
   hourly?: {
     time?: string[];
-    temperature_2m?: number[];
-    relative_humidity_2m?: number[];
     wind_speed_10m?: number[];
     weather_code?: number[];
     precipitation?: number[];
@@ -43,8 +38,6 @@ type WeatherResponse = {
   daily?: {
     time?: string[];
     weather_code?: number[];
-    temperature_2m_max?: number[];
-    temperature_2m_min?: number[];
     wind_speed_10m_max?: number[];
     precipitation_sum?: number[];
     precipitation_probability_max?: number[];
@@ -93,8 +86,6 @@ export default function WeatherScreen() {
     const hourly = data?.hourly;
     return (hourly?.time ?? []).slice(0, 168).map((time, index) => ({
       time,
-      temp: hourly?.temperature_2m?.[index],
-      humidity: hourly?.relative_humidity_2m?.[index],
       wind: hourly?.wind_speed_10m?.[index],
       rain: hourly?.precipitation?.[index],
       code: hourly?.weather_code?.[index],
@@ -105,8 +96,6 @@ export default function WeatherScreen() {
     const daily = data?.daily;
     return (daily?.time ?? []).slice(0, 7).map((day, index) => ({
       day,
-      max: daily?.temperature_2m_max?.[index],
-      min: daily?.temperature_2m_min?.[index],
       wind: daily?.wind_speed_10m_max?.[index],
       rain: daily?.precipitation_sum?.[index],
       code: daily?.weather_code?.[index],
@@ -154,13 +143,6 @@ export default function WeatherScreen() {
                   <Text style={[st.metricText, { fontSize: 6 * scale }]}>{visual.condition}</Text>
                 </View>
                 <MetricAccent type="weather" scale={scale} />
-              </View>
-              <View style={st.metric}>
-                <View style={st.metricValue}>
-                  <TemperatureArtwork name={temperatureIconFromCelsius(data.current.apparent_temperature)} scale={scale} />
-                  <Text style={[st.metricText, { fontSize: 6 * scale }]}>Feels {data.current.apparent_temperature ?? '--'}°C</Text>
-                </View>
-                <MetricAccent type="temperature" scale={scale} />
               </View>
             </View>
           </View>
@@ -255,13 +237,11 @@ export default function WeatherScreen() {
                     <Text style={[st.hourTime, { fontSize: 6 * scale }]}>{formatHour(hour.time)}</Text>
                     <View style={[st.hourCondition, { marginTop: 4 * scale }]}>
                       <WeatherConditionArtwork name={weatherIconFromCode(hour.code)} scale={1.3 * scale} />
-                      <Text style={[st.hourTemp, { fontSize: 11 * scale, marginLeft: 4 * scale }]}>{hour.temp ?? '--'}°</Text>
                     </View>
                     <Text style={[st.hourText, { fontSize: 6 * scale, marginTop: 3 * scale }]} numberOfLines={1}>
                       {getWeatherVisualByCode(hour.code).condition}
                     </Text>
-                    <Text style={[st.hourText, { fontSize: 5.5 * scale, marginTop: 4 * scale }]}>Humidity {hour.humidity ?? '--'}%</Text>
-                    <Text style={[st.hourText, { fontSize: 5.5 * scale }]}>Wind {hour.wind ?? '--'} km/h</Text>
+                    <Text style={[st.hourText, { fontSize: 5.5 * scale, marginTop: 4 * scale }]}>Wind {hour.wind ?? '--'} km/h</Text>
                     <Text style={[st.hourText, { fontSize: 5.5 * scale }]}>Rain {hour.rain ?? '--'} mm</Text>
                   </View>
                 ))}
@@ -288,7 +268,6 @@ export default function WeatherScreen() {
                       {getWeatherVisualByCode(day.code).condition} · Wind {day.wind ?? '--'} km/h · Rain {day.rain ?? '--'} mm
                     </Text>
                   </View>
-                  <Text style={[st.dayTemp, { fontSize: 8 * scale }]}>{day.max ?? '--'}° / {day.min ?? '--'}°</Text>
                 </View>
               ))}
             </>
@@ -335,11 +314,9 @@ const st = StyleSheet.create({
   hourCard: { backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border },
   hourTime: { color: '#585858' },
   hourCondition: { flexDirection: 'row', alignItems: 'center' },
-  hourTemp: { color: '#181818', fontWeight: '800' },
   hourText: { color: '#585858' },
   dayCard: { backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border, flexDirection: 'row', alignItems: 'center' },
   dayCopy: { flex: 1, minWidth: 0 },
   dayTitle: { color: '#181818', fontWeight: '700' },
   dayDetail: { color: '#585858' },
-  dayTemp: { color: '#181818', fontWeight: '700' },
 });

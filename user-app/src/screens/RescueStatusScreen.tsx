@@ -306,8 +306,30 @@ export default function RescueStatusScreen() {
   ), [incidentLocation, report?.evacuation_latitude, report?.evacuation_longitude, report?.picked_up_at]);
   const responderKind = report?.dispatch_type === 'cddrmd_backup' ? 'cddrmd' : 'barangay';
   const apiBaseUrl = String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '');
+  const trackerEvacuationAreas = useMemo(() => {
+    const designatedId = report?.evacuation_area_id;
+    const designatedLatitude = report?.evacuation_latitude;
+    const designatedLongitude = report?.evacuation_longitude;
+    if (designatedId == null) return [];
+
+    const designatedArea = evacuationAreas.find((area) => area.id === designatedId);
+    if (designatedArea) return [designatedArea];
+
+    if (!Number.isFinite(designatedLatitude) || !Number.isFinite(designatedLongitude)) return [];
+    return [{
+      id: designatedId,
+      name: report?.evacuation_area_name || 'Designated Evacuation Center',
+      barangay: 'Calamba',
+      latitude: Number(designatedLatitude),
+      longitude: Number(designatedLongitude),
+      capacity: 0,
+      evacuees: 0,
+      is_active: true,
+      created_at: '',
+    }];
+  }, [evacuationAreas, report?.evacuation_area_id, report?.evacuation_area_name, report?.evacuation_latitude, report?.evacuation_longitude]);
   const mapHtml = useMemo(() => buildCalambaMapHtml(
-    evacuationAreas,
+    trackerEvacuationAreas,
     responderLocation,
     routeCoordinates,
     report?.picked_up_at ? null : incidentLocation,
@@ -316,15 +338,18 @@ export default function RescueStatusScreen() {
     `${apiBaseUrl}/flood-risk/calamba/barangays`,
     `${apiBaseUrl}/flood-risk/calamba/raster`,
     `${apiBaseUrl}/flood-risk/calamba/rain-impact`,
-    { boundary: true, floodHazard: false, evacuationAreas: true, incidentMarkers: true, responderRoute: true, weatherOverlay: false },
+    { boundary: true, floodHazard: true, evacuationAreas: true, incidentMarkers: true, responderRoute: true, weatherOverlay: false },
     report?.dispatch_type === 'cddrmd_backup' ? 'Live CDRRMD Rescuer location' : 'Live Barangay Rescuer location',
     Boolean(report?.picked_up_at),
     responderKind,
     userLocation,
-  ), [apiBaseUrl, evacuationAreas, incidentLocation, report?.dispatch_type, report?.picked_up_at, reportCode, responderKind, responderLocation, routeCoordinates, userLocation]);
+    report?.evacuation_area_id ?? null,
+  ), [apiBaseUrl, incidentLocation, report?.dispatch_type, report?.evacuation_area_id, report?.picked_up_at, reportCode, responderKind, responderLocation, routeCoordinates, trackerEvacuationAreas, userLocation]);
 
   const mapUpdate = useMemo(() => ({
     type: 'rescue-map-update',
+    areas: trackerEvacuationAreas,
+    designatedEvacuationAreaId: report?.evacuation_area_id ?? null,
     responderLocation,
     routeCoordinates,
     incidentLocation: report?.picked_up_at ? null : incidentLocation,
@@ -334,7 +359,7 @@ export default function RescueStatusScreen() {
     responderKind,
     userLocation,
     recenterUserRequestId: recenterRequestId,
-  }), [incidentLocation, recenterRequestId, report?.dispatch_type, report?.picked_up_at, reportCode, responderKind, responderLocation, routeCoordinates, userLocation]);
+  }), [incidentLocation, recenterRequestId, report?.dispatch_type, report?.evacuation_area_id, report?.picked_up_at, reportCode, responderKind, responderLocation, routeCoordinates, trackerEvacuationAreas, userLocation]);
 
   const recenterOnUser = useCallback(async () => {
     if (locatingUser) return;

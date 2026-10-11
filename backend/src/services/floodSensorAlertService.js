@@ -1,46 +1,10 @@
 const pool = require('../config/db');
-
-const FIREBASE_DATABASE_URL = String(
-  process.env.FIREBASE_DATABASE_URL || 'https://capstone-4de76-default-rtdb.asia-southeast1.firebasedatabase.app',
-).replace(/\/$/, '');
-const SENSOR_STATUS_PATH = 'Sensor Status Settings';
+const { loadHardwareSensorSnapshot } = require('./hardwareSensorService');
 const MODERATE_THRESHOLD = 40;
 const HIGH_THRESHOLD = 61;
-const SENSOR_ASSIGNMENTS = [
-  { id: 'waterSensor1', barangayName: 'Palingon', hardwareNo: 'HW-01' },
-  { id: 'waterSensor2', barangayName: 'Sampiruhan', hardwareNo: 'HW-02' },
-  { id: 'waterSensor3', barangayName: 'Lingga', hardwareNo: 'HW-03' },
-  { id: 'waterSensor4', barangayName: 'Parian', hardwareNo: 'HW-04' },
-  { id: 'waterSensor5', barangayName: 'Looc', hardwareNo: 'HW-05' },
-  { id: 'waterSensor6', barangayName: 'Uwisan', hardwareNo: 'HW-06' },
-];
 
 let lastSyncAt = 0;
 let syncPromise = null;
-
-function readNumber(payload, ...keys) {
-  if (!payload || typeof payload !== 'object') return null;
-  for (const key of keys) {
-    const value = Number(payload[key]);
-    if (payload[key] !== '' && payload[key] !== null && payload[key] !== undefined && Number.isFinite(value)) return value;
-  }
-  return null;
-}
-
-function sensorPercentage(payload) {
-  const distancePayload = payload?.distance;
-  const reported = readNumber(payload, 'fillPct', 'fill_pct', 'fillPercentage', 'percentage', 'level')
-    ?? readNumber(distancePayload, 'fillPct', 'fill_pct', 'fillPercentage', 'percentage', 'level');
-  if (reported !== null) return Math.max(0, Math.min(100, reported));
-  const distance = typeof distancePayload === 'number'
-    ? distancePayload
-    : readNumber(distancePayload, 'distanceCm', 'distance_cm', 'distance')
-      ?? readNumber(payload, 'distanceCm', 'distance_cm');
-  if (distance === null) return null;
-  if (distance <= 20) return 100;
-  if (distance >= 200) return 0;
-  return ((200 - distance) / 180) * 100;
-}
 
 async function insertAlert(client, { eventKey, barangayName, hardwareNo, level, percentage, sensorUpdatedAt = null }) {
   const inserted = await client.query(
@@ -73,32 +37,12 @@ async function insertAlert(client, { eventKey, barangayName, hardwareNo, level, 
   return { published: true, recipients: recipients.rows.length };
 }
 
-async function readFirebaseSensors() {
-  const readPath = async (path) => {
-    const response = await fetch(`${FIREBASE_DATABASE_URL}/${encodeURIComponent(path)}.json`, {
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!response.ok) throw new Error(`Firebase ${path} request returned ${response.status}.`);
-    return response.json();
-  };
-  const [statuses, ...readings] = await Promise.all([
-    readPath(SENSOR_STATUS_PATH).catch(() => ({})),
-    ...SENSOR_ASSIGNMENTS.map((assignment) => readPath(assignment.id).catch(() => null)),
-  ]);
-  return SENSOR_ASSIGNMENTS.map((assignment, index) => {
-    const storedStatus = statuses?.[assignment.id];
-    const statusValue = storedStatus && typeof storedStatus === 'object' ? storedStatus.status : storedStatus;
-    return {
-      ...assignment,
-      active: String(statusValue || 'Active') !== 'Unavailable',
-      readable: readings[index] !== null,
-      percentage: sensorPercentage(readings[index]),
-    };
-  });
-}
-
 async function performSensorSync() {
-  const sensors = await readFirebaseSensors();
+  const snapshot = await loadHardwareSensorSnapshot();
+  const sensors = snapshot.sensors.map((sensor) => ({
+    ...sensor,
+    percentage: sensor.waterLevelPercentage,
+  }));
   const client = await pool.connect();
   try {
     await client.query('BEGIN');

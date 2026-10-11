@@ -6,6 +6,8 @@
   "scripts": {
     "predev": "kill-port 4000",
     "dev": "nodemon src/server.js",
+    "migrate": "node scripts/migrate.js",
+    "vercel-build": "npm run migrate",
     "start": "node src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },

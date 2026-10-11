@@ -27,6 +27,7 @@ export function buildCalambaMapHtml(
   pickedUp = false,
   responderKind: 'barangay' | 'cddrmd' | 'generic' = 'generic',
   userLocation: Coordinate | null = null,
+  designatedEvacuationAreaId: number | null = null,
 ) {
   const payload = JSON.stringify({
     areas,
@@ -43,6 +44,7 @@ export function buildCalambaMapHtml(
     pickedUp,
     responderKind,
     userLocation,
+    designatedEvacuationAreaId,
     boundaryGeoJson: {
       type: 'FeatureCollection',
       features: [
@@ -204,6 +206,7 @@ export function buildCalambaMapHtml(
         responderRoute: true,
         weatherOverlay: true
       }, payload.layerVisibility || {});
+      visibility.floodHazard = !Boolean(visibility.weatherOverlay);
       var calambaCenter = [14.206021, 121.1556496];
       var calambaBounds = L.latLngBounds([[14.137703, 121.0218057], [14.2662133, 121.2214277]]);
       var map = L.map('map', {
@@ -910,14 +913,16 @@ export function buildCalambaMapHtml(
         }
 
         var rainIntensity = Number(weatherImpact.rainIntensityMmPerHour || weatherImpact.averageRainfallMmPerHour || 0).toFixed(2);
-        var temperature = Number(weatherImpact.temperatureCelsius || 0).toFixed(1);
+        var temperature = weatherImpact.temperatureCelsius != null && Number.isFinite(Number(weatherImpact.temperatureCelsius))
+          ? Number(weatherImpact.temperatureCelsius).toFixed(1) + ' C'
+          : 'No hardware reading';
         return '<div class="weather-popup">' +
           '<div class="head">WEATHER FORECAST OVERLAY</div>' +
           '<strong>' + name + '</strong>' +
           '<table>' +
             '<tr><td>Rain Level</td><td>' + String(weatherImpact.rainLevel || 'Light') + '</td></tr>' +
             '<tr><td>Rain Intensity</td><td>' + rainIntensity + ' mm/h</td></tr>' +
-            '<tr><td>Temperature</td><td>' + temperature + ' C</td></tr>' +
+            '<tr><td>Temperature</td><td>' + temperature + '</td></tr>' +
             '<tr><td>Baseline Flood Risk</td><td>' + baseRisk + '</td></tr>' +
           '</table>' +
         '</div>';
@@ -1013,7 +1018,7 @@ export function buildCalambaMapHtml(
               : weatherImpact
               ? String(weatherImpact.rainLevel || 'Light').toUpperCase()
               : String(props.flood_risk_level || 'LOW').toUpperCase();
-            var temperatureText = weatherImpact && Number.isFinite(Number(weatherImpact.temperatureCelsius))
+            var temperatureText = weatherImpact && weatherImpact.temperatureCelsius != null && Number.isFinite(Number(weatherImpact.temperatureCelsius))
               ? Number(weatherImpact.temperatureCelsius).toFixed(1) + ' C'
               : 'N/A';
             layer.bindTooltip(name + ' (' + risk + ' | ' + temperatureText + ')', { sticky: true });
@@ -1050,7 +1055,7 @@ export function buildCalambaMapHtml(
           var props = feature && feature.properties ? feature.properties : {};
           var key = normalizeBarangayName(props.barangay_name);
           var weatherImpact = weatherImpactByBarangay[key] || null;
-          var temperature = weatherImpact && Number.isFinite(Number(weatherImpact.temperatureCelsius))
+          var temperature = weatherImpact && weatherImpact.temperatureCelsius != null && Number.isFinite(Number(weatherImpact.temperatureCelsius))
             ? Number(weatherImpact.temperatureCelsius).toFixed(1) + ' C'
             : null;
           if (!temperature) {
@@ -1282,7 +1287,7 @@ export function buildCalambaMapHtml(
 
       function applyLayerVisibility() {
         var showBoundary = focusModeActive ? false : Boolean(visibility.boundary);
-        var showFloodHazard = focusModeActive ? false : Boolean(visibility.floodHazard);
+        var showFloodHazard = focusModeActive ? false : Boolean(visibility.floodHazard) && !Boolean(visibility.weatherOverlay);
         var showWeather = focusModeActive ? false : Boolean(visibility.weatherOverlay);
         var showBarangayBoundary = focusModeActive ? true : Boolean(visibility.boundary);
         var showTemperature = focusModeActive ? false : Boolean(visibility.weatherOverlay);
@@ -1327,6 +1332,13 @@ export function buildCalambaMapHtml(
         iconSize: [22, 22],
         iconAnchor: [11, 11],
       });
+      var designatedAreaPinIcon = L.divIcon({
+        className: 'evac-pin',
+        html: '<div style="align-items:center;background:#16a34a;border:3px solid #fff;border-radius:999px;box-shadow:0 3px 9px rgba(15,23,42,.42);display:flex;height:24px;justify-content:center;width:24px"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-building-house.svg" style="filter:brightness(0) invert(1);height:16px;width:16px" /></div>',
+        iconSize: [30, 30],
+        iconAnchor: [15, 15],
+      });
+      var visibleDesignatedAreaId = null;
 
       function mapPersonIcon(iconName, backgroundColor, size, horizontalOffset) {
         var offset = Number(horizontalOffset) || 0;
@@ -1393,23 +1405,48 @@ export function buildCalambaMapHtml(
         applyLayerVisibility();
       }
 
-      (payload.areas || []).forEach(function(area) {
-        var lat = Number(area.latitude);
-        var lon = Number(area.longitude);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon) || !inCalamba(lat, lon)) {
-          return;
+      function renderEvacuationAreas(extendInitialBounds, revealDesignatedArea) {
+        areaLayer.clearLayers();
+        var designatedPoint = null;
+        (payload.areas || []).forEach(function(area) {
+          var lat = Number(area.latitude);
+          var lon = Number(area.longitude);
+          if (!Number.isFinite(lat) || !Number.isFinite(lon) || !inCalamba(lat, lon)) {
+            return;
+          }
+          var designated = String(area.id) === String(payload.designatedEvacuationAreaId);
+          if (designated) designatedPoint = [lat, lon];
+          if (extendInitialBounds || designated) fitBounds.extend([lat, lon]);
+          L.marker([lat, lon], {
+            icon: designated ? designatedAreaPinIcon : areaPinIcon,
+            zIndexOffset: designated ? 1300 : 0,
+          })
+            .addTo(areaLayer)
+            .bindPopup(
+              (designated ? '<strong>Designated evacuation center</strong><br/>' : '') +
+              '<strong>' + area.name + '</strong><br/>' +
+              area.barangay + '<br/>' +
+              'Capacity: ' + area.capacity + '<br/>' +
+              'Evacuees: ' + area.evacuees + '<br/>' +
+              'Status: ' + (area.evacuation_status === 'full' ? 'Full' : (area.evacuation_status === 'nearly_full' ? 'Nearly Full' : 'Available'))
+            );
+        });
+        setLayerVisible(areaLayer, Boolean(visibility.evacuationAreas));
+        if (designatedPoint) {
+          visibleDesignatedAreaId = String(payload.designatedEvacuationAreaId);
+          if (revealDesignatedArea) {
+            var trackerBounds = L.latLngBounds([designatedPoint]);
+            if (payload.incidentLocation) trackerBounds.extend([payload.incidentLocation.latitude, payload.incidentLocation.longitude]);
+            if (payload.responderLocation) trackerBounds.extend([payload.responderLocation.latitude, payload.responderLocation.longitude]);
+            (payload.routeCoordinates || []).forEach(function(point) {
+              trackerBounds.extend([point.latitude, point.longitude]);
+            });
+            map.fitBounds(trackerBounds.pad(0.12), { maxZoom: 14 });
+          }
         }
-        fitBounds.extend([lat, lon]);
-        L.marker([lat, lon], { icon: areaPinIcon })
-          .addTo(areaLayer)
-          .bindPopup(
-            '<strong>' + area.name + '</strong><br/>' +
-            area.barangay + '<br/>' +
-            'Capacity: ' + area.capacity + '<br/>' +
-            'Evacuees: ' + area.evacuees + '<br/>' +
-            'Status: ' + (area.evacuation_status === 'full' ? 'Full' : (area.evacuation_status === 'nearly_full' ? 'Nearly Full' : 'Available'))
-          );
-      });
+      }
+
+      renderEvacuationAreas(true, false);
 
       renderRescueRoute(true);
 
@@ -1445,6 +1482,10 @@ export function buildCalambaMapHtml(
         }
 
         if (data.type === 'rescue-map-update') {
+          payload.areas = Array.isArray(data.areas) ? data.areas : payload.areas;
+          if (Object.prototype.hasOwnProperty.call(data, 'designatedEvacuationAreaId')) {
+            payload.designatedEvacuationAreaId = data.designatedEvacuationAreaId;
+          }
           payload.responderLocation = data.responderLocation || null;
           payload.routeCoordinates = Array.isArray(data.routeCoordinates) ? data.routeCoordinates : [];
           payload.incidentLocation = data.incidentLocation || null;
@@ -1453,6 +1494,9 @@ export function buildCalambaMapHtml(
           payload.pickedUp = Boolean(data.pickedUp);
           payload.responderKind = data.responderKind || payload.responderKind;
           payload.userLocation = data.userLocation || null;
+          var revealDesignatedArea = payload.designatedEvacuationAreaId != null
+            && String(payload.designatedEvacuationAreaId) !== visibleDesignatedAreaId;
+          renderEvacuationAreas(false, revealDesignatedArea);
           renderRescueRoute(false);
           var recenterRequestId = Number(data.recenterUserRequestId) || 0;
           if (recenterRequestId && recenterRequestId !== lastUserRecenterRequestId && payload.userLocation) {

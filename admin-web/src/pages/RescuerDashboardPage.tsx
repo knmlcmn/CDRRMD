@@ -233,7 +233,7 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/flood-risk/calamba/raster`,
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/flood-risk/calamba/rain-impact`,
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/weather/wind-field`,
-    { boundary: true, floodHazard: false, evacuationAreas: true, incidentMarkers: true, responderRoute: true, weatherOverlay: false, temperatureOverlay: false, humidityOverlay: false, windOverlay: false },
+    { boundary: true, floodHazard: true, evacuationAreas: true, incidentMarkers: true, responderRoute: true, weatherOverlay: false, temperatureOverlay: false, humidityOverlay: false, windOverlay: false },
     responderRole === 'barangay_rescuer' ? 'Your live Barangay Rescuer location' : 'Your live CDRRMD Rescuer location',
     { focusOnIncident: true, focusOnResponder: true, allowLiveRouteUpdates: true, headingUpOnRecenter: true, responderKind: responderRole === 'barangay_rescuer' ? 'barangay' : 'cddrmd' },
   ) : '', [areas, areasLoaded, responderRole]);

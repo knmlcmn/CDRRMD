@@ -598,20 +598,50 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   const selectedReportIsResolved = selectedReport?.status === 'resolved';
   const incidentDetailContent = selectedReport ? (
     <>
+      <h3 className={d.monitoring.selectedTitle}>Incident Detail</h3>
       <div className={d.monitoring.incidentDetailGrid}>
         <div className={d.monitoring.incidentDetailColumn}>
           <p><strong>ID:</strong> {selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`}</p>
           <p><strong>Status:</strong> {formatIncidentStatus(selectedReport.status, Boolean(selectedReport.picked_up_at))}</p>
           <p><strong>Location:</strong> {selectedReport.location}</p>
-          <p><strong>Reporter:</strong> {[selectedReport.first_name, selectedReport.last_name].filter(Boolean).join(' ') || selectedReport.email || 'N/A'}</p>
           {selectedReport.water_level ? <p><strong>Water Level:</strong> {selectedReport.water_level}</p> : null}
           {selectedReport.are_people_trapped ? <p><strong>People Trapped:</strong> {selectedReport.estimated_people ?? 'Unknown'}</p> : null}
-          <p><strong>Assigned Team:</strong> {selectedReport.assigned_team || 'N/A'}</p>
+          {isRescueAwaitingPickup(selectedReport) && selectedReport.assigned_rescuer_id ? (
+            <>
+              <div
+                style={{
+                  marginTop: 4,
+                  padding: '6px 8px',
+                  borderRadius: 8,
+                  fontSize: '0.9375rem',
+                  lineHeight: 1.4,
+                  fontWeight: 700,
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  color: '#b91c1c',
+                }}
+              >
+                🚨 Resident evacuation route
+                <div style={{ marginTop: 4, fontWeight: 600 }}>
+                  Current destination: {activeRouteDestination?.label || 'Calculating…'}
+                </div>
+              </div>
+              <p style={{ fontSize: '0.9375rem', lineHeight: 1.4, color: '#475569' }}>
+                {routeOriginLabel
+                  ? `Route: ${routeOriginLabel} to ${routeDestination?.label || 'assigned evacuation center'}.`
+                  : 'Calculating the resident-to-evacuation-center route…'}
+              </p>
+            </>
+          ) : null}
+          {!selectedReportIsResolved ? <div style={{ marginTop: 4, padding: '6px 8px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd', fontSize: '0.9375rem', lineHeight: 1.4, color: '#0369a1' }}>
+            <strong>ℹ️ Barangay review view.</strong> Accept or decline pending reports from this barangay.
+          </div> : null}
         </div>
         <div className={d.monitoring.incidentDetailMetaColumn}>
+          <p><strong>Assigned Team:</strong> {selectedReport.assigned_team || 'N/A'}</p>
           <p><strong>Contact:</strong> {selectedReport.contact_number || 'N/A'}</p>
+          <p><strong>Reported By:</strong> {[selectedReport.first_name, selectedReport.last_name].filter(Boolean).join(' ') || selectedReport.email || 'N/A'}</p>
           <p><strong>Reported:</strong> {new Date(selectedReport.created_at).toLocaleString()}</p>
-          {selectedReport.rescuer_name ? <p><strong>Barangay Rescuer:</strong> {selectedReport.rescuer_name}</p> : null}
           <p><strong>Evacuation Area:</strong> {selectedReport.evacuation_area_name || assignedEvacuationArea?.name || 'N/A'}</p>
           {!selectedReportIsResolved ? <p><strong>Route Distance:</strong> {routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : isRescueAwaitingPickup(selectedReport) ? 'Calculating...' : 'N/A'}</p> : null}
           {!selectedReportIsResolved ? <p><strong>Route ETA:</strong> {routeEtaMinutes ? `${routeEtaMinutes} mins` : isRescueAwaitingPickup(selectedReport) ? 'Calculating...' : 'N/A'}</p> : null}
@@ -619,43 +649,12 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
           <p><strong>Reporter Notes:</strong> {selectedReport.notes || 'N/A'}</p>
           {backupRequest?.assigned_rescuer_id ? <p><strong>CDRRMD Backup:</strong> {backupRequest.rescuer_name || backupRequest.rescuer_account_id || 'Assigned team'}</p> : null}
           {selectedReport.has_image || selectedReport.image_base64 ? (
-            <button disabled={proofLoadingId === selectedReport.id} onClick={() => void openProofImage(selectedReport)} className={d.btn.secondaryXs} style={{ alignSelf: 'flex-start', marginTop: 4 }}>
+            <button disabled={proofLoadingId === selectedReport.id} onClick={() => void openProofImage(selectedReport)} className={d.btn.secondary} style={{ alignSelf: 'flex-start', marginTop: 4 }}>
               {proofLoadingId === selectedReport.id ? 'Loading…' : 'View Proof Photo'}
             </button>
           ) : null}
         </div>
-        <div className={[d.monitoring.incidentDetailWide, d.monitoring.incidentDetailColumn].join(' ')}>
-          {isRescueAwaitingPickup(selectedReport) && selectedReport.assigned_rescuer_id ? (
-            <>
-              <div
-                style={{
-                  marginTop: 4,
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  fontSize: '0.8rem',
-                  fontWeight: 700,
-                  background: isRescueAwaitingPickup(selectedReport) ? '#fef2f2' : '#f0fdf4',
-                  border: `1px solid ${isRescueAwaitingPickup(selectedReport) ? '#fecaca' : '#bbf7d0'}`,
-                  color: isRescueAwaitingPickup(selectedReport) ? '#b91c1c' : '#15803d',
-                }}
-              >
-              🚨 Resident evacuation route
-              <div style={{ marginTop: 4, fontWeight: 600 }}>
-                Current destination: {activeRouteDestination?.label || 'Calculating…'}
-              </div>
-              </div>
-              <p style={{ fontSize: '0.78rem', lineHeight: 1.4, color: '#64748b' }}>
-                {routeOriginLabel
-                  ? `Route: ${routeOriginLabel} to ${routeDestination?.label || 'assigned evacuation center'}.`
-                  : 'Calculating the resident-to-evacuation-center route…'}
-              </p>
-            </>
-          ) : null}
-        </div>
       </div>
-      {!selectedReportIsResolved ? <div style={{ marginTop: 8, padding: '8px 10px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd', fontSize: '0.78rem', lineHeight: 1.4, color: '#0369a1' }}>
-        <strong>ℹ️ Barangay review view.</strong> Accept or decline pending reports from this barangay.
-      </div> : null}
     </>
   ) : <p className={d.monitoring.validationEmpty}>Select a report to view its incident details.</p>;
 
@@ -878,7 +877,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
           </article>
 
           <article className={d.monitoring.validationCard}>
-            <div className="active-list-scroll incident-detail-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto pr-1">
+            <div className="incident-detail-scroll min-h-0 flex-1 overflow-hidden">
               {incidentDetailContent}
             </div>
           </article>

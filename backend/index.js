@@ -1,12 +1,7 @@
 const app = require('./src/app');
 
-module.exports = async function handler(req, res) {
-  // Schema migrations belong in deployment/release setup. Opt in only for a
-  // brand-new database; loading the large initializer on every serverless cold
-  // start adds avoidable latency to every API route.
-  if (process.env.INITIALIZE_DATABASE_ON_COLD_START === 'true') {
-    const initializeDatabase = require('./src/config/initializeDatabase');
-    await initializeDatabase();
-  }
+module.exports = function handler(req, res) {
+  // Vercel applies schema updates through the deployment-time build command.
+  // Keep request cold starts limited to loading and invoking the Express app.
   return app(req, res);
 };

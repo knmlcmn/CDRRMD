@@ -129,7 +129,7 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
     `${API_BASE_URL.replace(/\/$/, '')}/flood-risk/calamba/barangays`, '',
     `${API_BASE_URL.replace(/\/$/, '')}/flood-risk/calamba/rain-impact`,
     `${API_BASE_URL.replace(/\/$/, '')}/weather/wind-field`,
-    { boundary: true, floodHazard: false, evacuationAreas: true, incidentMarkers: true, responderRoute: false, weatherOverlay: false, temperatureOverlay: false, humidityOverlay: false, windOverlay: false },
+    { boundary: true, floodHazard: true, evacuationAreas: true, incidentMarkers: true, responderRoute: false, weatherOverlay: false, temperatureOverlay: false, humidityOverlay: false, windOverlay: false },
     'Closest responder base',
     { jurisdictionBarangayName: barangayName },
   ), [barangayName, centers, incidents]);

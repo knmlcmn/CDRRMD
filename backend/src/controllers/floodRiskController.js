@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getCalambaWindField } = require('../services/openMeteoWindService');
+const { loadHardwareSensorSnapshot } = require('../services/hardwareSensorService');
 const { setPublicCache } = require('../utils/httpCache');
 
 const CALAMBA_CENTER = {
@@ -481,6 +482,43 @@ function toPolygonGeometry(geometry) {
     return geometry;
   }
 
+  if (geometry.type === 'LineString' || geometry.type === 'MultiLineString') {
+    const sourceLines = geometry.type === 'LineString' ? [geometry.coordinates] : geometry.coordinates;
+    const remaining = (Array.isArray(sourceLines) ? sourceLines : [])
+      .map((line) => (Array.isArray(line) ? line : [])
+        .map((point) => [Number(point?.[0]), Number(point?.[1])])
+        .filter((point) => Number.isFinite(point[0]) && Number.isFinite(point[1])))
+      .filter((line) => line.length > 1);
+    const rings = [];
+    const pointsMatch = (left, right) =>
+      Math.abs(left[0] - right[0]) < 1e-7 && Math.abs(left[1] - right[1]) < 1e-7;
+
+    while (remaining.length > 0) {
+      const ring = remaining.shift().slice();
+      while (!pointsMatch(ring[0], ring[ring.length - 1])) {
+        const end = ring[ring.length - 1];
+        const nextIndex = remaining.findIndex((line) =>
+          pointsMatch(line[0], end) || pointsMatch(line[line.length - 1], end));
+        if (nextIndex < 0) break;
+
+        const next = remaining.splice(nextIndex, 1)[0];
+        if (!pointsMatch(next[0], end)) next.reverse();
+        ring.push(...next.slice(1));
+      }
+
+      if (ring.length >= 4 && pointsMatch(ring[0], ring[ring.length - 1])) {
+        rings.push(ring);
+      }
+    }
+
+    if (rings.length === 1) {
+      return { type: 'Polygon', coordinates: [rings[0]] };
+    }
+    if (rings.length > 1) {
+      return { type: 'MultiPolygon', coordinates: rings.map((ring) => [ring]) };
+    }
+  }
+
   const points = extractGeometryCoordinates(geometry);
   const hull = buildConvexHull(points);
   if (hull.length < 4) {
@@ -491,60 +529,6 @@ function toPolygonGeometry(geometry) {
     type: 'Polygon',
     coordinates: [hull],
   };
-}
-
-function inferTerrainBandAt(lat, lon) {
-  if (lon <= 121.10 && lat <= 14.22) {
-    return 'upland';
-  }
-  if (lon >= 121.16) {
-    return 'lowland';
-  }
-  return 'midland';
-}
-
-function adjustedTemperatureCelsius(baseTemperature, lat, lon) {
-  const terrainBand = inferTerrainBandAt(lat, lon);
-  if (terrainBand === 'upland') {
-    return Number((baseTemperature - 0.9).toFixed(2));
-  }
-  if (terrainBand === 'lowland') {
-    return Number((baseTemperature + 0.4).toFixed(2));
-  }
-  return Number(baseTemperature.toFixed(2));
-}
-
-function buildBarangayTemperatureLookup(features, weatherPoints, fallbackTemperatureCelsius) {
-  const lookup = new Map();
-  const points = (Array.isArray(weatherPoints) ? weatherPoints : []).filter((point) =>
-    Number.isFinite(Number(point?.latitude)) &&
-    Number.isFinite(Number(point?.longitude)) &&
-    Number.isFinite(Number(point?.temperatureCelsius)),
-  );
-
-  (Array.isArray(features) ? features : []).forEach((feature) => {
-    const nameKey = canonicalBarangayKey(feature?.properties?.barangay_name);
-    if (!nameKey || lookup.has(nameKey)) {
-      return;
-    }
-
-    const centroid = centroidFromCoordinates(extractGeometryCoordinates(feature?.geometry)) || CALAMBA_CENTER;
-    const nearest = points.reduce((best, point) => {
-      const distance = ((Number(point.latitude) - Number(centroid.latitude)) ** 2) +
-        ((Number(point.longitude) - Number(centroid.longitude)) ** 2);
-      return !best || distance < best.distance ? { point, distance } : best;
-    }, null);
-    const temperature = nearest
-      ? Number(nearest.point.temperatureCelsius)
-      : adjustedTemperatureCelsius(
-        Number(fallbackTemperatureCelsius || 30),
-        Number(centroid.latitude),
-        Number(centroid.longitude),
-      );
-    lookup.set(nameKey, Number(temperature.toFixed(2)));
-  });
-
-  return lookup;
 }
 
 async function getCalambaBoundaryOutlinesForOverlay() {
@@ -796,11 +780,9 @@ async function fetchWeatherSignalForRainImpact() {
   return {
     source: 'open-meteo-grid',
     rainIntensityMmPerHour: Number(Math.max(0, rainIntensityMmPerHour).toFixed(2)),
-    airTemperatureCelsius: Number(Number(weatherField.averageTemperatureCelsius || 30).toFixed(2)),
     thunderstormProbabilityPct: Number(clamp(thunderstormProbabilityPct, 0, 100).toFixed(1)),
     windSpeedKph: Number(Math.max(0, Number(weatherField.averageSpeedKph || 0)).toFixed(1)),
     windDirectionDegrees: Number(windDirectionDegrees.toFixed(1)),
-    points: currentPoints,
     typhoonForecast: {
       impactLevel,
       pathLikelyAffectingCalamba,
@@ -811,13 +793,16 @@ async function fetchWeatherSignalForRainImpact() {
 }
 
 async function buildCalambaRainImpactPayload() {
-  const weatherSignal = await fetchWeatherSignalForRainImpact();
+  const [weatherSignal, hardwareSnapshot] = await Promise.all([
+    fetchWeatherSignalForRainImpact(),
+    loadHardwareSensorSnapshot(),
+  ]);
   const source = mergeMissingBarangayFeatures(await getCalambaBoundaryOutlinesForOverlay());
   const features = Array.isArray(source?.features) ? source.features : [];
-  const temperatureByBarangay = buildBarangayTemperatureLookup(
-    features,
-    weatherSignal.points,
-    Number(weatherSignal.airTemperatureCelsius || 30),
+  const climateByBarangay = new Map(
+    hardwareSnapshot.sensors
+      .filter((sensor) => sensor.active && sensor.readable)
+      .map((sensor) => [canonicalBarangayKey(sensor.barangayName), sensor]),
   );
 
   const typhoonStrength = toTyphoonStrength(
@@ -860,16 +845,14 @@ async function buildCalambaRainImpactPayload() {
         averageRainfallMmPerHour,
         weatherSignal.thunderstormProbabilityPct,
       );
-      const centroid = centroidFromCoordinates(extractGeometryCoordinates(feature?.geometry)) || CALAMBA_CENTER;
       const nameKey = canonicalBarangayKey(barangayName);
-      const fetchedTemperature = temperatureByBarangay.get(nameKey);
-      const temperatureCelsius = Number.isFinite(Number(fetchedTemperature))
-        ? Number(fetchedTemperature)
-        : adjustedTemperatureCelsius(
-          Number(weatherSignal.airTemperatureCelsius || 30),
-          Number(centroid.latitude),
-          Number(centroid.longitude),
-        );
+      const climateSensor = climateByBarangay.get(nameKey);
+      const temperatureCelsius = Number.isFinite(climateSensor?.temperatureCelsius)
+        ? climateSensor.temperatureCelsius
+        : null;
+      const humidityPercentage = Number.isFinite(climateSensor?.humidityPercentage)
+        ? climateSensor.humidityPercentage
+        : null;
 
       return {
         barangayName,
@@ -880,6 +863,8 @@ async function buildCalambaRainImpactPayload() {
         rainColor,
         stormRisk,
         temperatureCelsius,
+        humidityPercentage,
+        climateSensorId: climateSensor?.id || null,
         thunderstormProbabilityPct: weatherSignal.thunderstormProbabilityPct,
         typhoonForecastImpact,
       };
@@ -909,6 +894,8 @@ async function buildCalambaRainImpactPayload() {
           rain_color: impact.rainColor,
           storm_risk: impact.stormRisk,
           temperature_celsius: impact.temperatureCelsius,
+          humidity_percentage: impact.humidityPercentage,
+          climate_sensor_id: impact.climateSensorId,
           thunderstorm_probability_pct: impact.thunderstormProbabilityPct,
           typhoon_forecast_impact: impact.typhoonForecastImpact,
         },
@@ -928,9 +915,11 @@ async function buildCalambaRainImpactPayload() {
     updatedAt: new Date().toISOString(),
     pollIntervalMs: RAIN_IMPACT_CACHE_TTL_MS,
     weatherSource: weatherSignal.source,
+    climateSource: hardwareSnapshot.source,
     cityWeather: {
       rainIntensityMmPerHour: weatherSignal.rainIntensityMmPerHour,
-      airTemperatureCelsius: Number(weatherSignal.airTemperatureCelsius || 30),
+      airTemperatureCelsius: hardwareSnapshot.averageTemperatureCelsius,
+      relativeHumidityPct: hardwareSnapshot.averageHumidityPercentage,
       thunderstormProbabilityPct: weatherSignal.thunderstormProbabilityPct,
       windSpeedKph: weatherSignal.windSpeedKph,
       windDirectionDegrees: weatherSignal.windDirectionDegrees,

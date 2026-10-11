@@ -288,12 +288,29 @@ function buildLeafletHtml(
         evacuationAreas: true,
         userMarker: true,
         route: false,
-        floodHazard: false,
+        floodHazard: true,
         rainOverlay: false,
         temperatureOverlay: false,
         humidityOverlay: false,
         windOverlay: false
       }, data.layerVisibility || {});
+      function normalizeDataLayerVisibility() {
+        var activeKey = Boolean(visibility.rainOverlay)
+          ? 'rainOverlay'
+          : Boolean(visibility.temperatureOverlay)
+            ? 'temperatureOverlay'
+            : Boolean(visibility.humidityOverlay)
+              ? 'humidityOverlay'
+              : Boolean(visibility.windOverlay)
+                ? 'windOverlay'
+                : null;
+        visibility.rainOverlay = activeKey === 'rainOverlay';
+        visibility.temperatureOverlay = activeKey === 'temperatureOverlay';
+        visibility.humidityOverlay = activeKey === 'humidityOverlay';
+        visibility.windOverlay = activeKey === 'windOverlay';
+        visibility.floodHazard = activeKey === null;
+      }
+      normalizeDataLayerVisibility();
       var calambaCenter = [${CALAMBA_NOMINATIM.latitude}, ${CALAMBA_NOMINATIM.longitude}];
       var calambaBounds = L.latLngBounds([
         [${CALAMBA_NOMINATIM.bounds[0][0]}, ${CALAMBA_NOMINATIM.bounds[0][1]}],
@@ -404,9 +421,9 @@ function buildLeafletHtml(
         var rainSection = '';
         if (rainOn) {
           if (Boolean(visibility.temperatureOverlay)) {
-            rainSection = '<div class="legend-section-label"><span class="legend-section-dot" style="background:#fb7185;"></span>Temperature (\u00b0C)</div><div style="height:10px;border-radius:999px;margin:6px 0 3px;background:linear-gradient(90deg,#313695,#4575b4,#74add1,#fee090,#f46d43,#a50026);"></div><div style="display:flex;justify-content:space-between;font-size:9px;"><span>16</span><span>22</span><span>26</span><span>30</span><span>34</span><span>40</span></div>';
+            rainSection = '<div class="legend-section-label"><span class="legend-section-dot" style="background:#fb7185;"></span>Temperature (\u00b0C)</div><div style="height:10px;border-radius:999px;margin:6px 0 3px;background:linear-gradient(90deg,#313695,#4575b4,#74add1,#fee090,#f46d43,#a50026);"></div><div style="display:flex;justify-content:space-between;font-size:9px;"><span>16</span><span>22</span><span>26</span><span>30</span><span>34</span><span>40</span></div><div class="updated">Source: hardware sensors</div>';
           } else if (Boolean(visibility.humidityOverlay)) {
-            rainSection = '<div class="legend-section-label"><span class="legend-section-dot" style="background:#38bdf8;"></span>Relative humidity (%)</div><div style="height:10px;border-radius:999px;margin:6px 0 3px;background:linear-gradient(90deg,#78350f,#f59e0b,#facc15,#22d3ee,#2563eb,#312e81);"></div><div style="display:flex;justify-content:space-between;font-size:9px;"><span>0</span><span>30</span><span>50</span><span>70</span><span>85</span><span>100</span></div>';
+            rainSection = '<div class="legend-section-label"><span class="legend-section-dot" style="background:#38bdf8;"></span>Relative humidity (%)</div><div style="height:10px;border-radius:999px;margin:6px 0 3px;background:linear-gradient(90deg,#78350f,#f59e0b,#facc15,#22d3ee,#2563eb,#312e81);"></div><div style="display:flex;justify-content:space-between;font-size:9px;"><span>0</span><span>30</span><span>50</span><span>70</span><span>85</span><span>100</span></div><div class="updated">Source: hardware sensors</div>';
           } else {
             rainSection =
             '<div class="legend-section-label" style="margin-top:' + ((floodOn || weatherOn) ? '6px' : '0') + '">' +
@@ -524,9 +541,12 @@ function buildLeafletHtml(
 
       var boundaryLayer = L.layerGroup();
       var floodHazardLayer = L.layerGroup();
+      var hardwareClimateLayer = L.layerGroup();
       var areaLayer = L.layerGroup();
       var userLayer = L.layerGroup();
       var routeLayer = L.layerGroup();
+      var hardwareClimateByBarangay = {};
+      var hardwareClimateGeoJson = null;
 
       var cityWindSpeedKph=8,cityWindDirectionDegrees=225;
       var windCanvas = null;
@@ -583,9 +603,6 @@ function buildLeafletHtml(
       }
 
       function pointScalarValue(point) {
-        var metric = activeScalarMetric();
-        if (metric === 'temperature') return Number(point && point.temperatureCelsius);
-        if (metric === 'humidity') return Number(point && point.relativeHumidityPct);
         return Math.max(0, Number(point && point.rainAmountMm) || 0);
       }
 
@@ -610,7 +627,7 @@ function buildLeafletHtml(
 
       function rainAmountAt(lat, lon) {
         var frame = activeForecastFrame();
-        if (!frame || !Array.isArray(frame.points) || frame.points.length === 0) return activeScalarMetric() === 'rain' ? rainAmountMm : NaN;
+        if (!frame || !Array.isArray(frame.points) || frame.points.length === 0) return rainAmountMm;
         var bounds = frame.bounds || {};
         var rows = Math.max(2, Number(frame.rows) || 2);
         var cols = Math.max(2, Number(frame.cols) || 2);
@@ -630,7 +647,7 @@ function buildLeafletHtml(
       function renderRainAccumulationSurface() {
         if (!rainCtx || !rainCanvas) return;
         rainCtx.clearRect(0, 0, rainCanvas.width, rainCanvas.height);
-        if (!isScalarWeatherVisible()) return;
+        if (!Boolean(visibility.rainOverlay)) return;
         var scale = 4;
         var width = Math.max(1, Math.ceil(rainCanvas.width / scale));
         var height = Math.max(1, Math.ceil(rainCanvas.height / scale));
@@ -689,13 +706,13 @@ function buildLeafletHtml(
 
       function updateForecastTimebar(){
         if(!forecastTimebar)return;
-        forecastTimebar.style.display=Boolean(data.showForecastTimeline)&&(Boolean(visibility.windOverlay)||isScalarWeatherVisible())?'block':'none';
+        forecastTimebar.style.display=Boolean(data.showForecastTimeline)&&(Boolean(visibility.windOverlay)||Boolean(visibility.rainOverlay))?'block':'none';
         var frame=activeForecastFrame();
         var range=forecastTimebar.querySelector('.forecast-time-range');
         if(range)range.value=String(Number(String(weatherTimeframe).slice(5))||0);
         forecastTimebar.querySelectorAll('.forecast-time-label').forEach(function(label){var dayOffset=Number(label.dataset.dayOffset||0);var dayFrame=weatherTimelineData&&weatherTimelineData.frames?weatherTimelineData.frames['hour_'+(dayOffset*24)]:null;label.innerHTML=dayFrame?String(dayFrame.label)+'<span class="forecast-time-date">'+String(dayFrame.dateLabel)+'</span>':'Day '+(dayOffset+1);});
         var summary=forecastTimebar.querySelector('.forecast-time-summary');
-        if(summary)summary.textContent=!frame?'Loading Open-Meteo forecast...':Boolean(visibility.temperatureOverlay)?String(frame.label)+' '+String(frame.dateLabel||'')+' '+String(frame.hourLabel||'')+' - Temperature '+Number(frame.averageTemperatureCelsius||0).toFixed(1)+'\u00b0C':Boolean(visibility.humidityOverlay)?String(frame.label)+' '+String(frame.dateLabel||'')+' '+String(frame.hourLabel||'')+' - Relative humidity '+Number(frame.averageRelativeHumidityPct||0).toFixed(0)+'%':Boolean(visibility.rainOverlay)?String(frame.label)+' '+String(frame.dateLabel||'')+' '+String(frame.hourLabel||'')+' - Rain '+Number(frame.averageRainAmountMm||0).toFixed(1)+' mm':String(frame.label)+' '+String(frame.dateLabel||'')+' '+String(frame.hourLabel||'')+' - Wind '+Number(frame.averageSpeedKph||0).toFixed(0)+' km/h';
+        if(summary)summary.textContent=!frame?'Loading Open-Meteo forecast...':Boolean(visibility.rainOverlay)?String(frame.label)+' '+String(frame.dateLabel||'')+' '+String(frame.hourLabel||'')+' - Rain '+Number(frame.averageRainAmountMm||0).toFixed(1)+' mm':String(frame.label)+' '+String(frame.dateLabel||'')+' '+String(frame.hourLabel||'')+' - Wind '+Number(frame.averageSpeedKph||0).toFixed(0)+' km/h';
       }
       function applyWeatherTimeframe(key){var frame=weatherTimelineData&&weatherTimelineData.frames?weatherTimelineData.frames[key]:null;if(!frame)return;weatherTimeframe=key;var point=frame.points&&frame.points[0];if(point){rainAmountMm=Number(point.rainAmountMm)||0;cityWindSpeedKph=Number(point.speedKph)||0;cityWindDirectionDegrees=Number(point.directionDegrees)||225;seedWindParticles();}updateForecastTimebar();updateRainEffectVisibility();updateWindEffectVisibility();}
       function ensureForecastTimebar(){
@@ -719,10 +736,18 @@ function buildLeafletHtml(
         rainCanvas=document.createElement('canvas');rainCanvas.className='map-rain-canvas';pane.appendChild(rainCanvas);rainCtx=rainCanvas.getContext('2d');refreshRainCanvasSize();
       }
       function refreshRainCanvasSize(){if(!rainCanvas)return;var size=map.getSize();rainCanvas.width=Math.max(1,Number(size.x)||1);rainCanvas.height=Math.max(1,Number(size.y)||1);L.DomUtil.setPosition(rainCanvas,map.containerPointToLayerPoint([0,0]));renderRainAccumulationSurface();}
-      function updateRainEffectVisibility(){ensureRainCanvas();if(!rainCanvas)return;var enabled=isScalarWeatherVisible();rainCanvas.style.display=enabled?'block':'none';if(!enabled){if(rainCtx)rainCtx.clearRect(0,0,rainCanvas.width,rainCanvas.height);return;}renderRainAccumulationSurface();}
+      function renderHardwareClimateLayer(){
+        hardwareClimateLayer.clearLayers();
+        if(!Boolean(visibility.temperatureOverlay)&&!Boolean(visibility.humidityOverlay))return;
+        if(!hardwareClimateGeoJson||!Array.isArray(hardwareClimateGeoJson.features))return;
+        var metric=Boolean(visibility.temperatureOverlay)?'temperature':'humidity';
+        var features=hardwareClimateGeoJson.features.filter(function(feature){var props=feature&&feature.properties?feature.properties:{};var key=normalizeHardwareBarangayName(props.barangay_name||props.barangayName||props.name);var reading=hardwareClimateByBarangay[key];var value=metric==='temperature'?reading&&reading.temperatureCelsius:reading&&reading.humidityPercentage;return value!=null&&Number.isFinite(Number(value));});
+        L.geoJSON({type:'FeatureCollection',features:features},{interactive:false,style:function(feature){var props=feature&&feature.properties?feature.properties:{};var key=normalizeHardwareBarangayName(props.barangay_name||props.barangayName||props.name);var reading=hardwareClimateByBarangay[key]||{};var value=metric==='temperature'?reading.temperatureCelsius:reading.humidityPercentage;var color=scalarColor(Number(value));return{color:'transparent',weight:0,fill:true,fillColor:'rgb('+color[0]+','+color[1]+','+color[2]+')',fillOpacity:.58};},onEachFeature:function(_feature,layer){if(typeof layer.bringToBack==='function')layer.bringToBack();}}).addTo(hardwareClimateLayer);
+      }
+      function updateRainEffectVisibility(){ensureRainCanvas();if(!rainCanvas)return;var enabled=Boolean(visibility.rainOverlay);rainCanvas.style.display=enabled?'block':'none';if(!enabled){if(rainCtx)rainCtx.clearRect(0,0,rainCanvas.width,rainCanvas.height);return;}renderRainAccumulationSurface();}
       function loadRainImpact(){
         if(!data.rainImpactUrl)return;
-        fetch(data.rainImpactUrl).then(function(response){return response.ok?response.json():null;}).then(function(payload){var weather=payload&&payload.cityWeather?payload.cityWeather:{};var amount=Number(weather.rainIntensityMmPerHour);if(Number.isFinite(amount)&&!weatherTimelineData){rainAmountMm=amount;updateRainEffectVisibility();}}).catch(function(){});
+        fetch(data.rainImpactUrl).then(function(response){return response.ok?response.json():null;}).then(function(payload){var weather=payload&&payload.cityWeather?payload.cityWeather:{};var amount=Number(weather.rainIntensityMmPerHour);if(Number.isFinite(amount)&&!weatherTimelineData)rainAmountMm=amount;hardwareClimateByBarangay={};(Array.isArray(payload&&payload.barangayImpacts)?payload.barangayImpacts:[]).forEach(function(item){var key=normalizeHardwareBarangayName(item&&item.barangayName);if(key)hardwareClimateByBarangay[key]={temperatureCelsius:item.temperatureCelsius,humidityPercentage:item.humidityPercentage};});hardwareClimateGeoJson=payload&&payload.barangayOverlay&&Array.isArray(payload.barangayOverlay.features)?payload.barangayOverlay:null;renderHardwareClimateLayer();updateRainEffectVisibility();}).catch(function(){});
       }
       var windColorStops = [
         { value: 0, color: [82, 111, 208, 218] }, { value: 5, color: [45, 174, 224, 224] },
@@ -1074,7 +1099,12 @@ function buildLeafletHtml(
           style: function(feature) {
             var props = (feature && feature.properties) ? feature.properties : {};
             var name = props.barangay_name || props.barangayName || props.name || 'Barangay';
-            return hardwareFloodBoundaryStyle(name, false);
+            var style = hardwareFloodBoundaryStyle(name, false);
+            if (Boolean(visibility.temperatureOverlay) || Boolean(visibility.humidityOverlay)) {
+              style.fill = false;
+              style.fillOpacity = 0;
+            }
+            return style;
           },
           interactive: true,
           onEachFeature: function(feature, layer) {
@@ -1117,11 +1147,17 @@ function buildLeafletHtml(
       }
 
       function applyLayerVisibility() {
+        var weatherLayerVisible = Boolean(
+          visibility.rainOverlay || visibility.temperatureOverlay || visibility.humidityOverlay || visibility.windOverlay
+        );
         setLayerVisible(boundaryLayer, Boolean(visibility.boundary));
         setLayerVisible(areaLayer, Boolean(visibility.evacuationAreas));
         setLayerVisible(userLayer, Boolean(visibility.userMarker));
         setLayerVisible(routeLayer, Boolean(visibility.route));
-        setLayerVisible(floodHazardLayer, Boolean(visibility.floodHazard));
+        setLayerVisible(floodHazardLayer, Boolean(visibility.floodHazard) && !weatherLayerVisible);
+        if (barangayGeoJsonData) renderFloodHazardLayer(barangayGeoJsonData);
+        setLayerVisible(hardwareClimateLayer, Boolean(visibility.temperatureOverlay) || Boolean(visibility.humidityOverlay));
+        renderHardwareClimateLayer();
         updateRainEffectVisibility();
         updateWindEffectVisibility();
         applyIronMapTint();
@@ -1156,20 +1192,16 @@ function buildLeafletHtml(
             var checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.checked = Boolean(visibility[row[0]]);
+            checkbox.disabled = row[0] === 'floodHazard';
             checkbox.addEventListener('change', function() {
               visibility[row[0]] = checkbox.checked;
-              if ((row[0] === 'rainOverlay' || row[0] === 'temperatureOverlay' || row[0] === 'humidityOverlay') && checkbox.checked) {
-                visibility.floodHazard = false;
+              if ((row[0] === 'rainOverlay' || row[0] === 'temperatureOverlay' || row[0] === 'humidityOverlay' || row[0] === 'windOverlay') && checkbox.checked) {
                 visibility.rainOverlay = row[0] === 'rainOverlay';
                 visibility.temperatureOverlay = row[0] === 'temperatureOverlay';
                 visibility.humidityOverlay = row[0] === 'humidityOverlay';
+                visibility.windOverlay = row[0] === 'windOverlay';
               }
-              if (row[0] === 'floodHazard' && checkbox.checked) {
-                visibility.rainOverlay = false;
-                visibility.temperatureOverlay = false;
-                visibility.humidityOverlay = false;
-                refreshHardwareFloodLevels();
-              }
+              normalizeDataLayerVisibility();
               panel.querySelectorAll('input').forEach(function(input, index) {
                 input.checked = Boolean(visibility[rows[index][0]]);
               });
@@ -1330,7 +1362,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     evacuationAreas: true,
     userMarker: true,
     route: false,
-    floodHazard: false,
+    floodHazard: true,
     rainOverlay: false,
     temperatureOverlay: false,
     humidityOverlay: false,
@@ -1656,7 +1688,11 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
         visibility?: Partial<UserMapLayerVisibility>;
       };
       if (payload.type === 'layer-visibility' && payload.visibility) {
-        layerVisibilityRef.current = { ...layerVisibilityRef.current, ...payload.visibility };
+        const nextVisibility = { ...layerVisibilityRef.current, ...payload.visibility };
+        nextVisibility.floodHazard = !Boolean(
+          nextVisibility.rainOverlay || nextVisibility.temperatureOverlay || nextVisibility.humidityOverlay || nextVisibility.windOverlay
+        );
+        layerVisibilityRef.current = nextVisibility;
         return;
       }
     } catch {
