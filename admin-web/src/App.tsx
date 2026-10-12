@@ -9,9 +9,11 @@ import MonitoringPage from './pages/MonitoringPage';
 import AdminPage from './pages/AdminPage';
 import UsersPage from './pages/UsersPage';
 import PostUpdatesPage from './pages/PostUpdatesPage';
+import HistoryPage from './pages/HistoryPage';
 import BarangayAccountsPage from './pages/BarangayAccountsPage';
 import RescuerAccountsPage from './pages/RescuerAccountsPage';
 import RescuerDashboardPage from './pages/RescuerDashboardPage';
+import RescuerHistoryPage from './pages/RescuerHistoryPage';
 import RescuerAssignmentModal from './components/RescuerAssignmentModal';
 import RescuerFloodMonitoringPage from './pages/RescuerFloodMonitoringPage';
 import RescuerAccountPage from './pages/RescuerAccountPage';
@@ -29,9 +31,10 @@ type View =
   | 'monitoring'
   | 'flood-monitoring'
   | 'evacuation-areas'
-  | 'post-updates';
+  | 'post-updates'
+  | 'history';
 
-type RescuerView = 'incidents' | 'flood-monitoring' | 'account';
+type RescuerView = 'incidents' | 'history' | 'flood-monitoring' | 'account';
 
 const BarangayPortal = lazy(() => import('./barangay/BarangayPortal'));
 
@@ -194,14 +197,17 @@ function App() {
       onLogout,
       onAuthError: onLogout,
       onOpenIncidents: () => setRescuerView('incidents'),
+      onOpenHistory: () => setRescuerView('history'),
       onOpenFloodMonitoring: () => setRescuerView('flood-monitoring'),
       onOpenAccount: () => setRescuerView('account'),
     };
     const rescuerPage = rescuerView === 'flood-monitoring'
       ? <RescuerFloodMonitoringPage {...rescuerProps} />
-      : rescuerView === 'account'
-        ? <RescuerAccountPage {...rescuerProps} />
-        : <RescuerDashboardPage {...rescuerProps} />;
+      : rescuerView === 'history'
+        ? <RescuerHistoryPage {...rescuerProps} />
+        : rescuerView === 'account'
+          ? <RescuerAccountPage {...rescuerProps} />
+          : <RescuerDashboardPage {...rescuerProps} />;
     return (
       <>
         <RescuerAssignmentModal responderRole={role} onAuthError={onLogout} onOpenIncidents={() => setRescuerView('incidents')} />
@@ -226,6 +232,7 @@ function App() {
     onOpenFloodMonitoring: () => openView('flood-monitoring'),
     onOpenEvacuationAreas: () => openView('evacuation-areas'),
     onOpenPostUpdates: () => openView('post-updates'),
+    onOpenHistory: () => openView('history'),
     onOpenBackupRequest: setBackupNoticeReportId,
     onAuthError: onLogout,
   };
@@ -239,6 +246,7 @@ function App() {
   if (view === 'monitoring') currentPage = <MonitoringPage key={backupReportId ?? 'monitoring'} {...shellProps} backupReportId={backupReportId} />;
   if (view === 'flood-monitoring') currentPage = <FloodMonitoringPage {...shellProps} />;
   if (view === 'post-updates') currentPage = <PostUpdatesPage {...shellProps} />;
+  if (view === 'history') currentPage = <HistoryPage {...shellProps} />;
 
   const activeWaterUpdateNotice = waterUpdateNotices[0];
   return (

@@ -8,6 +8,7 @@ type Props = {
   onLogout: () => void;
   onAuthError: () => void;
   onOpenIncidents: () => void;
+  onOpenHistory: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenAccount: () => void;
 };

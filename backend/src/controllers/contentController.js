@@ -6,6 +6,10 @@ const {
 const { syncFloodSensorAlerts } = require('../services/floodSensorAlertService');
 const { lockEvacuationCapacity } = require('../services/evacuationRoutingService');
 
+const ALERT_CATEGORIES = new Set(['typhoon', 'flood']);
+const FLOOD_LEVELS = new Set(['low', 'medium', 'high']);
+const TYPHOON_SIGNALS = new Set(['signal_1', 'signal_2', 'signal_3', 'signal_4', 'signal_5']);
+
 async function resolveCanonicalBarangayName(rawBarangay, latitude, longitude) {
   const result = await pool.query(
     `SELECT barangay_name, centroid_lat, centroid_lon
@@ -57,11 +61,26 @@ async function createAlert(req, res) {
     return res.status(400).json({ message: 'Title and body are required.' });
   }
 
+  const normalizedCategory = String(category || '').trim().toLowerCase();
+  const normalizedSeverity = String(severity || '').trim().toLowerCase();
+  if (!ALERT_CATEGORIES.has(normalizedCategory)) {
+    return res.status(400).json({ message: 'Alert category must be Typhoon or Flood.' });
+  }
+  const validLevel = normalizedCategory === 'typhoon'
+    ? TYPHOON_SIGNALS.has(normalizedSeverity)
+    : FLOOD_LEVELS.has(normalizedSeverity);
+  if (!validLevel) {
+    const expected = normalizedCategory === 'typhoon'
+      ? 'Signal No. 1 to Signal No. 5'
+      : 'Low, Medium, or High';
+    return res.status(400).json({ message: `${normalizedCategory === 'typhoon' ? 'Typhoon' : 'Flood'} level must be ${expected}.` });
+  }
+
   const result = await pool.query(
     `INSERT INTO alerts (title, body, category, severity, posted_by)
      VALUES ($1, $2, $3, $4, $5)
      RETURNING id, title, body, category, severity, created_at`,
-    [title, body, category || 'general', severity || 'medium', req.user.userId],
+    [title, body, normalizedCategory, normalizedSeverity, req.user.userId],
   );
 
   return res.status(201).json(result.rows[0]);

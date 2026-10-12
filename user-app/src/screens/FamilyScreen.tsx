@@ -5,21 +5,28 @@ import { DashboardHeader } from '../components/DashboardHeader';
 import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { AppAccount, getFamilyAccounts, inviteFamilyById } from '../services/appAccount';
+import { api } from '../services/api';
 import { useResponsiveLayout } from '../utils/responsive';
 
 type FamilyStatus = 'Safe' | 'No Response';
 
 type FamilyMember = {
+  invitationId: number;
   id: string;
   firstName: string;
   lastName: string;
   status: FamilyStatus;
+  invitationStatus: 'pending' | 'accepted';
+  direction: 'incoming' | 'outgoing';
   updatedAt: string;
 };
 
-type Props = {
-  appUserId: string;
+type FamilyInvitation = {
+  id: number;
+  direction: 'incoming' | 'outgoing';
+  status: 'pending' | 'accepted';
+  createdAt: string;
+  member: { accountId: string; firstName: string; lastName: string };
 };
 
 function fmtTime(date = new Date()) {
@@ -29,32 +36,34 @@ function fmtTime(date = new Date()) {
   return `${m} ${d}, ${t}`;
 }
 
-export default function FamilyScreen({ appUserId }: Props) {
+export default function FamilyScreen() {
   const { isSmall, horizontalPadding } = useResponsiveLayout();
   const [myStatus, setMyStatus] = useState<FamilyStatus>('Safe');
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [inviteId, setInviteId] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const mapMembers = useCallback((accounts: AppAccount[]): FamilyMember[] => {
-    return accounts.map((account) => ({
-      id: account.appUserId,
-      firstName: account.profile.firstName,
-      lastName: account.profile.lastName,
+  const mapMembers = useCallback((invitations: FamilyInvitation[]): FamilyMember[] => {
+    return invitations.map((invitation) => ({
+      invitationId: invitation.id,
+      id: invitation.member.accountId,
+      firstName: invitation.member.firstName,
+      lastName: invitation.member.lastName,
       status: 'No Response',
-      updatedAt: fmtTime(),
+      invitationStatus: invitation.status,
+      direction: invitation.direction,
+      updatedAt: fmtTime(new Date(invitation.createdAt)),
     }));
   }, []);
 
   const reloadMembers = useCallback(async () => {
-    if (!appUserId) {
-      setMembers([]);
-      return;
-    }
-
-    const family = await getFamilyAccounts(appUserId);
-    setMembers(mapMembers(family));
-  }, [appUserId, mapMembers]);
+    const response = await api.get('/family');
+    const outgoing = (response.data?.outgoing || []) as FamilyInvitation[];
+    const incoming = (response.data?.incoming || []) as FamilyInvitation[];
+    setMembers(mapMembers([...incoming, ...outgoing]));
+  }, [mapMembers]);
 
   useFocusEffect(
     useCallback(() => {
@@ -63,8 +72,9 @@ export default function FamilyScreen({ appUserId }: Props) {
   );
 
   const counts = useMemo(() => {
-    const safe = members.filter((m) => m.status === 'Safe').length + (myStatus === 'Safe' ? 1 : 0);
-    const nr = members.filter((m) => m.status === 'No Response').length + (myStatus === 'No Response' ? 1 : 0);
+    const accepted = members.filter((member) => member.invitationStatus === 'accepted');
+    const safe = accepted.filter((m) => m.status === 'Safe').length + (myStatus === 'Safe' ? 1 : 0);
+    const nr = accepted.filter((m) => m.status === 'No Response').length + (myStatus === 'No Response' ? 1 : 0);
     return { safe, nr };
   }, [members, myStatus]);
 
@@ -74,21 +84,31 @@ export default function FamilyScreen({ appUserId }: Props) {
       return;
     }
 
-    const result = await inviteFamilyById(appUserId, inviteId.trim());
-
-    if (!result.ok) {
-      const messages = {
-        'not-found': 'Family account ID not found in this app.',
-        self: 'You cannot invite your own ID.',
-        exists: 'Family member already invited.',
-      } as const;
-      setError(messages[result.reason]);
-      return;
-    }
-
+    setSubmitting(true);
     setError(null);
-    setInviteId('');
-    await reloadMembers();
+    setNotice(null);
+    try {
+      const response = await api.post('/family/invitations', { accountId: inviteId.trim().toUpperCase() });
+      setInviteId('');
+      setNotice(response.data?.message || 'Family invitation sent.');
+      await reloadMembers();
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.message || 'Unable to send the family invitation.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function respondToInvitation(invitationId: number, status: 'accepted' | 'declined') {
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await api.patch(`/family/invitations/${invitationId}`, { status });
+      setNotice(response.data?.message || `Invitation ${status}.`);
+      await reloadMembers();
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.message || 'Unable to update the invitation.');
+    }
   }
 
   function fullName(firstName: string, lastName: string) {
@@ -158,14 +178,15 @@ export default function FamilyScreen({ appUserId }: Props) {
             />
           </View>
           {error ? <Text style={st.errorText}>{error}</Text> : null}
-          <TouchableOpacity style={st.inviteBtn} onPress={addMember}>
-            <Text style={st.inviteBtnText}>Invite Member</Text>
+          {notice ? <Text style={st.noticeText}>{notice}</Text> : null}
+          <TouchableOpacity style={[st.inviteBtn, submitting && st.disabledBtn]} onPress={addMember} disabled={submitting}>
+            <Text style={st.inviteBtnText}>{submitting ? 'Sending...' : 'Invite Member'}</Text>
           </TouchableOpacity>
         </View>
 
         {/* Members */}
         {members.map((m) => (
-          <View key={m.id} style={st.card}>
+          <View key={`${m.direction}-${m.invitationId}`} style={st.card}>
             <View style={[st.memberRow, isSmall && st.wrapOnSmall]}>
               <View style={st.memberIcon}>
                 <MaterialCommunityIcons name="account-outline" size={20} color="#64748b" />
@@ -174,17 +195,27 @@ export default function FamilyScreen({ appUserId }: Props) {
                 <Text style={st.memberName}>{fullName(m.firstName, m.lastName)}</Text>
                 <Text style={st.memberRelation}>Account ID: {m.id}</Text>
               </View>
-              <View style={[st.badge, { backgroundColor: m.status === 'Safe' ? '#dcfce7' : '#fef3c7' }]}>
+              <View style={[st.badge, { backgroundColor: m.invitationStatus === 'accepted' ? '#fef3c7' : m.direction === 'outgoing' ? '#e0f2fe' : '#ede9fe' }]}>
                 <MaterialCommunityIcons
-                  name={m.status === 'Safe' ? 'shield-check' : 'clock-alert-outline'}
+                  name={m.invitationStatus === 'accepted' ? 'clock-alert-outline' : m.direction === 'outgoing' ? 'send-check-outline' : 'account-clock-outline'}
                   size={13}
-                  color={m.status === 'Safe' ? '#15803d' : '#b45309'}
+                  color={m.invitationStatus === 'accepted' ? '#b45309' : m.direction === 'outgoing' ? '#0369a1' : '#6d28d9'}
                 />
-                <Text style={[st.badgeText, { color: m.status === 'Safe' ? '#166534' : '#b45309' }]}>
-                  {m.status}
+                <Text style={[st.badgeText, { color: m.invitationStatus === 'accepted' ? '#b45309' : m.direction === 'outgoing' ? '#0369a1' : '#6d28d9' }]}>
+                  {m.invitationStatus === 'accepted' ? m.status : m.direction === 'outgoing' ? 'Invitation Sent' : 'Invitation Received'}
                 </Text>
               </View>
             </View>
+            {m.invitationStatus === 'pending' && m.direction === 'incoming' ? (
+              <View style={st.invitationActions}>
+                <TouchableOpacity style={[st.responseBtn, st.declineBtn]} onPress={() => respondToInvitation(m.invitationId, 'declined')}>
+                  <Text style={st.declineBtnText}>Decline</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[st.responseBtn, st.acceptBtn]} onPress={() => respondToInvitation(m.invitationId, 'accepted')}>
+                  <Text style={st.acceptBtnText}>Accept</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
             <View style={[st.memberFooter, isSmall && st.wrapOnSmall]}>
               <Text style={st.memberMeta}>Updated: {m.updatedAt}</Text>
               <Text style={st.memberMeta}>Family status is view only</Text>
@@ -249,7 +280,9 @@ const st = StyleSheet.create({
     marginTop: 10,
   },
   inviteBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  disabledBtn: { opacity: 0.6 },
   errorText: { color: '#dc2626', fontSize: 12, marginTop: 8 },
+  noticeText: { color: '#15803d', fontSize: 12, fontWeight: '600', marginTop: 8 },
 
   memberRow: { flexDirection: 'row', alignItems: 'flex-start' },
   memberIcon: { width: 32, height: 32, borderRadius: 16, backgroundColor: editorial.accentSoft, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
@@ -258,4 +291,10 @@ const st = StyleSheet.create({
   memberFooter: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
   wrapOnSmall: { flexWrap: 'wrap', gap: 8 },
   memberMeta: { color: '#656565', fontSize: 11 },
+  invitationActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 10 },
+  responseBtn: { borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 },
+  declineBtn: { backgroundColor: '#f1f5f9' },
+  acceptBtn: { backgroundColor: '#16a34a' },
+  declineBtnText: { color: '#475569', fontSize: 12, fontWeight: '700' },
+  acceptBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
 });

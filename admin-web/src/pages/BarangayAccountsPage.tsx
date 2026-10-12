@@ -17,6 +17,7 @@ type Props = {
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationAreas: () => void;
   onOpenPostUpdates: () => void;
+  onOpenHistory: () => void;
   onAuthError: () => void;
 };
 
@@ -44,7 +45,7 @@ type ApiError = { response?: { status?: number; data?: { message?: string } } };
 
 export default function BarangayAccountsPage({
   onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers,
-  onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationAreas, onOpenPostUpdates, onAuthError,
+  onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationAreas, onOpenPostUpdates, onOpenHistory, onAuthError,
 }: Props) {
   const [accounts, setAccounts] = useState<BarangayAccount[]>([]);
   const [archivedAccounts, setArchivedAccounts] = useState<BarangayAccount[]>([]);
@@ -202,7 +203,7 @@ export default function BarangayAccountsPage({
 
   const shellProps = {
     onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers,
-    onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationAreas, onOpenPostUpdates,
+    onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationAreas, onOpenPostUpdates, onOpenHistory,
   };
 
   async function handleCreated(role: AccountRole) {

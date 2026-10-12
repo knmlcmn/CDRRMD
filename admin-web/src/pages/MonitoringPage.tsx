@@ -17,6 +17,7 @@ type Props = {
   onOpenRescuers: () => void;
   onOpenEvacuationAreas: () => void;
   onOpenPostUpdates: () => void;
+  onOpenHistory: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenBackupRequest: (reportId: number) => void;
   onAuthError: () => void;
@@ -113,7 +114,7 @@ function preserveUnchangedArray<T>(current: T[], next: T[], ignoredFields = NON_
   });
 }
 
-export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenEvacuationAreas, onOpenPostUpdates, onOpenFloodMonitoring, onOpenBackupRequest, onAuthError, backupReportId = null }: Props) {
+export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenEvacuationAreas, onOpenPostUpdates, onOpenHistory, onOpenFloodMonitoring, onOpenBackupRequest, onAuthError, backupReportId = null }: Props) {
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationAreaItem[]>([]);
   const [reports, setReports] = useState<MonitoringReport[]>([]);
   const [backupRequests, setBackupRequests] = useState<BackupRequest[]>([]);
@@ -722,6 +723,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationAreas={onOpenEvacuationAreas}
       onOpenPostUpdates={onOpenPostUpdates}
+      onOpenHistory={onOpenHistory}
       actions={<><button type="button" onClick={() => setShowIncidentHistory(true)} className={d.btn.secondary}>Incident History</button><button onClick={onOpenEvacuationAreas} className={d.monitoring.actionEvac}>Evacuation Readiness</button></>}
     >
       <div className={`${d.monitoring.root} admin-incident-monitoring-root`}>

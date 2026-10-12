@@ -16,6 +16,7 @@ type Props = {
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationCenter: () => void;
   onOpenAccount: () => void;
+  onOpenHistory: () => void;
   onAuthError: () => void;
   focusReportId?: number | null;
 };
@@ -108,7 +109,7 @@ function distanceSquared(a: Coordinate, b: Coordinate) {
   return dLat * dLat + dLon * dLon;
 }
 
-export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard, onOpenFloodMonitoring, onOpenEvacuationCenter, onOpenAccount, onAuthError, focusReportId = null }: Props) {
+export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard, onOpenFloodMonitoring, onOpenEvacuationCenter, onOpenAccount, onOpenHistory, onAuthError, focusReportId = null }: Props) {
   const [reports, setReports] = useState<IncidentReport[]>([]);
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationAreaItem[]>([]);
   const [barangayRescuers, setBarangayRescuers] = useState<BarangayRescuerLocation[]>([]);
@@ -716,6 +717,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationCenter={onOpenEvacuationCenter}
       onOpenAccount={onOpenAccount}
+      onOpenHistory={onOpenHistory}
     >
       <div className={`${d.monitoring.root} incident-monitoring-root`}>
         {error ? <div className={d.page.error}>{error}</div> : null}

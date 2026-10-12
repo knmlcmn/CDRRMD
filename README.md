@@ -74,7 +74,7 @@ Create the Vercel projects from this same repository and set each project's
 
 | Vercel project | Root Directory | Required environment variables |
 | --- | --- | --- |
-| API | `backend` | `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `CORS_ORIGINS`, `NODE_ENV=production` |
+| API | `backend` | `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `OTP_SECRET`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, `CORS_ORIGINS`, `NODE_ENV=production` |
 | Unified staff portal | `admin-web` | `VITE_API_BASE_URL=https://<api-project>.vercel.app/api` |
 
 `DATABASE_URL` must be a hosted PostgreSQL connection string (for example from
@@ -92,6 +92,13 @@ https://cdrrmd-staff.vercel.app,https://cdrrmd-user.vercel.app
 After saving environment variables, redeploy all three projects. Confirm the
 API first by opening `https://<api-project>.vercel.app/api/health`; it should
 return `{"status":"ok"}`. Then open the staff portal deployment.
+
+Registration and password recovery send six-digit codes through Nodemailer.
+Configure either the individual `SMTP_*` variables shown in
+`backend/.env.example` or an `SMTP_URL`. For Gmail, enable two-step verification
+and use an App Password for `SMTP_PASS`; do not use the Gmail account password.
+OTP codes expire after 10 minutes and `OTP_SECRET` should be a separate,
+long random value in production.
 
 Never commit `backend/.env`. Copy `backend/.env.example` for local setup and
 store production secrets only in Vercel's Environment Variables settings.

@@ -31,7 +31,14 @@ import { getWeatherVisualByCode } from '../utils/weatherVisual';
 import { useResponsiveLayout } from '../utils/responsive';
 import { keepIfEqual } from '../utils/stableData';
 
-type AlertItem = { id: number; title: string; body: string; severity: string; category?: string; created_at?: string };
+type AlertItem = {
+  id: number;
+  title: string;
+  body: string;
+  severity: string;
+  category?: string;
+  created_at?: string;
+};
 type AnnouncementItem = { id: number; title: string; body: string; created_at?: string };
 type NotificationItem = {
   id: number;
@@ -63,7 +70,7 @@ const BARANGAY_DASHBOARD_SEALS = {
   lingga: require('../../assets/lingga-seal-dashboard.jpg'),
   looc: require('../../assets/looc-seal-dashboard.jpg'),
   palingon: require('../../assets/palingon-seal-dashboard.jpg'),
-  parian: require('../../assets/parian-seal-dashboard.jpg'),
+  parian: require('../../assets/parian-seal-dashboard-transparent.png'),
   uwisan: require('../../assets/uwisan-seal-dashboard.jpg'),
 } as const;
 
@@ -90,6 +97,13 @@ function alertIcon(item: AlertItem): HomeFeedIconName {
     return 'evacAdvisory';
   }
   return 'weather';
+}
+
+function alertSummary(item: AlertItem) {
+  if (item.category === 'typhoon' && item.severity.startsWith('signal_')) {
+    return `Calamba Signal No. ${item.severity.slice('signal_'.length)} — ${item.body}`;
+  }
+  return item.body;
 }
 
 function newsIcon(item: AnnouncementItem, index: number): HomeFeedIconName {
@@ -141,22 +155,27 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
     applyNotifications(response.data ?? []);
   }, [applyNotifications]);
 
+  const refreshWeather = useCallback(async () => {
+    const next = await getCityCurrentWeather();
+    setWeather((current) => keepIfEqual(current, next as WeatherResponse));
+  }, []);
+
   const load = useCallback(async () => {
-    const [a, n, ntf, w] = await Promise.allSettled([
+    const [a, n, ntf] = await Promise.allSettled([
       api.get('/content/alerts'),
       api.get('/content/announcements'),
       api.get('/reports/notifications/mine'),
-      getCityCurrentWeather(),
+      refreshWeather(),
     ]);
     if (a.status === 'fulfilled') setAlerts((current) => keepIfEqual(current, a.value.data ?? []));
     if (n.status === 'fulfilled') setNews((current) => keepIfEqual(current, n.value.data ?? []));
     if (ntf.status === 'fulfilled') applyNotifications(ntf.value.data ?? []);
-    if (w.status === 'fulfilled') setWeather((current) => keepIfEqual(current, w.value as WeatherResponse));
-  }, [applyNotifications]);
+  }, [applyNotifications, refreshWeather]);
 
   useEffect(() => {
     load().catch(() => {});
     const timer = setInterval(() => loadNotifications().catch(() => {}), 8_000);
+    const weatherTimer = setInterval(() => refreshWeather().catch(() => {}), 120_000);
     const appStateSubscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') loadNotifications().catch(() => {});
     });
@@ -172,6 +191,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
     }
     return () => {
       clearInterval(timer);
+      clearInterval(weatherTimer);
       appStateSubscription.remove();
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
         window.removeEventListener('focus', refreshWhenVisible);
@@ -180,7 +200,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
       }
       if (newLabelTimer.current) clearTimeout(newLabelTimer.current);
     };
-  }, [load, loadNotifications]);
+  }, [load, loadNotifications, refreshWeather]);
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.read_at).length,
@@ -423,6 +443,12 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
           style={[st.barangayHero, { height: heroHeight }]}
         >
             <Image
+              source={visual.backgroundSource}
+              resizeMode="cover"
+              style={st.heroWeatherBackdrop}
+            />
+            <View pointerEvents="none" style={st.heroWeatherScrim} />
+            <Image
               source={barangayHero}
               resizeMode="cover"
               style={dashboardSeal
@@ -483,7 +509,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
                   <HomeFeedArtwork name={alertIcon(item)} scale={0.82 * designScale} />
                   <View style={[st.cardCopy, { marginHorizontal: 5 * designScale }]}>
                     <Text style={[st.cardTitle, cardTitleLayout]} numberOfLines={1}>{item.title}</Text>
-                    <Text style={[st.cardBody, cardBodyLayout]} numberOfLines={1}>{item.body}</Text>
+                    <Text style={[st.cardBody, cardBodyLayout]} numberOfLines={1}>{alertSummary(item)}</Text>
                   </View>
                   <Text style={[st.cardTime, { fontSize: 4 * designScale }]}>{relativeTime(item.created_at)}</Text>
                 </View>
@@ -606,6 +632,8 @@ const st = StyleSheet.create({
     borderRadius: 14,
     overflow: 'hidden',
   },
+  heroWeatherBackdrop: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%', opacity: 0.5 },
+  heroWeatherScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.46)' },
   heroImage: { position: 'absolute', left: 0, top: 0, height: '100%' },
   barangaySeal: { position: 'absolute', right: 1, top: -5 },
   heroCopy: {

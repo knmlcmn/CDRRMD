@@ -266,7 +266,14 @@ async function getHealthyHost() {
   return resolvingHostPromise;
 }
 
-export async function postAuth(path: '/auth/login' | '/auth/register', payload: unknown) {
+type PublicAuthPath =
+  | '/auth/login'
+  | '/auth/register'
+  | '/auth/registration-otp'
+  | '/auth/password-reset-otp'
+  | '/auth/password-reset';
+
+export async function postAuth(path: PublicAuthPath, payload: unknown) {
   const host = await getHealthyHost();
 
   try {

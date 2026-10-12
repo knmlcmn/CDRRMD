@@ -15,7 +15,6 @@ export type AppAccount = {
   backendUserId: number;
   username: string;
   profile: AppProfile;
-  familyIds: string[];
 };
 
 type PartialProfile = Partial<AppProfile>;
@@ -24,10 +23,6 @@ type Registry = {
   accountsById: Record<string, AppAccount>;
   backendToAppId: Record<string, string>;
 };
-
-type InviteResult =
-  | { ok: true }
-  | { ok: false; reason: 'not-found' | 'self' | 'exists' };
 
 const REGISTRY_KEY = '@cddrmd:account_registry';
 
@@ -111,6 +106,23 @@ export async function ensureAccountForSession(session: SessionData) {
     barangayName: session.user.barangayName ?? undefined,
   };
 
+  const stableAppUserId = clean(session.user.accountId);
+  if (stableAppUserId) {
+    const legacyAppUserId = session.appUserId || registry.backendToAppId[backendKey];
+    const current = registry.accountsById[stableAppUserId] || (legacyAppUserId ? registry.accountsById[legacyAppUserId] : undefined);
+    const account: AppAccount = {
+      appUserId: stableAppUserId,
+      backendUserId: session.user.id,
+      username: session.user.username,
+      profile: mergeProfile(current?.profile || { ...EMPTY_PROFILE }, sessionProfile),
+    };
+    registry.accountsById[stableAppUserId] = account;
+    registry.backendToAppId[backendKey] = stableAppUserId;
+    if (legacyAppUserId && legacyAppUserId !== stableAppUserId) delete registry.accountsById[legacyAppUserId];
+    await writeRegistry(registry);
+    return { session: { ...session, appUserId: stableAppUserId }, account };
+  }
+
   const fromSession = session.appUserId ? registry.accountsById[session.appUserId] : undefined;
   if (fromSession) {
     const mergedAccount: AppAccount = {
@@ -148,7 +160,6 @@ export async function ensureAccountForSession(session: SessionData) {
     backendUserId: session.user.id,
     username: session.user.username,
     profile: mergeProfile({ ...EMPTY_PROFILE }, sessionProfile),
-    familyIds: [],
   };
 
   registry.accountsById[nextId] = account;
@@ -193,40 +204,3 @@ export async function patchAccountProfile(appUserId: string, partial: PartialPro
   return updateAccountProfile(appUserId, merged);
 }
 
-export async function inviteFamilyById(appUserId: string, familyAppUserId: string): Promise<InviteResult> {
-  const registry = await readRegistry();
-  const account = registry.accountsById[appUserId];
-  const target = registry.accountsById[familyAppUserId];
-
-  if (!account || !target) {
-    return { ok: false, reason: 'not-found' };
-  }
-
-  if (appUserId === familyAppUserId) {
-    return { ok: false, reason: 'self' };
-  }
-
-  if (account.familyIds.includes(familyAppUserId)) {
-    return { ok: false, reason: 'exists' };
-  }
-
-  registry.accountsById[appUserId] = {
-    ...account,
-    familyIds: [familyAppUserId, ...account.familyIds],
-  };
-
-  await writeRegistry(registry);
-  return { ok: true };
-}
-
-export async function getFamilyAccounts(appUserId: string) {
-  const registry = await readRegistry();
-  const account = registry.accountsById[appUserId];
-  if (!account) {
-    return [] as AppAccount[];
-  }
-
-  return account.familyIds
-    .map((id) => registry.accountsById[id])
-    .filter((member): member is AppAccount => Boolean(member));
-}

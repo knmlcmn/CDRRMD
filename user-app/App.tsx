@@ -16,6 +16,7 @@ import FamilyScreen from './src/screens/FamilyScreen';
 import MeScreen from './src/screens/MeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
+import ForgotPasswordScreen from './src/screens/ForgotPasswordScreen';
 import {
   clearSession,
   loadSession,
@@ -225,7 +226,7 @@ function AppContent() {
   const RescueStatusScreen = require('./src/screens/RescueStatusScreen').default;
   const { uiScale } = useResponsiveLayout();
   const [booting, setBooting] = useState(true);
-  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot-password'>('login');
   const [session, setSession] = useState<SessionData | null>(null);
   const [testModeEnabled, setTestModeEnabled] = useState(false);
   const [floodAlertRescueRequest, setFloodAlertRescueRequest] = useState<{ notificationId: number; requestedAt: number } | null>(null);
@@ -486,6 +487,14 @@ function AppContent() {
   }
 
   if (!session) {
+    if (authMode === 'forgot-password') {
+      return (
+        <View style={styles.appRoot}>
+          <ForgotPasswordScreen onShowLogin={() => setAuthMode('login')} />
+        </View>
+      );
+    }
+
     if (authMode === 'register') {
       return (
         <View style={styles.appRoot}>
@@ -502,6 +511,7 @@ function AppContent() {
         <LoginScreen
           onLoginSuccess={handleAuthenticated}
           onShowRegister={() => setAuthMode('register')}
+          onForgotPassword={() => setAuthMode('forgot-password')}
         />
       </View>
     );
@@ -526,7 +536,7 @@ function AppContent() {
           {() => <RescueMapScreen testModeEnabled={testModeEnabled} floodAlertRescueRequest={floodAlertRescueRequest} />}
         </Tab.Screen>
         <Tab.Screen name="Family">
-          {() => <FamilyScreen appUserId={session.appUserId ?? ''} />}
+          {() => <FamilyScreen />}
         </Tab.Screen>
         <Tab.Screen name="Me">
           {() => <MeScreen appUserId={session.appUserId ?? ''} barangayName={session.user.barangayName} onLogout={handleLogout} />}

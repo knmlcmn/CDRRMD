@@ -44,6 +44,7 @@ type Props = {
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationAreas: () => void;
   onOpenPostUpdates: () => void;
+  onOpenHistory: () => void;
   onAuthError: () => void;
 };
 
@@ -85,7 +86,7 @@ function toForm(admin: AdminAccount): AdminForm {
   };
 }
 
-export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationAreas, onOpenPostUpdates, onAuthError }: Props) {
+export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationAreas, onOpenPostUpdates, onOpenHistory, onAuthError }: Props) {
   const [admins, setAdmins] = useState<AdminAccount[]>([]);
   const [archivedAdmins, setArchivedAdmins] = useState<AdminAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -293,6 +294,7 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationAreas={onOpenEvacuationAreas}
       onOpenPostUpdates={onOpenPostUpdates}
+      onOpenHistory={onOpenHistory}
     >
       <div className={d.admin.root}>
             <div className={d.admin.headerRow}>

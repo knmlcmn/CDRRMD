@@ -41,7 +41,7 @@ export const d = {
     mobileLogo: 'h-9 w-9 rounded-full border border-[#f4b400] bg-white object-cover',
     mobileBrand: 'text-lg font-extrabold leading-none text-[#0b2e4e]',
     mobileLogout: 'rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700',
-    mobileNav: 'fixed bottom-0 left-0 right-0 z-40 grid grid-cols-6 gap-1 border-t border-slate-300 bg-white/95 p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] backdrop-blur min-[820px]:hidden',
+    mobileNav: 'fixed bottom-0 left-0 right-0 z-40 grid grid-cols-7 gap-1 border-t border-slate-300 bg-white/95 p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] backdrop-blur min-[820px]:hidden',
     mobileNavItem: 'flex min-h-11 min-w-0 items-center justify-center rounded-lg px-1 py-2 text-center font-bold transition-colors',
     mobileNavActive: 'bg-[#1f4e79] text-white',
     mobileNavIdle: 'text-[#1f4e79] hover:bg-slate-100',

@@ -2,7 +2,7 @@ import { type ReactNode } from 'react';
 import cdrrmdLogo from '../assets/cdrrmd-logo.png';
 import { d } from '../adminDesign';
 
-type ActiveView = 'dashboard' | 'admin' | 'users' | 'barangay' | 'rescuers' | 'monitoring' | 'flood-monitoring' | 'evacuation' | 'post-updates';
+type ActiveView = 'dashboard' | 'admin' | 'users' | 'barangay' | 'rescuers' | 'monitoring' | 'flood-monitoring' | 'evacuation' | 'post-updates' | 'history';
 
 type Props = {
   activeView: ActiveView;
@@ -19,6 +19,7 @@ type Props = {
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationAreas: () => void;
   onOpenPostUpdates: () => void;
+  onOpenHistory: () => void;
   actions?: ReactNode;
   children: ReactNode;
 };
@@ -30,7 +31,7 @@ type NavItem = {
   onClick: () => void;
 };
 
-type NavIconName = 'dashboard' | 'accounts' | 'incidents' | 'flood' | 'updates' | 'evacuation';
+type NavIconName = 'dashboard' | 'accounts' | 'incidents' | 'flood' | 'updates' | 'evacuation' | 'history';
 
 function NavIcon({ name }: { name: NavIconName }) {
   const commonProps = {
@@ -58,6 +59,9 @@ function NavIcon({ name }: { name: NavIconName }) {
   }
   if (name === 'updates') {
     return <svg {...commonProps}><path d="m3 11 14-5v12L3 13v-2Z" /><path d="M8 15v5H5l-1-7" /><path d="M20 9v6" /></svg>;
+  }
+  if (name === 'history') {
+    return <svg {...commonProps}><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /><path d="M12 7v5l3 2" /></svg>;
   }
   return <svg {...commonProps}><path d="M3 11 12 4l9 7" /><path d="M5 10v10h14V10" /><path d="M9 20v-6h6v6" /><path d="M12 7v3" /></svg>;
 }
@@ -88,6 +92,7 @@ export default function AdminShell({
   onOpenFloodMonitoring,
   onOpenEvacuationAreas,
   onOpenPostUpdates,
+  onOpenHistory,
   actions,
   children,
 }: Props) {
@@ -104,6 +109,7 @@ export default function AdminShell({
     { key: 'monitoring', label: 'Incident Monitoring', icon: 'incidents', onClick: onOpenMonitoring },
     { key: 'flood-monitoring', label: 'Flood Monitoring', icon: 'flood', onClick: onOpenFloodMonitoring },
     { key: 'post-updates', label: 'Post Updates', icon: 'updates', onClick: onOpenPostUpdates },
+    { key: 'history', label: 'History', icon: 'history', onClick: onOpenHistory },
     { key: 'evacuation', label: 'Evacuation Areas', icon: 'evacuation', onClick: onOpenEvacuationAreas },
   ];
 

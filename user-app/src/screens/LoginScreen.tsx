@@ -18,9 +18,10 @@ import { SessionData } from '../services/session';
 type Props = {
   onLoginSuccess: (session: SessionData) => Promise<void>;
   onShowRegister: () => void;
+  onForgotPassword: () => void;
 };
 
-export default function LoginScreen({ onLoginSuccess, onShowRegister }: Props) {
+export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPassword }: Props) {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
@@ -99,6 +100,10 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister }: Props) {
               <Text style={styles.rememberText}>Remember me</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity style={styles.forgotButton} onPress={onForgotPassword}>
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </TouchableOpacity>
+
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <TouchableOpacity style={styles.primaryButton} onPress={onLogin} disabled={loading} activeOpacity={0.85}>
@@ -132,6 +137,8 @@ const styles = StyleSheet.create({
   input: { flex: 1, color: '#111111', fontSize: 13, marginLeft: 8, paddingVertical: 0 },
   rememberRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', marginLeft: 8, marginBottom: 18 },
   rememberText: { color: '#333333', fontSize: 11, marginLeft: 5 },
+  forgotButton: { alignSelf: 'flex-end', marginTop: -33, marginRight: 8, marginBottom: 18 },
+  forgotText: { color: editorial.accent, fontSize: 11, fontWeight: '800' },
   errorText: { color: '#c62828', fontSize: 12, marginHorizontal: 8, marginBottom: 10 },
   primaryButton: { height: 47, borderRadius: 10, backgroundColor: editorial.accent, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   primaryButtonText: { color: '#fff', fontSize: 15, fontWeight: '900' },

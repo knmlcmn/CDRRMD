@@ -5,6 +5,21 @@ async function register(req, res) {
   return res.status(201).json(response);
 }
 
+async function requestRegistrationOtp(req, res) {
+  const response = await authService.requestRegistrationOtp(req.body);
+  return res.json(response);
+}
+
+async function requestPasswordResetOtp(req, res) {
+  const response = await authService.requestPasswordResetOtp(req.body);
+  return res.json(response);
+}
+
+async function resetPassword(req, res) {
+  const response = await authService.resetPassword(req.body);
+  return res.json(response);
+}
+
 async function login(req, res) {
   const response = await authService.login(req.body);
   return res.json(response);
@@ -35,4 +50,15 @@ async function assignBarangayFromLocation(req, res) {
   return res.json(response);
 }
 
-module.exports = { login, register, logout, refresh, me, updateMe, assignBarangayFromLocation };
+module.exports = {
+  login,
+  register,
+  requestRegistrationOtp,
+  requestPasswordResetOtp,
+  resetPassword,
+  logout,
+  refresh,
+  me,
+  updateMe,
+  assignBarangayFromLocation,
+};

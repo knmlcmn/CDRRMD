@@ -2,6 +2,9 @@ const express = require('express');
 const {
   login,
   register,
+  requestRegistrationOtp,
+  requestPasswordResetOtp,
+  resetPassword,
   logout,
   refresh,
   me,
@@ -15,6 +18,9 @@ const router = express.Router();
 
 // Public auth actions.
 router.post('/register', register);
+router.post('/registration-otp', requestRegistrationOtp);
+router.post('/password-reset-otp', requestPasswordResetOtp);
+router.post('/password-reset', resetPassword);
 router.post('/login', login);
 router.post('/refresh', refresh);
 

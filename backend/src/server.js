@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('./config/loadEnv');
 
 const pool = require('./config/db');
 const ensureDatabaseExists = require('./config/ensureDatabase');

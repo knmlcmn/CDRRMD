@@ -15,6 +15,7 @@ router.delete('/accounts/:id/permanent', asyncHandler(controller.permanentlyDele
 router.delete('/accounts/:id', asyncHandler(controller.archiveAccount));
 router.get('/incidents/mine', asyncHandler(controller.listMyIncidents));
 router.get('/incidents/history', asyncHandler(controller.listMyIncidentHistory));
+router.get('/incidents/history/all', asyncHandler(controller.listMyCompleteIncidentHistory));
 router.get('/flood-reports', asyncHandler(controller.listFloodReports));
 router.patch('/location', asyncHandler(controller.updateMyLocation));
 

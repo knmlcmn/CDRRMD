@@ -30,6 +30,7 @@ type Props = {
   onOpenMonitoring: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenPostUpdates: () => void;
+  onOpenHistory: () => void;
   onOpenBackupRequest: (reportId: number) => void;
   onAuthError: () => void;
 };
@@ -90,7 +91,7 @@ function buildMapHtml(
   );
 }
 
-export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenEvacuationAreas, onOpenMonitoring, onOpenFloodMonitoring, onOpenPostUpdates, onOpenBackupRequest, onAuthError }: Props) {
+export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenEvacuationAreas, onOpenMonitoring, onOpenFloodMonitoring, onOpenPostUpdates, onOpenHistory, onOpenBackupRequest, onAuthError }: Props) {
   const [areas, setAreas] = useState<EvacuationAreaItem[]>([]);
   const [incidents, setIncidents] = useState<DashboardIncident[]>([]);
   const [operationalReports, setOperationalReports] = useState<MonitoringReport[]>([]);
@@ -475,6 +476,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationAreas={onOpenEvacuationAreas}
       onOpenPostUpdates={onOpenPostUpdates}
+      onOpenHistory={onOpenHistory}
       actions={
         <>
           <button onClick={onOpenMonitoring} className={d.dashboard.topActions}>Open Monitoring</button>

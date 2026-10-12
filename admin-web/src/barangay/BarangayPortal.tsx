@@ -4,6 +4,7 @@ import PersonnelAccountsPage from './pages/PersonnelAccountsPage';
 import FloodMonitoringPage from './pages/FloodMonitoringPage';
 import EvacuationCenterPage from './pages/EvacuationCenterPage';
 import DashboardPage from './pages/DashboardPage';
+import HistoryPage from './pages/HistoryPage';
 import WaterLevelAlert, { type WaterLevelNoticeKind } from './components/WaterLevelAlert';
 import BackupModal from './components/BackupModal';
 import RescueRequestRouteMap from './components/RescueRequestRouteMap';
@@ -11,7 +12,7 @@ import RescueImagePreview from './components/RescueImagePreview';
 import { API_BASE_URL, api, setAuthToken } from '../services/apiClient';
 import { loadWaterLevelSensors, type WaterLevelSensor } from './services/waterLevelSensors';
 
-type View = 'dashboard' | 'monitoring' | 'flood-monitoring' | 'evacuation-center' | 'account';
+type View = 'dashboard' | 'monitoring' | 'flood-monitoring' | 'evacuation-center' | 'account' | 'history';
 type RescueRequestNotice = {
   id: number;
   report_code?: string | null;
@@ -275,7 +276,7 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
       </div>
     </BackupModal>
   ) : null;
-  const pageProps = { barangayName, onLogout, onAuthError, onOpenDashboard: () => setView('dashboard') };
+  const pageProps = { barangayName, onLogout, onAuthError, onOpenDashboard: () => setView('dashboard'), onOpenHistory: () => setView('history') };
 
   return (
     <>
@@ -293,6 +294,7 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
       {view === 'flood-monitoring' ? <FloodMonitoringPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenEvacuationCenter={() => setView('evacuation-center')} onOpenAccount={() => setView('account')} /> : null}
       {view === 'evacuation-center' ? <EvacuationCenterPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenAccount={() => setView('account')} /> : null}
       {view === 'monitoring' ? <MonitoringPage {...pageProps} focusReportId={focusReportId} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenEvacuationCenter={() => setView('evacuation-center')} onOpenAccount={() => setView('account')} /> : null}
+      {view === 'history' ? <HistoryPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenEvacuationCenter={() => setView('evacuation-center')} onOpenAccount={() => setView('account')} /> : null}
     </>
   );
 }

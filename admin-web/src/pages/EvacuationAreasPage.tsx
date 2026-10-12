@@ -14,6 +14,7 @@ type Props = {
   onOpenMonitoring: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenPostUpdates: () => void;
+  onOpenHistory: () => void;
 };
 
 type DetailForm = {
@@ -168,7 +169,7 @@ function buildMapHtml(areas: EvacuationAreaItem[], selectedId: number | null, pr
 </html>`;
 }
 
-export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenMonitoring, onOpenFloodMonitoring, onOpenPostUpdates }: Props) {
+export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenMonitoring, onOpenFloodMonitoring, onOpenPostUpdates, onOpenHistory }: Props) {
   const [areas, setAreas] = useState<EvacuationAreaItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form, setForm] = useState<DetailForm | null>(null);
@@ -487,6 +488,7 @@ export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenA
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationAreas={() => {}}
       onOpenPostUpdates={onOpenPostUpdates}
+      onOpenHistory={onOpenHistory}
       actions={
         <button onClick={onAddPin} disabled={saving} className={d.evac.actionAdd}>
           Add Evacuation Area Pin

@@ -10,6 +10,7 @@ type Props = {
   onOpenMonitoring: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenAccount: () => void;
+  onOpenHistory: () => void;
 };
 
 type Center = {
@@ -55,7 +56,7 @@ function formatDate(value?: string | null) {
   return value ? new Date(value).toLocaleString() : '—';
 }
 
-export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDashboard, onAuthError, onOpenMonitoring, onOpenFloodMonitoring, onOpenAccount }: Props) {
+export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDashboard, onAuthError, onOpenMonitoring, onOpenFloodMonitoring, onOpenAccount, onOpenHistory }: Props) {
   const [centers, setCenters] = useState<Center[]>([]);
   const [centerId, setCenterId] = useState<number | null>(null);
   const [cases, setCases] = useState<CasesPayload>({ incoming: [], outgoing: [], current: [], resolved: [] });
@@ -165,7 +166,7 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
   return (
     <BarangayShell activeView="evacuation-center" title="Evacuation Center" subtitle={`Manage evacuation operations for Barangay ${barangayName}`}
       barangayName={barangayName} onLogout={onLogout} onOpenDashboard={onOpenDashboard} onOpenMonitoring={onOpenMonitoring}
-      onOpenFloodMonitoring={onOpenFloodMonitoring} onOpenEvacuationCenter={() => {}} onOpenAccount={onOpenAccount}>
+      onOpenFloodMonitoring={onOpenFloodMonitoring} onOpenEvacuationCenter={() => {}} onOpenAccount={onOpenAccount} onOpenHistory={onOpenHistory}>
       <div className="space-y-4 bg-[#eaf3fb] p-4 sm:p-5">
         {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p> : null}
         {notice ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{notice}</p> : null}

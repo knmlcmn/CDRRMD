@@ -35,6 +35,20 @@ async function initDb() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS family_invitations (
+      id BIGSERIAL PRIMARY KEY,
+      inviter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      invitee_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'accepted', 'declined')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      responded_at TIMESTAMPTZ,
+      CONSTRAINT family_invitations_not_self CHECK (inviter_id <> invitee_id),
+      CONSTRAINT family_invitations_unique_pair UNIQUE (inviter_id, invitee_id)
+    );
+    CREATE INDEX IF NOT EXISTS family_invitations_invitee_idx
+      ON family_invitations (invitee_id, status, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS backup_requests (
       id SERIAL PRIMARY KEY,
       barangay_name VARCHAR(120) NOT NULL,
@@ -207,6 +221,17 @@ async function initDb() {
       expires_at TIMESTAMP NOT NULL,
       revoked_at TIMESTAMP,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS email_otp_codes (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(160) NOT NULL,
+      purpose VARCHAR(30) NOT NULL CHECK (purpose IN ('registration', 'password_reset')),
+      code_hash VARCHAR(64) NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS system_settings (
@@ -488,6 +513,9 @@ async function initDb() {
 
     CREATE INDEX IF NOT EXISTS user_refresh_tokens_user_id_idx
     ON user_refresh_tokens (user_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS email_otp_codes_lookup_idx
+    ON email_otp_codes (email, purpose, created_at DESC);
 
   `);
 

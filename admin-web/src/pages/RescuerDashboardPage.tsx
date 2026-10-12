@@ -10,6 +10,7 @@ type Props = {
   onLogout: () => void;
   onAuthError: () => void;
   onOpenIncidents: () => void;
+  onOpenHistory: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenAccount: () => void;
 };
@@ -65,7 +66,7 @@ function sameData(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-export default function RescuerDashboardPage({ responderRole, onLogout, onAuthError, onOpenIncidents, onOpenFloodMonitoring, onOpenAccount }: Props) {
+export default function RescuerDashboardPage({ responderRole, onLogout, onAuthError, onOpenIncidents, onOpenHistory, onOpenFloodMonitoring, onOpenAccount }: Props) {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [history, setHistory] = useState<BackupHistory[]>([]);
   const [areas, setAreas] = useState<EvacuationAreaItem[]>([]);
@@ -287,7 +288,7 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
   }
 
   return (
-    <RescuerShell responderRole={responderRole} activeView="incidents" title={responderRole === 'barangay_rescuer' ? 'Barangay Rescue Assignments' : 'CDRRMD Backup Assignments'} subtitle="Assigned incidents and live routing" onLogout={onLogout} onOpenIncidents={onOpenIncidents} onOpenFloodMonitoring={onOpenFloodMonitoring} onOpenAccount={onOpenAccount}>
+    <RescuerShell responderRole={responderRole} activeView="incidents" title={responderRole === 'barangay_rescuer' ? 'Barangay Rescue Assignments' : 'CDRRMD Backup Assignments'} subtitle="Assigned incidents and live routing" onLogout={onLogout} onOpenIncidents={onOpenIncidents} onOpenHistory={onOpenHistory} onOpenFloodMonitoring={onOpenFloodMonitoring} onOpenAccount={onOpenAccount}>
       {error ? <p className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
       {routeNotice ? <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-bold text-amber-900">{routeNotice}</p> : null}
       <section className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_400px]">
@@ -326,13 +327,13 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
       </section>
 
       <section className="mt-3 rounded-xl bg-white p-3 shadow">
-        <div className="mb-2 flex items-center justify-between gap-3"><div><h2 className="font-black text-[#19374f]">Assignment History</h2><p className="text-xs text-slate-500">Completed {responderRole === 'barangay_rescuer' ? 'Barangay Rescuer' : 'CDRRMD backup'} assignments</p></div><span className="text-xs font-bold text-slate-500">{history.length} completed</span></div>
+        <div className="mb-2 flex items-center justify-between gap-3"><div><h2 className="font-black text-[#19374f]">This Week's Assignment History</h2><p className="text-xs text-slate-500">Completed {responderRole === 'barangay_rescuer' ? 'Barangay Rescuer' : 'CDRRMD backup'} assignments since Monday</p></div><span className="text-xs font-bold text-slate-500">{history.length} completed this week</span></div>
         <div className="max-h-72 overflow-auto rounded-lg border border-slate-200">
           <table className="min-w-[900px] w-full text-left text-sm">
             <thead className="sticky top-0 bg-[#12314b] text-white"><tr><th className="px-3 py-2">Incident</th><th className="px-3 py-2">Resident</th><th className="px-3 py-2">Barangay</th><th className="px-3 py-2">Location</th><th className="px-3 py-2">Evacuation Area</th><th className="px-3 py-2">Completed</th></tr></thead>
             <tbody>
               {history.map((item) => <tr key={item.backup_request_id} className="border-t border-slate-200"><td className="px-3 py-2 font-bold">{item.report_code}</td><td className="px-3 py-2">{item.reporter_name || '-'}</td><td className="px-3 py-2">{item.assigned_barangay}</td><td className="px-3 py-2">{item.location}</td><td className="px-3 py-2">{item.evacuation_area_name || '-'}</td><td className="whitespace-nowrap px-3 py-2">{new Date(item.arrived_at).toLocaleString()}</td></tr>)}
-              {!history.length ? <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">No completed backup assignments yet.</td></tr> : null}
+              {!history.length ? <tr><td colSpan={6} className="px-3 py-8 text-center text-slate-500">No completed assignments this week.</td></tr> : null}
             </tbody>
           </table>
         </div>

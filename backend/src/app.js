@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('./config/loadEnv');
 
 const express = require('express');
 const cors = require('cors');
@@ -62,6 +62,8 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/backup-requests', require('./routes/backupRoutes'));
 app.use('/api/barangay', barangayRoutes);
 app.use('/api/rescuers', require('./routes/rescuerRoutes'));
+app.use('/api/family', require('./routes/familyRoutes'));
+app.use('/api/history', require('./routes/historyRoutes'));
 
 app.use((err, req, res, next) => {
   if (err?.type === 'entity.too.large') {

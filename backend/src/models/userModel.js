@@ -128,6 +128,21 @@ async function findDuplicateEmailForUser(email, userId) {
   return result.rows[0] || null;
 }
 
+async function updateUserPasswordById(id, passwordHash, database = pool) {
+  const result = await database.query(
+    `UPDATE users
+     SET password_hash = $2,
+         is_active = FALSE,
+         last_seen_at = NOW()
+     WHERE id = $1
+       AND role = 'user'
+       AND COALESCE(is_archived, FALSE) = FALSE
+     RETURNING id`,
+    [id, passwordHash],
+  );
+  return result.rows[0] || null;
+}
+
 async function listAdmins() {
   const result = await pool.query(
     `SELECT id,
@@ -1014,6 +1029,7 @@ module.exports = {
   updateMyProfile,
   assignResidentBarangayFromLocation,
   findDuplicateEmailForUser,
+  updateUserPasswordById,
   listAdmins,
   listUsers,
   findDuplicateAdmin,

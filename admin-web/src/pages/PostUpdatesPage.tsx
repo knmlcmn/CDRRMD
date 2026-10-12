@@ -5,6 +5,13 @@ import AdminShell from '../components/AdminShell';
 import { d } from '../adminDesign';
 import type { AlertItem, AnnouncementItem } from '../types';
 
+function alertLevelLabel(category: string, severity: string) {
+  if (category === 'typhoon' && severity.startsWith('signal_')) {
+    return `Signal No. ${severity.slice('signal_'.length)}`;
+  }
+  return severity;
+}
+
 type Props = {
   onLogout: () => void;
   onOpenDashboard: () => void;
@@ -15,6 +22,7 @@ type Props = {
   onOpenMonitoring: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationAreas: () => void;
+  onOpenHistory: () => void;
   onAuthError: () => void;
 };
 
@@ -28,12 +36,13 @@ export default function PostUpdatesPage({
   onOpenMonitoring,
   onOpenFloodMonitoring,
   onOpenEvacuationAreas,
+  onOpenHistory,
   onAuthError,
 }: Props) {
   const [alertTitle, setAlertTitle] = useState('');
   const [alertBody, setAlertBody] = useState('');
   const [alertCategory, setAlertCategory] = useState('typhoon');
-  const [alertSeverity, setAlertSeverity] = useState('high');
+  const [alertLevel, setAlertLevel] = useState('signal_1');
 
   const [newsTitle, setNewsTitle] = useState('');
   const [newsBody, setNewsBody] = useState('');
@@ -89,7 +98,7 @@ export default function PostUpdatesPage({
         title: alertTitle,
         body: alertBody,
         category: alertCategory,
-        severity: alertSeverity,
+        severity: alertLevel,
       });
       setAlertTitle('');
       setAlertBody('');
@@ -142,7 +151,10 @@ export default function PostUpdatesPage({
       title: item.title,
       body: item.body,
       createdAt: item.created_at,
-      tags: [item.category || 'general', item.severity || 'medium'],
+      tags: [
+        item.category || 'general',
+        alertLevelLabel(item.category, item.severity || 'medium'),
+      ],
     }));
 
     const announcementRows = announcements.slice(0, 8).map((item) => ({
@@ -175,6 +187,7 @@ export default function PostUpdatesPage({
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationAreas={onOpenEvacuationAreas}
       onOpenPostUpdates={() => {}}
+      onOpenHistory={onOpenHistory}
     >
       <div className={d.postUpdates.root}>
         {error ? <div className={d.page.error}>{error}</div> : null}
@@ -199,16 +212,40 @@ export default function PostUpdatesPage({
                 required
               />
               <div className={d.postUpdates.twoCol}>
-                <select value={alertCategory} onChange={(event) => setAlertCategory(event.target.value)} className={d.form.select}>
+                <select
+                  aria-label="Alert category"
+                  value={alertCategory}
+                  onChange={(event) => {
+                    const category = event.target.value;
+                    setAlertCategory(category);
+                    setAlertLevel(category === 'typhoon' ? 'signal_1' : 'medium');
+                  }}
+                  className={d.form.select}
+                >
                   <option value="typhoon">Typhoon</option>
                   <option value="flood">Flood</option>
-                  <option value="earthquake">Earthquake</option>
-                  <option value="general">General</option>
                 </select>
-                <select value={alertSeverity} onChange={(event) => setAlertSeverity(event.target.value)} className={d.form.select}>
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
+                <select
+                  aria-label={alertCategory === 'typhoon' ? 'Calamba storm signal number' : 'Flood severity'}
+                  value={alertLevel}
+                  onChange={(event) => setAlertLevel(event.target.value)}
+                  className={d.form.select}
+                >
+                  {alertCategory === 'typhoon' ? (
+                    <>
+                      <option value="signal_1">Signal No. 1</option>
+                      <option value="signal_2">Signal No. 2</option>
+                      <option value="signal_3">Signal No. 3</option>
+                      <option value="signal_4">Signal No. 4</option>
+                      <option value="signal_5">Signal No. 5</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </>
+                  )}
                 </select>
               </div>
               <div className={d.postUpdates.submitRow}>

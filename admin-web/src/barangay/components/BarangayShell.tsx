@@ -2,8 +2,8 @@ import { type ReactNode } from 'react';
 import cdrrmdLogo from '../../assets/cdrrmd-logo.png';
 import { d } from '../barangayDesign';
 
-type ActiveView = 'dashboard' | 'monitoring' | 'flood-monitoring' | 'evacuation-center' | 'account';
-type NavIconName = 'dashboard' | 'incidents' | 'flood' | 'evacuation' | 'account';
+type ActiveView = 'dashboard' | 'monitoring' | 'flood-monitoring' | 'evacuation-center' | 'account' | 'history';
+type NavIconName = 'dashboard' | 'incidents' | 'flood' | 'evacuation' | 'account' | 'history';
 
 type Props = {
   activeView: ActiveView;
@@ -17,6 +17,7 @@ type Props = {
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationCenter: () => void;
   onOpenAccount: () => void;
+  onOpenHistory: () => void;
   actions?: ReactNode;
   children: ReactNode;
 };
@@ -79,6 +80,10 @@ function NavIcon({ name }: { name: NavIconName }) {
     );
   }
 
+  if (name === 'history') {
+    return <svg {...commonProps}><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /><path d="M12 7v5l3 2" /></svg>;
+  }
+
   return (
     <svg {...commonProps}>
       <path d="m3 10 9-7 9 7" />
@@ -109,6 +114,7 @@ export default function BarangayShell({
   onOpenFloodMonitoring,
   onOpenEvacuationCenter,
   onOpenAccount,
+  onOpenHistory,
   actions,
   children,
 }: Props) {
@@ -171,6 +177,9 @@ export default function BarangayShell({
             </button>
             <button onClick={onOpenAccount} className={itemClass(activeView === 'account')}>
               <NavLabel icon="account" label="My Account" />
+            </button>
+            <button onClick={onOpenHistory} className={itemClass(activeView === 'history')}>
+              <NavLabel icon="history" label="History" />
             </button>
           </nav>
 
@@ -245,6 +254,15 @@ export default function BarangayShell({
             ].join(' ')}
           >
             My Account
+          </button>
+          <button
+            onClick={onOpenHistory}
+            className={[
+              d.shell.mobileNavItem,
+              activeView === 'history' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
+            ].join(' ')}
+          >
+            History
           </button>
         </nav>
       </div>

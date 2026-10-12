@@ -12,6 +12,7 @@ type Props = {
   onOpenMonitoring: () => void;
   onOpenEvacuationCenter: () => void;
   onOpenAccount: () => void;
+  onOpenHistory: () => void;
   onAuthError: () => void;
 };
 
@@ -178,6 +179,7 @@ export default function FloodMonitoringPage({
   onOpenMonitoring,
   onOpenEvacuationCenter,
   onOpenAccount,
+  onOpenHistory,
   onAuthError,
 }: Props) {
   const sensorAssignment = useMemo(() => {
@@ -286,6 +288,7 @@ export default function FloodMonitoringPage({
       onOpenFloodMonitoring={() => {}}
       onOpenEvacuationCenter={onOpenEvacuationCenter}
       onOpenAccount={onOpenAccount}
+      onOpenHistory={onOpenHistory}
       actions={<button onClick={onOpenMonitoring} className={d.monitoring.actionEvac}>Open Incident Monitoring</button>}
     >
       <div className={d.monitoring.root}>

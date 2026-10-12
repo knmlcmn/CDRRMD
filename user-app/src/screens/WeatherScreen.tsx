@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  ImageBackground,
   ScrollView,
   StyleSheet,
   View,
@@ -129,7 +130,13 @@ export default function WeatherScreen() {
       <DashboardHeader />
 
       <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
-        <View style={[st.hero, { minHeight: 126 * scale, paddingHorizontal: 13 * scale, paddingTop: 13 * scale }]}>
+        <ImageBackground
+          source={visual.backgroundSource}
+          resizeMode="cover"
+          style={[st.hero, { minHeight: 126 * scale, paddingHorizontal: 13 * scale, paddingTop: 13 * scale }]}
+          imageStyle={st.heroBackgroundImage}
+        >
+          <View pointerEvents="none" style={st.heroScrim} />
           <View style={st.heroCopy}>
             <Text style={[st.heroTitle, { fontSize: 12 * scale, lineHeight: 14 * scale }]}>Weather</Text>
             <Text style={[st.heroLocation, { fontSize: 7 * scale, marginTop: 2 * scale }]}>Calamba City, Laguna</Text>
@@ -149,7 +156,7 @@ export default function WeatherScreen() {
           <View style={[st.heroArtwork, { right: 19 * scale, top: 25 * scale }]}>
             <WeatherConditionArtwork name={weatherIconFromCode(activeWeatherCode)} scale={5 * scale} />
           </View>
-        </View>
+        </ImageBackground>
 
         <View style={[st.contentPanel, {
           paddingBottom: 72 * scale,
@@ -285,6 +292,8 @@ const st = StyleSheet.create({
   errorBody: { color: '#585858', fontSize: 14, textAlign: 'center', marginTop: 6 },
   scrollContent: { flexGrow: 1, width: '100%', backgroundColor: editorial.background },
   hero: { width: '100%', maxWidth: 720, alignSelf: 'center', backgroundColor: editorial.surface, flexDirection: 'row', marginTop: 10, borderRadius: 14, overflow: 'hidden' },
+  heroBackgroundImage: { opacity: 0.48 },
+  heroScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.42)' },
   heroCopy: { zIndex: 1, maxWidth: '68%' },
   heroTitle: { color: editorial.ink, fontWeight: '800', includeFontPadding: false },
   heroLocation: { color: editorial.muted, fontWeight: '700', includeFontPadding: false },

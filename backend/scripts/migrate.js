@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('../src/config/loadEnv');
 
 const initializeDatabase = require('../src/config/initializeDatabase');
 const pool = require('../src/config/db');

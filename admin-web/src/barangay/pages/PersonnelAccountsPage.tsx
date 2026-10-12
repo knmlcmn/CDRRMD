@@ -13,6 +13,7 @@ type Props = {
   onOpenMonitoring: () => void;
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationCenter: () => void;
+  onOpenHistory: () => void;
   onAuthError: () => void;
 };
 
@@ -85,7 +86,7 @@ function personnelEditValues(account: RescuerAccount): AccountEditValues {
   };
 }
 
-export default function PersonnelAccountsPage({ barangayName, onLogout, onOpenDashboard, onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationCenter, onAuthError }: Props) {
+export default function PersonnelAccountsPage({ barangayName, onLogout, onOpenDashboard, onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationCenter, onOpenHistory, onAuthError }: Props) {
   const [user, setUser] = useState<BarangayUser | null>(null);
   const [personnel, setPersonnel] = useState<RescuerAccount[]>([]);
   const [loading, setLoading] = useState(true);
@@ -305,6 +306,7 @@ export default function PersonnelAccountsPage({ barangayName, onLogout, onOpenDa
       onOpenFloodMonitoring={onOpenFloodMonitoring}
       onOpenEvacuationCenter={onOpenEvacuationCenter}
       onOpenAccount={() => {}}
+      onOpenHistory={onOpenHistory}
     >
       <div className={d.admin.root}>
         {error ? <div className={`${d.page.error} mb-2`} role="alert">{error}</div> : null}

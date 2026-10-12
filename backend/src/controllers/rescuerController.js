@@ -291,7 +291,7 @@ async function listMyIncidents(req, res) {
   return res.json(rows);
 }
 
-async function listMyIncidentHistory(req, res) {
+async function findMyIncidentHistory(req, currentWeekOnly) {
   const scope = responseScope(req);
   const { rows } = await pool.query(
     `SELECT br.id AS backup_request_id, br.created_at AS backup_requested_at,
@@ -306,10 +306,21 @@ async function listMyIncidentHistory(req, res) {
        AND br.dispatch_type = $2
        AND ($3::text IS NULL OR LOWER(ir.assigned_barangay) = LOWER($3))
        AND br.arrived_at IS NOT NULL
+       ${currentWeekOnly ? "AND br.arrived_at >= (date_trunc('week', NOW() AT TIME ZONE 'Asia/Manila') AT TIME ZONE 'Asia/Manila')" : ''}
      ORDER BY br.arrived_at DESC, br.id DESC
-     LIMIT 100`,
+    `,
     [req.user.userId, scope.dispatchType, scope.barangayName],
   );
+  return rows;
+}
+
+async function listMyIncidentHistory(req, res) {
+  const rows = await findMyIncidentHistory(req, true);
+  return res.json(rows);
+}
+
+async function listMyCompleteIncidentHistory(req, res) {
+  const rows = await findMyIncidentHistory(req, false);
   return res.json(rows);
 }
 
@@ -517,6 +528,7 @@ module.exports = {
   permanentlyDeleteAccount,
   listMyIncidents,
   listMyIncidentHistory,
+  listMyCompleteIncidentHistory,
   listFloodReports,
   updateMyLocation,
 };

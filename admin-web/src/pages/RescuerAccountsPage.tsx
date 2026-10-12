@@ -17,6 +17,7 @@ type Props = {
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationAreas: () => void;
   onOpenPostUpdates: () => void;
+  onOpenHistory: () => void;
   onAuthError: () => void;
 };
 
@@ -35,10 +36,27 @@ function toEditValues(account: RescuerAccount): AccountEditValues {
 
 type RescuerRole = 'rescuer' | 'barangay_rescuer';
 const BARANGAYS = ['Palingon', 'Sampiruhan', 'Lingga', 'Parian', 'Looc', 'Uwisan'];
+const ACCOUNT_ROLE_TAB_CLASS = 'min-h-11 rounded-xl px-5 py-2.5 text-base font-bold transition-colors';
 
 const ARCHIVE_ICON = 'https://cdn-icons-png.flaticon.com/512/3143/3143462.png';
 
 type ApiError = { response?: { status?: number; data?: { message?: string } } };
+
+function compareRescuerIds(left: RescuerAccount, right: RescuerAccount) {
+  const trailingNumber = (value?: string | null) => Number(String(value || '').match(/(\d+)$/)?.[1] || Number.MAX_SAFE_INTEGER);
+  return trailingNumber(left.rescuer_id) - trailingNumber(right.rescuer_id)
+    || String(left.rescuer_id || '').localeCompare(String(right.rescuer_id || ''), undefined, { numeric: true });
+}
+
+function sortAccounts(accounts: RescuerAccount[], role: RescuerRole) {
+  return [...accounts].sort((left, right) => {
+    if (role === 'barangay_rescuer') {
+      const barangayOrder = String(left.barangay_name || '').localeCompare(String(right.barangay_name || ''), undefined, { sensitivity: 'base' });
+      if (barangayOrder !== 0) return barangayOrder;
+    }
+    return compareRescuerIds(left, right);
+  });
+}
 
 export default function RescuerAccountsPage(props: Props) {
   const { onAuthError } = props;
@@ -54,7 +72,7 @@ export default function RescuerAccountsPage(props: Props) {
   const [error, setError] = useState('');
   const [accountRole, setAccountRole] = useState<RescuerRole>('rescuer');
   const isBarangayRescuer = accountRole === 'barangay_rescuer';
-  const accountLabel = isBarangayRescuer ? 'Barangay Rescuer' : 'Rescuer';
+  const accountLabel = isBarangayRescuer ? 'Barangay Rescuer' : 'CDRRMD Rescuer';
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -78,12 +96,12 @@ export default function RescuerAccountsPage(props: Props) {
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return accounts
+    return sortAccounts(accounts
       .filter((account) => availabilityFilter === 'all' || (availabilityFilter === 'available' ? account.is_available : !account.is_available))
       .filter((account) => !needle || [
         account.rescuer_id, account.username, account.email, account.first_name, account.last_name, account.contact_number, account.barangay_name,
-      ].some((value) => String(value || '').toLowerCase().includes(needle)));
-  }, [accounts, availabilityFilter, search]);
+      ].some((value) => String(value || '').toLowerCase().includes(needle))), accountRole);
+  }, [accountRole, accounts, availabilityFilter, search]);
 
   async function saveAccount(values: AccountEditValues) {
     if (!selectedAccount) return;
@@ -127,7 +145,7 @@ export default function RescuerAccountsPage(props: Props) {
     setArchiveBusy(true);
     try {
       const { data } = await api.get<RescuerAccount[]>('/rescuers/accounts/archived', { params: { role: accountRole } });
-      setArchivedAccounts(Array.isArray(data) ? data : []);
+      setArchivedAccounts(sortAccounts(Array.isArray(data) ? data : [], accountRole));
     } catch (error: unknown) {
       const err = error as ApiError;
       if (err.response?.status === 401) return onAuthError();
@@ -199,8 +217,8 @@ export default function RescuerAccountsPage(props: Props) {
           <div>
             <h2 className={d.admin.title}>{accountLabel} Accounts</h2>
             <div className="mt-2 flex flex-wrap gap-2" role="tablist" aria-label="Rescuer account type">
-              <button type="button" role="tab" aria-selected={!isBarangayRescuer} onClick={() => selectAccountRole('rescuer')} className={[d.monitoring.filterBase, !isBarangayRescuer ? d.monitoring.filterActive : d.monitoring.filterIdle].join(' ')}>Rescuers</button>
-              <button type="button" role="tab" aria-selected={isBarangayRescuer} onClick={() => selectAccountRole('barangay_rescuer')} className={[d.monitoring.filterBase, isBarangayRescuer ? d.monitoring.filterActive : d.monitoring.filterIdle].join(' ')}>Barangay Rescuers</button>
+              <button type="button" role="tab" aria-selected={!isBarangayRescuer} onClick={() => selectAccountRole('rescuer')} className={[ACCOUNT_ROLE_TAB_CLASS, !isBarangayRescuer ? d.monitoring.filterActive : d.monitoring.filterIdle].join(' ')}>CDRRMD Rescuers</button>
+              <button type="button" role="tab" aria-selected={isBarangayRescuer} onClick={() => selectAccountRole('barangay_rescuer')} className={[ACCOUNT_ROLE_TAB_CLASS, isBarangayRescuer ? d.monitoring.filterActive : d.monitoring.filterIdle].join(' ')}>Barangay Rescuers</button>
             </div>
           </div>
           <div className={d.admin.searchRow}>

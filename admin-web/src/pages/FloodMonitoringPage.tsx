@@ -15,6 +15,7 @@ type Props = {
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationAreas: () => void;
   onOpenPostUpdates: () => void;
+  onOpenHistory: () => void;
   onAuthError: () => void;
 };
 
@@ -378,6 +379,7 @@ export default function FloodMonitoringPage({
   onOpenFloodMonitoring,
   onOpenEvacuationAreas,
   onOpenPostUpdates,
+  onOpenHistory,
   onAuthError,
 }: Props) {
   void onOpenFloodMonitoring;
@@ -551,6 +553,7 @@ export default function FloodMonitoringPage({
       onOpenFloodMonitoring={() => {}}
       onOpenEvacuationAreas={onOpenEvacuationAreas}
       onOpenPostUpdates={onOpenPostUpdates}
+      onOpenHistory={onOpenHistory}
       actions={(
         <>
           <button onClick={onOpenEvacuationAreas} className={d.monitoring.floodHeaderAction}>Evacuation Readiness</button>

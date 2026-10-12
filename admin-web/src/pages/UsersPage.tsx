@@ -18,6 +18,7 @@ type Props = {
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationAreas: () => void;
   onOpenPostUpdates: () => void;
+  onOpenHistory: () => void;
   onAuthError: () => void;
 };
 
@@ -247,6 +248,7 @@ export default function UsersPage(props: Props) {
       onOpenFloodMonitoring={props.onOpenFloodMonitoring}
       onOpenEvacuationAreas={props.onOpenEvacuationAreas}
       onOpenPostUpdates={props.onOpenPostUpdates}
+      onOpenHistory={props.onOpenHistory}
     >
       <div className={d.admin.root}>
         <div className={d.admin.headerRow}>

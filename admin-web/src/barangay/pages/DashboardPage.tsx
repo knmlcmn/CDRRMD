@@ -15,6 +15,7 @@ type Props = {
   onOpenFloodMonitoring: () => void;
   onOpenEvacuationCenter: () => void;
   onOpenAccount: () => void;
+  onOpenHistory: () => void;
   onOpenPendingRescue: (reportId: number) => void;
 };
 
@@ -54,7 +55,7 @@ function sensorTone(sensor: WaterLevelSensor | null) {
   return 'bg-emerald-500';
 }
 
-export default function DashboardPage({ barangayName, onLogout, onAuthError, onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationCenter, onOpenAccount, onOpenPendingRescue }: Props) {
+export default function DashboardPage({ barangayName, onLogout, onAuthError, onOpenMonitoring, onOpenFloodMonitoring, onOpenEvacuationCenter, onOpenAccount, onOpenHistory, onOpenPendingRescue }: Props) {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
   const [sensor, setSensor] = useState<WaterLevelSensor | null>(null);
@@ -137,7 +138,7 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
   return (
     <BarangayShell activeView="dashboard" title="Barangay Dashboard" subtitle={`Live operations overview for Barangay ${barangayName}`}
       barangayName={barangayName} onLogout={onLogout} onOpenDashboard={() => {}} onOpenMonitoring={onOpenMonitoring}
-      onOpenFloodMonitoring={onOpenFloodMonitoring} onOpenEvacuationCenter={onOpenEvacuationCenter} onOpenAccount={onOpenAccount}>
+      onOpenFloodMonitoring={onOpenFloodMonitoring} onOpenEvacuationCenter={onOpenEvacuationCenter} onOpenAccount={onOpenAccount} onOpenHistory={onOpenHistory}>
       <div className="space-y-3 bg-[#eaf3fb] px-3 pb-3 pt-0 sm:px-4 sm:pb-4 sm:pt-0">
         {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p> : null}
 

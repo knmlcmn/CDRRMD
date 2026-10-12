@@ -12,10 +12,11 @@ const {
 const { httpError } = require('../utils/httpError');
 const { SUPPORTED_BARANGAYS: RESIDENT_BARANGAYS } = require('./supportedBarangays');
 const { resolveNearbyBarangayAtLocation } = require('./barangayBoundaryService');
+const emailOtpService = require('./emailOtpService');
 
 // Keeps API response shape stable even if DB column names differ.
 function toUserResponse(user) {
-  const accountPrefix = user.role === 'admin' ? 'ADM' : user.role === 'barangay' ? 'BRG' : user.role === 'rescuer' ? 'RSC' : user.role === 'barangay_rescuer' ? 'BRS' : null;
+  const accountPrefix = user.role === 'admin' ? 'ADM' : user.role === 'barangay' ? 'BRG' : user.role === 'rescuer' ? 'RSC' : user.role === 'barangay_rescuer' ? 'BRS' : user.role === 'user' ? 'USR' : null;
   const createdYear = user.created_at ? new Date(user.created_at).getFullYear() : null;
   return {
     id: user.id,
@@ -39,16 +40,13 @@ async function persistRefreshToken(client, userId, refreshToken) {
 }
 
 async function register(payload) {
-  const { username, email, password, firstName, lastName, address, contactNumber } = payload || {};
+  const { username, email, password, firstName, lastName, address, contactNumber, otp } = payload || {};
 
   if (!email || !password) {
     throw httpError(400, 'Email and password are required.');
   }
 
-  const trimmedEmail = String(email).trim().toLowerCase();
-  if (!trimmedEmail.includes('@')) {
-    throw httpError(400, 'Please provide a valid email address.');
-  }
+  const trimmedEmail = emailOtpService.normalizeEmail(email);
 
   if (String(password).length < 6) {
     throw httpError(400, 'Password must be at least 6 characters.');
@@ -58,6 +56,8 @@ async function register(payload) {
   if (existing) {
     throw httpError(409, 'Email already exists.');
   }
+
+  await emailOtpService.verifyCode(trimmedEmail, 'registration', otp);
 
   const rawUsername = String(username || '').trim();
   const finalUsername = rawUsername.length > 0 ? rawUsername : trimmedEmail.split('@')[0];
@@ -81,6 +81,47 @@ async function register(payload) {
   });
 
   return { token, refreshToken, user: toUserResponse(user) };
+}
+
+async function requestRegistrationOtp(payload) {
+  const email = emailOtpService.normalizeEmail(payload?.email);
+  const existing = await userModel.findUserByEmail(email);
+  if (existing) throw httpError(409, 'Email already exists.');
+  const result = await emailOtpService.sendCode(email, 'registration');
+  return { message: 'A verification code was sent to your email.', ...result };
+}
+
+async function requestPasswordResetOtp(payload) {
+  const email = emailOtpService.normalizeEmail(payload?.email);
+  const user = await userModel.findUserByEmail(email);
+  if (user?.role === 'user') {
+    await emailOtpService.sendCode(email, 'password_reset');
+  }
+  return {
+    message: 'If a resident account uses that email, a verification code has been sent.',
+    expiresInSeconds: 600,
+    resendAfterSeconds: 60,
+  };
+}
+
+async function resetPassword(payload) {
+  const email = emailOtpService.normalizeEmail(payload?.email);
+  const newPassword = String(payload?.newPassword || '');
+  if (newPassword.length < 6) throw httpError(400, 'Password must be at least 6 characters.');
+
+  const user = await userModel.findUserByEmail(email);
+  if (!user || user.role !== 'user') {
+    throw httpError(400, 'The verification code is missing or expired. Request a new code.', 'INVALID_OTP');
+  }
+  await emailOtpService.verifyCode(email, 'password_reset', payload?.otp);
+
+  const passwordHash = await bcrypt.hash(newPassword, 10);
+  await refreshTokenModel.withTransaction(async (client) => {
+    const updated = await userModel.updateUserPasswordById(user.id, passwordHash, client);
+    if (!updated) throw httpError(404, 'User account not found.');
+    await refreshTokenModel.revokeActiveByUser(client, user.id);
+  });
+  return { message: 'Your password has been reset. You can now log in.' };
 }
 
 async function login(payload) {
@@ -323,6 +364,9 @@ async function assignBarangayFromLocation(userId, payload) {
 
 module.exports = {
   register,
+  requestRegistrationOtp,
+  requestPasswordResetOtp,
+  resetPassword,
   login,
   logout,
   refresh,

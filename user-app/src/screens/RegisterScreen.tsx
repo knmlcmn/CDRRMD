@@ -52,10 +52,40 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
   const [contactNumber, setContactNumber] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpSending, setOtpSending] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function updateEmail(value: string) {
+    setEmail(value);
+    setOtp('');
+    setOtpSent(false);
+    setNotice(null);
+  }
+
+  async function sendRegistrationOtp() {
+    if (!email.trim()) {
+      setError('Enter your email address first.');
+      return;
+    }
+    setOtpSending(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await postAuth('/auth/registration-otp', { email: email.trim() });
+      setOtpSent(true);
+      setNotice(response.data?.message || 'A verification code was sent to your email.');
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Unable to send the verification code.');
+    } finally {
+      setOtpSending(false);
+    }
+  }
 
   async function onRegister() {
     if (!firstName.trim() || !lastName.trim() || !email.trim() || !password) {
@@ -70,6 +100,10 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
       setError('Password must be at least 6 characters.');
       return;
     }
+    if (!otpSent || !/^\d{6}$/.test(otp)) {
+      setError('Send and enter the 6-digit verification code from your email.');
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -82,6 +116,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
         email: email.trim(),
         address: address.trim(),
         contactNumber: contactNumber.trim(),
+        otp,
       });
       const nextSession = res.data as SessionData;
       if (!nextSession?.token || !nextSession.user || nextSession.user.role !== 'user') {
@@ -114,7 +149,11 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
               <View style={styles.nameField}><Field icon="account-outline" value={firstName} onChangeText={setFirstName} placeholder="First Name *" autoCapitalize="words" /></View>
               <View style={styles.nameField}><Field icon="account-outline" value={lastName} onChangeText={setLastName} placeholder="Last Name *" autoCapitalize="words" /></View>
             </View>
-            <Field icon="email-outline" value={email} onChangeText={setEmail} placeholder="Email *" keyboardType="email-address" autoCapitalize="none" />
+            <Field icon="email-outline" value={email} onChangeText={updateEmail} placeholder="Email *" keyboardType="email-address" autoCapitalize="none" />
+            <TouchableOpacity style={styles.otpButton} onPress={sendRegistrationOtp} disabled={loading || otpSending}>
+              {otpSending ? <ActivityIndicator size="small" color={editorial.accent} /> : <Text style={styles.otpButtonText}>{otpSent ? 'Resend Email Code' : 'Send Email Code'}</Text>}
+            </TouchableOpacity>
+            {otpSent ? <Field icon="shield-key-outline" value={otp} onChangeText={(value) => setOtp(value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit email code *" keyboardType="phone-pad" /> : null}
             <Field icon="map-marker-outline" value={address} onChangeText={setAddress} placeholder="Address" autoCapitalize="words" />
             <Field icon="phone-outline" value={contactNumber} onChangeText={setContactNumber} placeholder="Contact Number" keyboardType="phone-pad" />
             <Field
@@ -127,9 +166,10 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
             />
 
             <Text style={styles.locationHint}>Your barangay will be assigned automatically from your latest live location.</Text>
+            {notice ? <Text style={styles.noticeText}>{notice}</Text> : null}
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-            <TouchableOpacity style={styles.primaryButton} onPress={onRegister} disabled={loading} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.primaryButton} onPress={onRegister} disabled={loading || otpSending} activeOpacity={0.85}>
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Create Account</Text>}
             </TouchableOpacity>
             <View style={styles.footerRow}>
@@ -159,7 +199,10 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', gap: 7 },
   nameRowSmall: { flexDirection: 'column', gap: 0 },
   nameField: { flex: 1, minWidth: 0 },
+  otpButton: { height: 38, borderWidth: 1, borderColor: editorial.accent, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 8, backgroundColor: '#f7fbfe' },
+  otpButtonText: { color: editorial.accent, fontSize: 11, fontWeight: '900' },
   locationHint: { color: '#555555', fontSize: 10, marginHorizontal: 8, marginBottom: 8 },
+  noticeText: { color: '#15803d', fontSize: 11, marginHorizontal: 8, marginBottom: 8 },
   errorText: { color: '#c62828', fontSize: 11, marginHorizontal: 8, marginBottom: 8 },
   primaryButton: { height: 45, borderRadius: 10, backgroundColor: editorial.accent, alignItems: 'center', justifyContent: 'center', marginTop: 2, marginBottom: 10 },
   primaryButtonText: { color: '#fff', fontSize: 14, fontWeight: '900' },
