@@ -5,8 +5,6 @@ const {
   listArchivedAdmins,
   listArchivedUsers,
   listUsers,
-  getUserVerification,
-  reviewUserVerification,
   createAdmin,
   createUser,
   updateAdmin,
@@ -26,8 +24,6 @@ router.get('/', auth, listAdmins);
 router.get('/archived', auth, listArchivedAdmins);
 router.get('/users/archived', auth, listArchivedUsers);
 router.get('/users', auth, listUsers);
-router.get('/users/:id/verification', auth, getUserVerification);
-router.patch('/users/:id/verification', auth, reviewUserVerification);
 router.post('/users', auth, createUser);
 router.put('/users/:id', auth, updateUser);
 router.patch('/users/:id/restore', auth, restoreUser);

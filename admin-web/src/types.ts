@@ -80,7 +80,6 @@ export type UserAccount = {
   role: string;
   archived_at?: string | null;
   created_at: string;
-  verification_status?: 'pending' | 'approved' | 'disapproved';
 };
 
 export type BarangayAccount = {

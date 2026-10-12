@@ -80,12 +80,6 @@ function extractCoordinate(value?: string | null, lat?: number | null, lon?: num
   return { latitude, longitude };
 }
 
-function distanceSquared(a: Coordinate, b: Coordinate) {
-  const dLat = a.latitude - b.latitude;
-  const dLon = a.longitude - b.longitude;
-  return dLat * dLat + dLon * dLon;
-}
-
 const NON_VISUAL_REFRESH_FIELDS = new Set([
   'last_seen_at',
   'location_updated_at',
@@ -210,10 +204,8 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       setCityRescuers((current) => preserveUnchangedArray(current, nextCityRescuers));
 
       setSelectedReportId((currentId) => {
-        if (nextReports.length === 0) return null;
-        return nextReports.some((item: MonitoringReport) => item.id === currentId)
-          ? currentId
-          : nextReports[0].id;
+        if (currentId == null) return null;
+        return nextReports.some((item: MonitoringReport) => item.id === currentId) ? currentId : null;
       });
 
       setError(null);
@@ -316,24 +308,13 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   }, [activeRescueReports, rescueReports, statusFilter]);
 
   const selectedReport = useMemo(
-    () => filteredReports.find((item) => item.id === selectedReportId)
-      ?? reports.find((item) => item.id === selectedReportId)
-      ?? filteredReports[0]
-      ?? null,
-    [filteredReports, reports, selectedReportId],
+    () => reports.find((item) => item.id === selectedReportId) ?? null,
+    [reports, selectedReportId],
   );
 
   const selectedBackup = useMemo(
     () => selectedReport ? backupRequests.find((request) => request.report_id === selectedReport.id) || null : null,
     [backupRequests, selectedReport],
-  );
-
-  const isBackupResponse = Boolean(
-    selectedReport
-    && selectedBackup?.acknowledged_at
-    && selectedBackup?.responder_acknowledged_at
-    && selectedReport.report_type === 'rescue'
-    && isActiveRescueStatus(selectedReport.status),
   );
 
   const liveResponderLocation = useMemo<Coordinate | null>(() => {
@@ -342,45 +323,6 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     const longitude = Number(liveResponder?.current_longitude ?? selectedReport?.rescuer_longitude);
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
   }, [cityRescuers, selectedReport?.assigned_rescuer_id, selectedReport?.rescuer_latitude, selectedReport?.rescuer_longitude]);
-
-  const assignedResponderArea = useMemo(() => {
-    if (!selectedReport || !isActiveRescueStatus(selectedReport.status)) {
-      return null;
-    }
-
-    if (evacuationAreas.length === 0) {
-      return null;
-    }
-
-    const explicitAreaId = Number(selectedReport.evacuation_area_id);
-    if (Number.isFinite(explicitAreaId)) {
-      const byId = evacuationAreas.find((area) => area.id === explicitAreaId && Boolean(area.is_active)) || null;
-      if (byId) {
-        return byId;
-      }
-    }
-
-    const explicitAreaName = String(selectedReport.evacuation_area_name || '').trim().toLowerCase();
-    if (explicitAreaName) {
-      const byName = evacuationAreas.find((area) => String(area.name || '').trim().toLowerCase() === explicitAreaName && Boolean(area.is_active)) || null;
-      if (byName) {
-        return byName;
-      }
-    }
-
-    const incidentPoint = extractCoordinate(selectedReport.location, selectedReport.latitude, selectedReport.longitude);
-    if (!incidentPoint) {
-      return null;
-    }
-
-    return evacuationAreas
-      .filter((area) => Boolean(area.is_active))
-      .map((area) => ({
-        area,
-        dist: distanceSquared(incidentPoint, { latitude: area.latitude, longitude: area.longitude }),
-      }))
-      .sort((a, b) => a.dist - b.dist)[0]?.area ?? null;
-  }, [evacuationAreas, selectedReport]);
 
   const responderLocation = useMemo(() => {
     return liveResponderLocation;
@@ -411,7 +353,8 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
 
   useEffect(() => {
     let cancelled = false;
-    if (!selectedReportIdValue || !isActiveRescueStatus(selectedReportStatus)) {
+    const routeIsFocused = mapFocusMode === 'route' && mapFocusedReportId === selectedReportIdValue;
+    if (!routeIsFocused || !selectedReportIdValue || !isActiveRescueStatus(selectedReportStatus)) {
       setRouteCoordinates([]);
       setRouteDistanceKm(null);
       setRouteEtaMinutes(null);
@@ -425,6 +368,11 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       return undefined;
     }
 
+    // Display the responder-to-destination connection immediately, then
+    // replace it with the road geometry when OSRM responds.
+    setRouteCoordinates([responderLocation, selectedIncidentLocation]);
+    setRouteDistanceKm(null);
+    setRouteEtaMinutes(null);
     fetchRoadRoute(responderLocation, selectedIncidentLocation)
       .then((route) => {
         if (cancelled) return;
@@ -439,7 +387,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
         setRouteEtaMinutes(null);
       });
     return () => { cancelled = true; };
-  }, [responderLocation, selectedIncidentLocation, selectedReportIdValue, selectedReportStatus]);
+  }, [mapFocusMode, mapFocusedReportId, responderLocation, selectedIncidentLocation, selectedReportIdValue, selectedReportStatus]);
 
   useEffect(() => {
     const onFsChange = () => {
@@ -484,7 +432,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
 
   const mapHtml = useMemo(
     () => buildCalambaMapHtml(
-      [],
+      evacuationAreas,
       null,
       [],
       null,
@@ -503,7 +451,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
         showForecastTimeline: isMapFullscreen,
       },
     ),
-    [isMapFullscreen, layerVisibility],
+    [evacuationAreas, isMapFullscreen, layerVisibility],
   );
 
   useEffect(() => {
@@ -519,16 +467,19 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       if (event.source !== mapFrameRef.current?.contentWindow || event.data?.type !== 'select-rescuer-assignment') return;
       const reportId = Number(event.data.reportId);
       if (!Number.isFinite(reportId) || !activeMissionReports.some((report) => report.id === reportId)) return;
-      setRouteCoordinates([]);
-      setRouteDistanceKm(null);
-      setRouteEtaMinutes(null);
+      const isAlreadyFocused = mapFocusedReportId === reportId && mapFocusMode === 'route';
+      if (!isAlreadyFocused) {
+        setRouteCoordinates([]);
+        setRouteDistanceKm(null);
+        setRouteEtaMinutes(null);
+      }
       setSelectedReportId(reportId);
       setMapFocusedReportId(reportId);
       setMapFocusMode('route');
     }
     window.addEventListener('message', handleMapMessage);
     return () => window.removeEventListener('message', handleMapMessage);
-  }, [activeMissionReports]);
+  }, [activeMissionReports, mapFocusedReportId, mapFocusMode]);
 
   useEffect(() => {
     if (mapFocusedReportId && !activeMissionReports.some((report) => report.id === mapFocusedReportId)) {
@@ -556,15 +507,17 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       selectedResponderId: showFocusedRoute ? selectedReport?.assigned_rescuer_id || null : null,
       responderKind: selectedResponderKind,
       pickedUp: showFocusedRoute && Boolean(selectedReport?.picked_up_at),
+      routeDestination: showFocusedRoute && selectedReport?.picked_up_at ? selectedIncidentLocation : null,
+      evacuationAreaName: showFocusedRoute ? selectedReport?.evacuation_area_name || null : null,
       recenter: hasFocusedReport && recenter,
     }, '*');
-  }, [mapFocusedReportId, mapFocusMode, mapReady, responderLocation, responderPoints, routeCoordinates, selectedIncidentLocation, selectedReportedLocation, selectedReport?.assigned_rescuer_id, selectedReport?.id, selectedReport?.picked_up_at, selectedReport?.report_code, selectedResponderKind]);
+  }, [mapFocusedReportId, mapFocusMode, mapReady, responderLocation, responderPoints, routeCoordinates, selectedIncidentLocation, selectedReportedLocation, selectedReport?.assigned_rescuer_id, selectedReport?.evacuation_area_name, selectedReport?.id, selectedReport?.picked_up_at, selectedReport?.report_code, selectedResponderKind]);
 
   const focusKey = mapFocusedReportId && selectedReport?.id === mapFocusedReportId
     ? mapFocusMode === 'location'
       ? `location:${selectedReport.id}`
       : mapFocusMode === 'route' && selectedReport.assigned_rescuer_id
-        ? `route:${selectedReport.id}:${selectedReport.assigned_rescuer_id}:${Boolean(selectedReport.picked_up_at)}`
+        ? `route:${selectedReport.id}:${selectedReport.assigned_rescuer_id}:${Boolean(selectedReport.picked_up_at)}:${routeCoordinates.length > 1}`
         : ''
     : '';
   useEffect(() => {
@@ -663,7 +616,6 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
         <div className={d.monitoring.incidentDetailMetaColumn}>
           <p><strong>Contact:</strong> {selectedReport.contact_number || 'N/A'}</p>
           <p><strong>Reported:</strong> {new Date(selectedReport.created_at).toLocaleString()}</p>
-          {selectedReport.rescuer_name ? <p><strong>Barangay Rescuer:</strong> {selectedReport.rescuer_name}</p> : null}
           <p><strong>Evacuation Area:</strong> {selectedReport.evacuation_area_name || 'N/A'}</p>
           {!selectedReportIsResolved ? <p><strong>Route Distance:</strong> {routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : 'Calculating...'}</p> : null}
           {!selectedReportIsResolved ? <p><strong>Route ETA:</strong> {routeEtaMinutes ? `${routeEtaMinutes} mins` : 'Calculating...'}</p> : null}
@@ -672,15 +624,34 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
         </div>
         {!selectedReportIsResolved ? <div className={[d.monitoring.incidentDetailWide, d.monitoring.incidentDetailColumn].join(' ')}>
           {selectedBackup ? <p><strong>Backup:</strong> {selectedBackup.assigned_rescuer_id ? `Assigned to ${selectedBackup.rescuer_name || selectedBackup.rescuer_account_id}` : selectedBackup.acknowledged_at ? 'Confirmed - awaiting team assignment' : 'Awaiting Admin confirmation'}</p> : null}
-          <p><strong>Route Origin:</strong> {liveResponderLocation
-            ? 'Assigned CDRRMD Rescuer live location'
-            : isBackupResponse ? 'CDRRMD - Calamba City Hall'
-            : assignedResponderArea ? `${assignedResponderArea.name} (${assignedResponderArea.barangay})` : 'No nearby active evacuation area'}</p>
           {selectedBackup?.picked_up_at ? <p><strong>Current Destination:</strong> {selectedReport.evacuation_area_name || 'Designated evacuation center'}</p> : null}
         </div> : null}
       </div>
     </>
-  ) : <p className={d.monitoring.validationEmpty}>Select a barangay backup request to view its incident details.</p>;
+  ) : (
+    <>
+      <h3 className={d.monitoring.selectedTitle}>Incident Detail</h3>
+      <div className={d.monitoring.incidentDetailGrid}>
+        <div className={d.monitoring.incidentDetailColumn}>
+          <p><strong>ID:</strong></p>
+          <p><strong>Status:</strong></p>
+          <p><strong>Location:</strong></p>
+          <p><strong>Reporter:</strong></p>
+          <p><strong>People Trapped:</strong></p>
+          <p><strong>Assigned Team:</strong></p>
+        </div>
+        <div className={d.monitoring.incidentDetailMetaColumn}>
+          <p><strong>Contact:</strong></p>
+          <p><strong>Reported:</strong></p>
+          <p><strong>Evacuation Area:</strong></p>
+          <p><strong>Route Distance:</strong></p>
+          <p><strong>Route ETA:</strong></p>
+          <p><strong>Admin Notes:</strong></p>
+          <p><strong>Reporter Notes:</strong></p>
+        </div>
+      </div>
+    </>
+  );
 
   const backupValidationContent = (
     <>
@@ -865,7 +836,8 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
               </div>
             </div>
             <div className={d.monitoring.incidentsTableWrap}>
-              <table className={d.monitoring.incidentReportsTable}>
+              <table className={`${d.monitoring.incidentReportsTable} incident-monitoring-table`}>
+                <colgroup><col className="w-[18%]" /><col className="w-[25%]" /><col className="w-[27%]" /><col className="w-[20%]" /><col className="w-[10%]" /></colgroup>
                 <thead>
                   <tr>
                     <th>Incident ID</th><th>Location</th><th>Status</th><th>Team</th><th>Proof</th>
@@ -918,7 +890,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
                           {item.location}
                         </button>
                       </td>
-                      <td><span className={`${d.monitoring.statusChip} ${backupIsPending ? '!bg-amber-100 !text-amber-800' : ''}`}>{backupIsPending ? 'Pending' : formatIncidentStatus(item.status, Boolean(item.picked_up_at))}</span></td>
+                      <td><span className={`${d.monitoring.statusChip} incident-status-chip ${backupIsPending ? '!bg-amber-100 !text-amber-800' : ''}`}>{backupIsPending ? 'Pending' : formatIncidentStatus(item.status, Boolean(item.picked_up_at))}</span></td>
                       <td>{item.assigned_team || '-'}</td>
                       <td>
                         {item.has_image || item.image_base64 ? (

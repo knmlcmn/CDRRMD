@@ -155,7 +155,7 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3"><div><h2 className={d.dashboard.reportsTitle}>Incident Reports Overview</h2><p className="text-xs text-slate-500">Latest reports from Barangay {barangayName}</p></div><button onClick={onOpenMonitoring} className="rounded-lg bg-[#1f567d] px-3 py-2 text-xs font-bold text-white hover:bg-[#174866]">View all</button></div>
             <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
               <table className="w-full table-fixed text-left">
-                <colgroup><col className="w-[24%]" /><col className="w-[18%]" /><col className="w-[30%]" /><col className="w-[10%]" /><col className="w-[18%]" /></colgroup>
+                <colgroup><col className="w-[21%]" /><col className="w-[15%]" /><col className="w-[28%]" /><col className="w-[8%]" /><col className="w-[28%]" /></colgroup>
                 <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-3 py-3">Case ID</th><th className="px-3 py-3">Incident</th><th className="px-3 py-3">Location</th><th className="px-3 py-3">People</th><th className="px-3 py-3">Status</th></tr></thead>
                 <tbody className="text-[0.82rem]">{recentIncidents.map((item) => {
                   const isPending = String(item.status).toLowerCase() === 'pending';
@@ -173,7 +173,7 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
                     } : undefined}
                     tabIndex={canReopenRescue ? 0 : undefined}
                     title={canReopenRescue ? 'Open pending rescue request' : undefined}
-                  ><td className="truncate px-3 py-3 font-mono text-[0.72rem] font-bold text-[#173750]" title={item.report_code || undefined}>{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td><td className="px-3 py-3">{item.incident_type || 'Incident'}</td><td className="truncate px-3 py-3" title={item.location}>{item.location}</td><td className="px-3 py-3">{item.estimated_people ?? '—'}</td><td className="px-3 py-3"><span className={`inline-block max-w-full rounded-full px-2 py-1 text-xs font-bold leading-tight ${isPending ? 'bg-orange-100 text-orange-700' : isResolved ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{formatIncidentStatus(item.status)}</span></td></tr>;
+                  ><td className="truncate px-3 py-3 font-mono text-[0.72rem] font-bold text-[#173750]" title={item.report_code || undefined}>{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td><td className="px-3 py-3">{item.incident_type || 'Incident'}</td><td className="truncate px-3 py-3" title={item.location}>{item.location}</td><td className="px-3 py-3">{item.estimated_people ?? '—'}</td><td className="px-3 py-3"><span className={`incident-status-chip ${isPending ? 'bg-orange-100 text-orange-700' : isResolved ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{formatIncidentStatus(item.status)}</span></td></tr>;
                 })}</tbody>
               </table>
               {!recentIncidents.length ? <p className="p-10 text-center text-sm text-slate-500">{loading ? 'Loading incidents…' : 'No incidents recorded.'}</p> : null}

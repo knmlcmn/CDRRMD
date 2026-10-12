@@ -33,8 +33,6 @@ import {
 } from './src/services/api';
 import ResidentFloodAlert from './src/components/ResidentFloodAlert';
 import RequiredLocationModal from './src/components/RequiredLocationModal';
-import AccountVerificationModal from './src/components/AccountVerificationModal';
-import { DashboardHeader } from './src/components/DashboardHeader';
 import { useResponsiveLayout } from './src/utils/responsive';
 import { LiveLocation, requireLiveLocation } from './src/services/locationAccess';
 
@@ -276,12 +274,7 @@ function AppContent() {
       await saveSession(ensured.session);
       sessionRef.current = ensured.session;
 
-      if (String(ensured.session.user.verificationStatus || 'approved') === 'approved') {
-        await activateApprovedSession(ensured.session);
-      } else if (mounted) {
-        setLocationGate(null);
-        setSession(ensured.session);
-      }
+      await activateSession(ensured.session);
 
       if (mounted) setBooting(false);
     }
@@ -308,58 +301,6 @@ function AppContent() {
 
   useEffect(() => {
     if (!session) return;
-    let mounted = true;
-    let checking = false;
-
-    async function refreshVerificationStatus() {
-      if (checking) return;
-      checking = true;
-      try {
-        const response = await getAuthMe();
-        const serverUser = response.data?.user as SessionData['user'] | undefined;
-        if (!mounted || !serverUser?.id) return;
-
-        const current = sessionRef.current;
-        if (!current) return;
-        const previousStatus = String(current.user.verificationStatus || 'approved');
-        const nextSession: SessionData = {
-          ...current,
-          user: { ...current.user, ...serverUser },
-        };
-        const nextStatus = String(nextSession.user.verificationStatus || 'approved');
-
-        if (previousStatus !== 'approved' && nextStatus === 'approved') {
-          await activateApprovedSession(nextSession);
-          return;
-        }
-
-        if (previousStatus !== nextStatus) {
-          const ensured = await ensureAccountForSession(nextSession);
-          await saveSession(ensured.session);
-          sessionRef.current = ensured.session;
-          setLocationGate(null);
-          setSession(ensured.session);
-        }
-      } catch {
-        // Keep the blocking verification state visible during temporary network failures.
-      } finally {
-        checking = false;
-      }
-    }
-
-    const interval = setInterval(refreshVerificationStatus, 10000);
-    const appStateSubscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') refreshVerificationStatus();
-    });
-    return () => {
-      mounted = false;
-      clearInterval(interval);
-      appStateSubscription.remove();
-    };
-  }, [session?.user.id]);
-
-  useEffect(() => {
-    if (!session || String(session.user.verificationStatus || 'approved') !== 'approved') return;
 
     let mounted = true;
 
@@ -426,14 +367,14 @@ function AppContent() {
     setSession(ensured.session);
   }
 
-  async function activateApprovedSession(candidate: SessionData, registrationProfile?: AppProfile) {
+  async function activateSession(candidate: SessionData, registrationProfile?: AppProfile) {
     setLocationChecking(true);
     let ensured = await ensureAccountForSession(candidate);
     await saveSession(ensured.session);
     sessionRef.current = ensured.session;
     setSession(ensured.session);
     setLocationGate({
-      message: 'Location access is required after account approval. Turn on your live location to continue.',
+      message: 'Location access is required. Turn on your live location to continue.',
       activeSession: false,
     });
 
@@ -493,15 +434,7 @@ function AppContent() {
     }
 
     const ensured = await ensureAccountForSession(nextSession);
-    if (String(ensured.session.user.verificationStatus || 'approved') === 'approved') {
-      await activateApprovedSession(ensured.session, registrationProfile);
-      return;
-    }
-
-    await saveSession(ensured.session);
-    sessionRef.current = ensured.session;
-    setLocationGate(null);
-    setSession(ensured.session);
+    await activateSession(ensured.session, registrationProfile);
   }
 
   async function handleLogout() {
@@ -544,20 +477,6 @@ function AppContent() {
     }
   }
 
-  async function handleVerificationResubmitted(user: SessionData['user']) {
-    const current = sessionRef.current;
-    if (!current) return;
-    const nextSession: SessionData = {
-      ...current,
-      user: { ...current.user, ...user, verificationStatus: 'pending' },
-    };
-    const ensured = await ensureAccountForSession(nextSession);
-    await saveSession(ensured.session);
-    sessionRef.current = ensured.session;
-    setLocationGate(null);
-    setSession(ensured.session);
-  }
-
   if (booting) {
     return (
       <View style={styles.booting}>
@@ -583,27 +502,6 @@ function AppContent() {
         <LoginScreen
           onLoginSuccess={handleAuthenticated}
           onShowRegister={() => setAuthMode('register')}
-        />
-      </View>
-    );
-  }
-
-  const verificationStatus = String(session.user.verificationStatus || 'approved');
-  if (verificationStatus === 'pending' || verificationStatus === 'disapproved') {
-    return (
-      <View style={styles.appRoot}>
-        <DashboardHeader />
-        <View style={styles.blockedDashboard}>
-          <View style={styles.blockedDashboardCard}>
-            <MaterialCommunityIcons name="view-dashboard-outline" size={42} color="#8aa0b4" />
-            <Text style={styles.blockedDashboardTitle}>Resident Dashboard</Text>
-            <Text style={styles.blockedDashboardText}>Account access is temporarily locked while verification is being completed.</Text>
-          </View>
-        </View>
-        <AccountVerificationModal
-          status={verificationStatus}
-          onLogout={handleLogout}
-          onResubmitted={handleVerificationResubmitted}
         />
       </View>
     );
@@ -742,23 +640,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  blockedDashboard: {
-    flex: 1,
-    backgroundColor: '#eef3f6',
-    padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  blockedDashboardCard: {
-    width: '100%',
-    maxWidth: 420,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#d7e0e7',
-    backgroundColor: '#ffffff',
-    padding: 28,
-    alignItems: 'center',
-  },
-  blockedDashboardTitle: { color: '#1f3347', fontSize: 20, fontWeight: '800', marginTop: 12 },
-  blockedDashboardText: { color: '#64748b', fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 8 },
 });

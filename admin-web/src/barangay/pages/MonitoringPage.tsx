@@ -816,8 +816,8 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
               </div>
             </div>
             <div className={d.monitoring.incidentsTableWrap}>
-              <table className={d.monitoring.incidentReportsTable}>
-                <colgroup><col className="w-[22%]" /><col className="w-[32%]" /><col className="w-[18%]" /><col className="w-[18%]" /><col className="w-[10%]" /></colgroup>
+              <table className={`${d.monitoring.incidentReportsTable} incident-monitoring-table`}>
+                <colgroup><col className="w-[20%]" /><col className="w-[27%]" /><col className="w-[28%]" /><col className="w-[15%]" /><col className="w-[10%]" /></colgroup>
                 <thead>
                   <tr>
                     <th>Incident ID</th>
@@ -858,7 +858,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
                           {item.location}
                         </button>
                       </td>
-                      <td><span className={d.monitoring.statusChip}>{formatIncidentStatus(item.status, Boolean(item.picked_up_at))}</span></td>
+                      <td><span className={`${d.monitoring.statusChip} incident-status-chip`}>{formatIncidentStatus(item.status, Boolean(item.picked_up_at))}</span></td>
                       <td style={{ fontSize: '0.75rem', color: '#64748b' }}>{new Date(item.created_at).toLocaleDateString()}</td>
                       <td>
                         {item.has_image || item.image_base64 ? (

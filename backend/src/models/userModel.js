@@ -33,7 +33,7 @@ async function findStaffByAccountId(accountId, role) {
 async function findPublicUserById(id) {
   const result = await pool.query(
     `SELECT id, username, email, first_name, last_name, address, contact_number, role, barangay_name,
-            verification_status, created_at
+            created_at
      FROM users
      WHERE id = $1
        AND COALESCE(is_archived, FALSE) = FALSE
@@ -54,13 +54,11 @@ async function createUser(user) {
       contact_number,
       password_hash,
       role,
-      barangay_name,
-      valid_id_image,
-      verification_status
+      barangay_name
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     RETURNING id, username, email, first_name, last_name, address, contact_number, role, barangay_name,
-              verification_status, created_at`,
+              created_at`,
     [
       user.username,
       user.email,
@@ -71,8 +69,6 @@ async function createUser(user) {
       user.passwordHash,
       user.role,
       user.barangayName,
-      user.validIdImage,
-      user.verificationStatus || 'approved',
     ],
   );
 
@@ -115,7 +111,6 @@ async function assignResidentBarangayFromLocation(userId, barangayName, latitude
          location_updated_at = NOW()
      WHERE id = $1
        AND role = 'user'
-       AND verification_status = 'approved'
        AND COALESCE(is_archived, FALSE) = FALSE
      RETURNING id, username, role, email, first_name, last_name, address,
                contact_number, barangay_name, created_at`,
@@ -166,12 +161,11 @@ async function listUsers() {
             address,
             contact_number,
             role,
-            verification_status,
             created_at
      FROM users
      WHERE role = 'user'
        AND COALESCE(is_archived, FALSE) = FALSE
-     ORDER BY CASE WHEN verification_status = 'pending' THEN 0 ELSE 1 END, id DESC`,
+     ORDER BY id DESC`,
   );
   return result.rows;
 }
@@ -358,56 +352,6 @@ async function findUserByIdForAdmin(id) {
        AND COALESCE(is_archived, FALSE) = FALSE
      LIMIT 1`,
     [id, 'user'],
-  );
-  return result.rows[0] || null;
-}
-
-async function getUserVerificationById(id) {
-  const result = await pool.query(
-    `SELECT id,
-            CONCAT('USR-', EXTRACT(YEAR FROM created_at)::text, '-', LPAD(id::text, 5, '0')) AS user_id,
-            username, email, first_name, last_name, address, contact_number,
-            valid_id_image, verification_status, verification_reviewed_at, created_at
-     FROM users
-     WHERE id = $1
-       AND role = 'user'
-       AND COALESCE(is_archived, FALSE) = FALSE
-     LIMIT 1`,
-    [id],
-  );
-  return result.rows[0] || null;
-}
-
-async function reviewUserVerification(id, status, reviewedBy) {
-  const result = await pool.query(
-    `UPDATE users
-     SET verification_status = $2::varchar,
-         verification_reviewed_at = NOW(),
-         verification_reviewed_by = $3,
-         is_active = CASE WHEN $2::varchar = 'disapproved' THEN FALSE ELSE is_active END
-     WHERE id = $1
-       AND role = 'user'
-       AND COALESCE(is_archived, FALSE) = FALSE
-     RETURNING id, verification_status, verification_reviewed_at`,
-    [id, status, reviewedBy],
-  );
-  return result.rows[0] || null;
-}
-
-async function resubmitUserVerification(id, validIdImage) {
-  const result = await pool.query(
-    `UPDATE users
-     SET valid_id_image = $2,
-         verification_status = 'pending',
-         verification_reviewed_at = NULL,
-         verification_reviewed_by = NULL,
-         is_active = FALSE
-     WHERE id = $1
-       AND role = 'user'
-       AND COALESCE(is_archived, FALSE) = FALSE
-     RETURNING id, username, email, first_name, last_name, address, contact_number,
-               role, barangay_name, verification_status, created_at`,
-    [id, validIdImage],
   );
   return result.rows[0] || null;
 }
@@ -1077,9 +1021,6 @@ module.exports = {
   createAdmin,
   findAdminById,
   findUserByIdForAdmin,
-  getUserVerificationById,
-  reviewUserVerification,
-  resubmitUserVerification,
   updateAdmin,
   updateUserById,
   listArchivedAdmins,

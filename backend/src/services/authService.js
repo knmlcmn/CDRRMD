@@ -27,20 +27,8 @@ function toUserResponse(user) {
     address: user.address,
     contactNumber: user.contact_number,
     barangayName: user.barangay_name || null,
-    verificationStatus: user.verification_status || 'approved',
     accountId: accountPrefix && createdYear ? `${accountPrefix}-${createdYear}-${String(user.id).padStart(5, '0')}` : null,
   };
-}
-
-function normalizeValidIdImage(value) {
-  const normalized = String(value || '').trim();
-  if (!/^data:image\/(jpeg|jpg|png|webp|heic|heif);base64,[a-z0-9+/=\s]+$/i.test(normalized)) {
-    throw httpError(400, 'A valid ID image is required for account verification.');
-  }
-  if (normalized.length > 10 * 1024 * 1024) {
-    throw httpError(413, 'The valid ID image is too large. Please upload a smaller image.');
-  }
-  return normalized;
 }
 
 async function persistRefreshToken(client, userId, refreshToken) {
@@ -51,7 +39,7 @@ async function persistRefreshToken(client, userId, refreshToken) {
 }
 
 async function register(payload) {
-  const { username, email, password, firstName, lastName, address, contactNumber, validIdImage } = payload || {};
+  const { username, email, password, firstName, lastName, address, contactNumber } = payload || {};
 
   if (!email || !password) {
     throw httpError(400, 'Email and password are required.');
@@ -65,8 +53,6 @@ async function register(payload) {
   if (String(password).length < 6) {
     throw httpError(400, 'Password must be at least 6 characters.');
   }
-
-  const normalizedValidId = normalizeValidIdImage(validIdImage);
 
   const existing = await userModel.findUserByEmail(trimmedEmail);
   if (existing) {
@@ -86,8 +72,6 @@ async function register(payload) {
     passwordHash,
     role: 'user',
     barangayName: null,
-    validIdImage: normalizedValidId,
-    verificationStatus: 'pending',
   });
 
   const { token, refreshToken } = issueTokens(user);
@@ -172,12 +156,11 @@ async function completeLogin(user) {
   await refreshTokenModel.withTransaction(async (client) => {
     await refreshTokenModel.revokeActiveByUser(client, user.id);
     await persistRefreshToken(client, user.id, refreshToken);
-    // Accounts awaiting review can authenticate only to see their verification status.
     await client.query(
       `UPDATE users
        SET last_login = NOW(),
            last_seen_at = NOW(),
-           is_active = CASE WHEN verification_status = 'approved' THEN TRUE ELSE FALSE END
+           is_active = TRUE
        WHERE id = $1`,
       [user.id],
     );
@@ -255,19 +238,6 @@ async function getMe(userId) {
   return { user: toUserResponse(user) };
 }
 
-async function resubmitVerification(userId, payload) {
-  if (!userId) throw httpError(401, 'Invalid token payload.');
-  const validIdImage = normalizeValidIdImage(payload?.validIdImage);
-  const currentUser = await userModel.findPublicUserById(userId);
-  if (!currentUser || currentUser.role !== 'user') throw httpError(404, 'User account not found.');
-  if (String(currentUser.verification_status || 'approved').toLowerCase() === 'approved') {
-    throw httpError(400, 'This account is already approved.');
-  }
-  const user = await userModel.resubmitUserVerification(userId, validIdImage);
-  if (!user) throw httpError(404, 'User account not found.');
-  return { message: 'Your valid ID was resubmitted for review.', user: toUserResponse(user) };
-}
-
 async function updateMe(userId, payload) {
   if (!userId) {
     throw httpError(401, 'Invalid token payload.');
@@ -289,9 +259,6 @@ async function updateMe(userId, payload) {
   const currentUser = await userModel.findPublicUserById(userId);
   if (!currentUser) {
     throw httpError(404, 'User not found.');
-  }
-  if (currentUser.role === 'user' && String(currentUser.verification_status || 'approved').toLowerCase() !== 'approved') {
-    throw httpError(403, 'This account is not approved for access.', 'ACCOUNT_NOT_APPROVED');
   }
   const user = await userModel.updateMyProfile(userId, {
     firstName: String(firstName || '').trim() || null,
@@ -317,8 +284,8 @@ async function assignBarangayFromLocation(userId, payload) {
   if (!currentUser) {
     throw httpError(404, 'User not found.');
   }
-  if (currentUser.role !== 'user' || String(currentUser.verification_status || 'approved').toLowerCase() !== 'approved') {
-    throw httpError(403, 'This account is not approved for access.', 'ACCOUNT_NOT_APPROVED');
+  if (currentUser.role !== 'user') {
+    throw httpError(403, 'Resident account access required.');
   }
 
   const latitude = Number(payload?.latitude);
@@ -362,5 +329,4 @@ module.exports = {
   getMe,
   updateMe,
   assignBarangayFromLocation,
-  resubmitVerification,
 };

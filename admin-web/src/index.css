@@ -303,6 +303,23 @@ body,
   .status-chip {
     @apply inline-flex rounded-full px-2 py-1 text-xs font-bold;
   }
+
+  .incident-status-chip {
+    @apply mx-auto flex min-h-8 w-full max-w-[11rem] items-center justify-center rounded-lg px-2.5 py-1.5 text-center text-xs font-bold leading-tight;
+    white-space: normal;
+    word-break: normal;
+    overflow-wrap: normal;
+  }
+
+  .incident-monitoring-table th,
+  .incident-monitoring-table td {
+    @apply align-middle;
+  }
+
+  .incident-monitoring-table th:nth-child(3),
+  .incident-monitoring-table td:nth-child(3) {
+    @apply text-center;
+  }
 }
 
 @keyframes water-gauge-breathe {

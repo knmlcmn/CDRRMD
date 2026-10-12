@@ -305,6 +305,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       setRouteCoordinates([]);
       return undefined;
     }
+    setRouteCoordinates([responderLocation, routeDestination]);
     fetchRoadRoute(responderLocation, routeDestination)
       .then((route) => { if (!cancelled) setRouteCoordinates(route.coordinates); })
       .catch(() => { if (!cancelled) setRouteCoordinates([responderLocation, routeDestination]); });
@@ -371,12 +372,14 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       selectedResponderId: selectedMapReport?.assigned_rescuer_id || null,
       responderKind,
       pickedUp: Boolean(selectedMapReport?.picked_up_at),
+      routeDestination: selectedMapReport?.picked_up_at ? routeDestination : null,
+      evacuationAreaName: selectedMapReport?.evacuation_area_name || null,
       recenter: Boolean(selectedMapReport) && recenter,
     }, '*');
-  }, [mapReady, residentLocation, responderLocation, responderPoints, routeCoordinates, selectedMapReport]);
+  }, [mapReady, residentLocation, responderLocation, responderPoints, routeCoordinates, routeDestination, selectedMapReport]);
 
   const focusKey = selectedMapReport
-    ? `${selectedMapReport.id}:${selectedMapReport.assigned_rescuer_id}:${Boolean(selectedMapReport.picked_up_at)}`
+    ? `${selectedMapReport.id}:${selectedMapReport.assigned_rescuer_id}:${Boolean(selectedMapReport.picked_up_at)}:${routeCoordinates.length > 1}`
     : '';
   useEffect(() => {
     if (!mapReady) return;
@@ -543,7 +546,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                           <td className={d.dashboard.tdTruncate}>{row.location}</td>
                           <td className={d.dashboard.thHiddenMd}>{row.requester}</td>
                           <td>
-                            <span className={`${d.dashboard.statusChip} ${isBackupPending ? '!bg-amber-100 !text-amber-800' : '!bg-sky-100 !text-sky-700'}`}>{row.status}</span>
+                            <span className={`${d.dashboard.statusChip} incident-status-chip ${isBackupPending ? '!bg-amber-100 !text-amber-800' : '!bg-sky-100 !text-sky-700'}`}>{row.status}</span>
                           </td>
                         </tr>
                       );
@@ -670,7 +673,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                           <td className={d.dashboard.tdStrong}>{item.caseId}</td>
                           <td className={d.dashboard.tdTruncate}>{item.barangay}</td>
                           <td className={d.dashboard.thHiddenMd}>{titleCase(item.requesterName || 'Unknown')}</td>
-                          <td><span className={`${d.dashboard.statusChip} ${isPending ? '!bg-orange-100 !text-orange-700' : isResolved ? '!bg-emerald-100 !text-emerald-700' : ''}`}>{formatIncidentStatus(item.status)}</span></td>
+                          <td><span className={`${d.dashboard.statusChip} incident-status-chip ${isPending ? '!bg-orange-100 !text-orange-700' : isResolved ? '!bg-emerald-100 !text-emerald-700' : ''}`}>{formatIncidentStatus(item.status)}</span></td>
                         </tr>
                       );
                     })}

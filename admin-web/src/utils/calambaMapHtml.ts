@@ -2346,9 +2346,18 @@ export function buildCalambaMapHtml(
             return;
           }
         }
-        if (!payload.incidentLocation) return;
-        var latitude = Number(payload.incidentLocation.latitude);
-        var longitude = Number(payload.incidentLocation.longitude);
+        var route = Array.isArray(payload.routeCoordinates) ? payload.routeCoordinates : [];
+        var routeBounds = route
+          .map(function(point) { return [Number(point && point.latitude), Number(point && point.longitude)]; })
+          .filter(function(point) { return Number.isFinite(point[0]) && Number.isFinite(point[1]) && inCalamba(point[0], point[1]); });
+        if (routeBounds.length > 1) {
+          map.fitBounds(L.latLngBounds(routeBounds), { animate: true, maxZoom: 16, padding: [36, 36] });
+          return;
+        }
+        var focusPoint = payload.incidentLocation || payload.routeDestination || payload.responderLocation;
+        if (!focusPoint) return;
+        var latitude = Number(focusPoint.latitude);
+        var longitude = Number(focusPoint.longitude);
         if (Number.isFinite(latitude) && Number.isFinite(longitude) && inCalamba(latitude, longitude)) {
           map.setView([latitude, longitude], 16, { animate: true });
         }
@@ -2361,6 +2370,12 @@ export function buildCalambaMapHtml(
           if (extendInitialBounds) fitBounds.extend([payload.incidentLocation.latitude, payload.incidentLocation.longitude]);
           L.marker([payload.incidentLocation.latitude, payload.incidentLocation.longitude], { icon: residentPinIcon, zIndexOffset: 1000 })
             .addTo(responderRouteLayer).bindPopup('<strong>Resident location</strong><br/>' + (payload.selectedReportCode || 'Rescue report'));
+        }
+        if (pickedUp && payload.routeDestination && inCalamba(Number(payload.routeDestination.latitude), Number(payload.routeDestination.longitude))) {
+          if (extendInitialBounds) fitBounds.extend([payload.routeDestination.latitude, payload.routeDestination.longitude]);
+          L.marker([payload.routeDestination.latitude, payload.routeDestination.longitude], { icon: areaPinIcon, zIndexOffset: 1050 })
+            .addTo(responderRouteLayer)
+            .bindPopup('<strong>Destination evacuation center</strong><br/>' + escapeHtml(payload.evacuationAreaName || 'Assigned evacuation center'));
         }
 
         if (payload.responderLocation && inCalamba(Number(payload.responderLocation.latitude), Number(payload.responderLocation.longitude))) {
@@ -2607,6 +2622,8 @@ export function buildCalambaMapHtml(
           payload.responderPoints = Array.isArray(data.responderPoints) ? data.responderPoints : [];
           payload.selectedResponderId = data.selectedResponderId || null;
           payload.pickedUp = Boolean(data.pickedUp);
+          payload.routeDestination = data.routeDestination || null;
+          payload.evacuationAreaName = data.evacuationAreaName || null;
           if (data.responderKind) payload.mapBehavior.responderKind = data.responderKind;
           payload.responderHeading = Number.isFinite(Number(data.responderHeading)) ? Number(data.responderHeading) : null;
           renderIncidents();

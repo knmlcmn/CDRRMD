@@ -154,7 +154,7 @@ export default function IncidentHistoryModal({ open, scopeLabel, onClose, onAuth
                   <td>{displayText(record.incident_type || record.report_type)}</td>
                   <td>{record.assigned_barangay || '-'}</td>
                   <td className="max-w-64 truncate" title={record.location || ''}>{record.location || '-'}</td>
-                  <td><span className="status-chip bg-slate-100 text-slate-700">{displayText(record.status)}</span></td>
+                  <td><span className="status-chip incident-status-chip bg-slate-100 text-slate-700">{displayText(record.status)}</span></td>
                   <td className="whitespace-nowrap text-xs">{formatDate(record.created_at)}</td>
                 </tr>
               ))}
