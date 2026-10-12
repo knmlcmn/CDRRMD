@@ -32,7 +32,7 @@ export const d = {
   },
 
   shell: {
-    root: 'barangay-desktop-scale app-bg min-h-[var(--barangay-viewport-height)] w-full overflow-x-hidden text-slate-900',
+    root: 'barangay-font-manrope barangay-desktop-scale app-bg min-h-[var(--barangay-viewport-height)] w-full overflow-x-hidden text-slate-900',
     layout: 'flex min-h-[var(--barangay-viewport-height)] flex-col lg:grid lg:grid-cols-[228px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)]',
     aside: 'hidden flex-col gap-4 border-r border-slate-700/60 bg-[#0b2e4e] px-4 py-4 lg:flex lg:min-h-[var(--barangay-viewport-height)]',
     mobileTop: 'sticky top-0 z-30 border-b border-slate-300 bg-white/95 px-3 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur lg:hidden',
@@ -115,11 +115,11 @@ export const d = {
   },
 
   login: {
-    root: 'barangay-desktop-scale app-bg min-h-[var(--barangay-viewport-height)] w-full',
+    root: 'barangay-font-manrope barangay-desktop-scale app-bg min-h-[var(--barangay-viewport-height)] w-full',
     layout: 'grid min-h-[var(--barangay-viewport-height)] w-full bg-white lg:grid-cols-[1.02fr_0.98fr]',
     left: 'order-2 flex flex-col justify-center bg-[linear-gradient(155deg,#f8fbff_0%,#edf3fb_60%,#e4edf8_100%)] px-5 py-8 sm:px-10 md:px-14 lg:order-1 lg:px-16',
     overline: 'mb-5 text-xs font-semibold uppercase tracking-[0.28em] text-slate-500 sm:mb-7',
-    title: "mb-2 text-[clamp(2rem,5vw,3rem)] font-black tracking-tight text-[#0b2e4e] [font-family:'Sora',sans-serif]",
+    title: 'mb-2 text-[clamp(2rem,5vw,3rem)] font-black tracking-tight text-[#0b2e4e]',
     subtitle: 'mb-6 max-w-xl text-sm text-slate-600 sm:mb-8',
     form: 'w-full max-w-[min(560px,100%)] space-y-4 sm:space-y-5',
     input: 'h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-700 shadow-[0_2px_6px_rgba(15,41,72,0.12)] outline-none transition focus:border-[#1f4e79]',
@@ -132,7 +132,7 @@ export const d = {
     overlay: 'absolute inset-0 bg-gradient-to-b from-[#1f5f93]/45 to-[#0b2740]/75',
     heroBody: 'relative z-10 flex max-w-sm flex-col items-center px-4 text-center text-white',
     seal: 'mb-4 h-24 w-24 rounded-full border-[5px] border-[#f6d84c] bg-white object-cover shadow-xl sm:h-28 sm:w-28 lg:mb-5 lg:h-36 lg:w-36 lg:border-[6px]',
-    heroTitle: "text-[clamp(1rem,3.8vw,2rem)] font-black leading-tight [font-family:'Sora',sans-serif]",
+    heroTitle: 'text-[clamp(1rem,3.8vw,2rem)] font-black leading-tight',
   },
 
   dashboard: {
@@ -312,7 +312,7 @@ export const d = {
     floodSensorName: 'min-h-[1.3rem] w-full truncate text-center text-sm font-black text-white sm:text-base',
     floodSensorGauge: 'water-gauge relative flex h-36 w-full max-w-[110px] items-end rounded-2xl border-2 border-slate-900 p-1 sm:h-44 xl:h-[220px]',
     incidentReportsTable: 'data-table w-full table-fixed text-xs',
-    floodReportsTable: 'data-table min-w-[900px] table-fixed',
+    floodReportsTable: 'data-table w-full !min-w-0 table-fixed text-xs',
     incidentsCard: 'panel flex min-h-0 min-w-0 max-w-full flex-col overflow-hidden p-2',
     incidentsHead: 'flex flex-wrap items-center gap-2 border-b border-slate-300 pb-2',
     incidentsTitle: 'text-base font-bold text-[#19374f]',

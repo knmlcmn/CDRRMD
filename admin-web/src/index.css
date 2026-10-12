@@ -36,6 +36,23 @@ body,
   --admin-viewport-height: 100dvh;
 }
 
+/* Keep the Admin portal typography consistent without changing the Barangay,
+   rescuer, or user-facing portals that share this stylesheet. */
+.admin-font-manrope,
+.admin-font-manrope :where(*, *::before, *::after) {
+  font-family: 'Manrope', system-ui, sans-serif !important;
+}
+
+.barangay-font-manrope,
+.barangay-font-manrope :where(*, *::before, *::after) {
+  font-family: 'Manrope', system-ui, sans-serif !important;
+}
+
+.rescuer-font-manrope,
+.rescuer-font-manrope :where(*, *::before, *::after) {
+  font-family: 'Manrope', system-ui, sans-serif !important;
+}
+
 .barangay-desktop-scale {
   --barangay-viewport-height: 100dvh;
 }

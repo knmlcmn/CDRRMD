@@ -16,6 +16,7 @@ import { loadWaterLevelSensors, type WaterLevelSensor } from '../services/waterL
 import WaterLevelAlert, { type WaterLevelNoticeKind } from '../components/WaterLevelAlert';
 import { formatIncidentStatus } from '../utils/incidentStatus';
 import { isCalambaCurrentlyRainy } from '../services/weatherAlerts';
+import { isInCurrentManilaWeek } from '../utils/currentWeek';
 
 type Coordinate = { latitude: number; longitude: number };
 type CityRescuerLocation = RescuerAccount & { kind: 'barangay' | 'cddrmd' };
@@ -405,7 +406,9 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     [areas],
   );
 
-  const backupOverviewRows = useMemo(() => backupRequests.map((request) => {
+  const backupOverviewRows = useMemo(() => backupRequests
+    .filter((request) => isInCurrentManilaWeek(request.created_at))
+    .map((request) => {
     const report = operationalReports.find((item) => item.id === Number(request.report_id));
     const summary = incidents.find((item) => item.caseId === report?.report_code);
     return {
@@ -416,15 +419,17 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       requester: `Barangay ${request.barangay_name || report?.assigned_barangay || 'Unknown'}`,
       status: request.acknowledged_at ? 'Response Accepted' : 'Pending',
     };
-  }), [backupRequests, incidents, operationalReports]);
+    }), [backupRequests, incidents, operationalReports]);
 
-  const barangayRescueRows = useMemo(() => incidents.map((incident) => {
+  const barangayRescueRows = useMemo(() => incidents
+    .filter((incident) => isInCurrentManilaWeek(incident.createdAt))
+    .map((incident) => {
     const report = operationalReports.find((item) => item.report_code === incident.caseId);
     return {
       ...incident,
       barangay: report?.assigned_barangay || 'Unassigned',
     };
-  }), [incidents, operationalReports]);
+    }), [incidents, operationalReports]);
 
   const cardsToRender = [
     {
@@ -512,7 +517,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
           <section className={d.dashboard.overviewGrid}>
             <article className={d.dashboard.reportsPanel}>
               <div className="flex shrink-0 items-center justify-between border-b border-slate-200 px-3 py-2">
-                <div><h2 className={d.dashboard.reportsTitle}>Incident Reports Overview</h2><p className="text-xs text-slate-500">Backup requests from the six barangays</p></div>
+                <div><h2 className={d.dashboard.reportsTitle}>Incident Reports Overview</h2><p className="text-xs text-slate-500">This week's backup requests from the six barangays</p></div>
                 <button onClick={onOpenMonitoring} className="rounded-lg bg-[#1f567d] px-3 py-2 text-xs font-bold text-white hover:bg-[#174866]">View all</button>
               </div>
               <div className={d.dashboard.reportsContentGrid}>
@@ -555,7 +560,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                     })}
                     {backupOverviewRows.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className={d.table.empty}>No Barangay backup requests yet.</td>
+                        <td colSpan={4} className={d.table.empty}>No Barangay backup requests this week.</td>
                       </tr>
                     ) : null}
                   </tbody>
@@ -660,7 +665,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
             <div className="order-1 flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="shrink-0 border-b border-slate-200 px-3 py-2">
                 <h3 className={d.dashboard.reportsTitle}>Incident Reports Overview of Barangay</h3>
-                <p className="text-xs text-slate-500">User-app rescue requests assigned across all six barangays</p>
+                <p className="text-xs text-slate-500">This week's user-app rescue requests across all six barangays</p>
               </div>
               <div className="min-h-0 flex-1 overflow-auto">
                 <table className={d.dashboard.reportsTable}>
@@ -679,7 +684,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                         </tr>
                       );
                     })}
-                    {barangayRescueRows.length === 0 ? <tr><td colSpan={4} className={d.table.empty}>No user-app rescue requests yet.</td></tr> : null}
+                    {barangayRescueRows.length === 0 ? <tr><td colSpan={4} className={d.table.empty}>No user-app rescue requests this week.</td></tr> : null}
                   </tbody>
                 </table>
               </div>

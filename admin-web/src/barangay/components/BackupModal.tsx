@@ -12,7 +12,7 @@ export default function BackupModal({ title, children, onClose, square = false, 
     return () => { dialog?.close(); };
   }, []);
   return createPortal(
-    <dialog ref={ref} className={`backup-modal ${square ? 'backup-modal-square' : ''} ${variant === 'rescue-request' ? 'backup-modal-rescue-request' : ''}`}
+    <dialog ref={ref} className={`barangay-font-manrope backup-modal ${square ? 'backup-modal-square' : ''} ${variant === 'rescue-request' ? 'backup-modal-rescue-request' : ''}`}
       aria-label={title} onCancel={(event) => { event.preventDefault(); onClose(); }}>
       {variant === 'default' ? <h2>{title}</h2> : null}
       {children}

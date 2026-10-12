@@ -114,7 +114,7 @@ export default function AdminShell({
   ];
 
   return (
-    <div className={d.shell.root}>
+    <div className={`${d.shell.root} admin-font-manrope`}>
       <div className={d.shell.layout}>
         {/* Mobile top bar */}
         <div className={d.shell.mobileTop}>

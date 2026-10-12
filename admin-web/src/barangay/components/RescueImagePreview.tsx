@@ -20,7 +20,7 @@ export default function RescueImagePreview({ image, residentName, createdAt, onC
   return createPortal(
     <dialog
       ref={dialogRef}
-      className="rescue-image-preview"
+      className="barangay-font-manrope rescue-image-preview"
       aria-label={`Submitted rescue image from ${residentName}`}
       onCancel={(event) => {
         event.preventDefault();

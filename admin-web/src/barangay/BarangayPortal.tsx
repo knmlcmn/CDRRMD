@@ -279,7 +279,7 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
   const pageProps = { barangayName, onLogout, onAuthError, onOpenDashboard: () => setView('dashboard'), onOpenHistory: () => setView('history') };
 
   return (
-    <>
+    <div className="barangay-font-manrope">
       {rescuePopup || popup}
       {showRescueImage && activeRescueRequest && rescueProofImage ? (
         <RescueImagePreview
@@ -295,6 +295,6 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
       {view === 'evacuation-center' ? <EvacuationCenterPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenAccount={() => setView('account')} /> : null}
       {view === 'monitoring' ? <MonitoringPage {...pageProps} focusReportId={focusReportId} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenEvacuationCenter={() => setView('evacuation-center')} onOpenAccount={() => setView('account')} /> : null}
       {view === 'history' ? <HistoryPage {...pageProps} onOpenMonitoring={() => setView('monitoring')} onOpenFloodMonitoring={() => setView('flood-monitoring')} onOpenEvacuationCenter={() => setView('evacuation-center')} onOpenAccount={() => setView('account')} /> : null}
-    </>
+    </div>
   );
 }

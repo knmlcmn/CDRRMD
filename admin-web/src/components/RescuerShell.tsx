@@ -52,7 +52,7 @@ export default function RescuerShell({
   };
 
   return (
-    <div className={d.shell.root}>
+    <div className={`${d.shell.root} rescuer-font-manrope`}>
       <div className={d.shell.layout}>
         <div className={d.shell.mobileTop}>
           <div className={d.shell.mobileTopInner}>

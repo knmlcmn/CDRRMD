@@ -22,7 +22,7 @@ const TABS: Array<{ key: HistoryKind; label: string }> = [
   { key: 'water-levels', label: 'Water-Level Logs' },
 ];
 const MONTHS = Array.from({ length: 12 }, (_, index) => new Intl.DateTimeFormat('en-PH', { month: 'long' }).format(new Date(2024, index, 1)));
-const YEARS = Array.from({ length: Math.max(1, new Date().getFullYear() - 2019) }, (_, index) => new Date().getFullYear() - index);
+const YEARS = Array.from({ length: Math.max(1, new Date().getFullYear() - 1999) }, (_, index) => new Date().getFullYear() - index);
 
 function dateText(value: unknown) {
   if (!value) return '-';

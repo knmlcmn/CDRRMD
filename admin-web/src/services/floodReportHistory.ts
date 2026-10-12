@@ -6,6 +6,7 @@ export type FloodSensorReport = {
   level: 'Moderate' | 'High';
   hardwareNo: string;
   status: 'Active' | 'Inactive';
+  distanceCm: number | null;
   waterLevelPercentage: number;
   active: boolean;
   createdAt: string;
@@ -25,6 +26,7 @@ function normalizeFloodReport(firebaseKey: string, value: unknown): FloodSensorR
   const storedLevel = String(report.level || '').trim();
   const level = storedLevel === 'Moderate' || storedLevel === 'High' ? storedLevel : storedStatus;
   const waterLevelPercentage = Number(report.waterLevelPercentage);
+  const distanceCm = Number(report.distanceCm);
 
   if (!report.reportId || (level !== 'Moderate' && level !== 'High')) return null;
 
@@ -37,6 +39,9 @@ function normalizeFloodReport(firebaseKey: string, value: unknown): FloodSensorR
     level,
     hardwareNo: String(report.hardwareNo || report.sensorId || firebaseKey),
     status: active ? 'Active' : 'Inactive',
+    distanceCm: report.distanceCm !== null && report.distanceCm !== undefined && Number.isFinite(distanceCm)
+      ? distanceCm
+      : null,
     waterLevelPercentage: Number.isFinite(waterLevelPercentage) ? waterLevelPercentage : 0,
     active,
     createdAt: String(report.createdAt || ''),

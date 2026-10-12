@@ -3,6 +3,7 @@ import { API_BASE_URL, api } from '../../services/apiClient';
 import type { EvacuationAreaItem } from '../../types';
 import { buildCalambaMapHtml } from '../../utils/calambaMapHtml';
 import { formatIncidentStatus } from '../../utils/incidentStatus';
+import { isInCurrentManilaWeek } from '../../utils/currentWeek';
 import { d } from '../../adminDesign';
 import BarangayShell from '../components/BarangayShell';
 import { loadWaterLevelSensors, type WaterLevelSensor } from '../services/waterLevelSensors';
@@ -96,7 +97,9 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
     resolved: incidents.filter((item) => String(item.status).toLowerCase() === 'resolved').length,
   }), [incidents]);
 
-  const recentIncidents = useMemo(() => [...incidents]
+  const recentIncidents = useMemo(() => incidents
+    .filter((incident) => isInCurrentManilaWeek(incident.created_at))
+    .slice()
     .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
     .slice(0, 8), [incidents]);
 
@@ -153,7 +156,7 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
 
         <section className="grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.72fr)] 2xl:grid-cols-[minmax(0,1.5fr)_minmax(260px,0.72fr)_minmax(320px,0.85fr)]">
           <article className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3"><div><h2 className={d.dashboard.reportsTitle}>Incident Reports Overview</h2><p className="text-xs text-slate-500">Latest reports from Barangay {barangayName}</p></div><button onClick={onOpenMonitoring} className="rounded-lg bg-[#1f567d] px-3 py-2 text-xs font-bold text-white hover:bg-[#174866]">View all</button></div>
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3"><div><h2 className={d.dashboard.reportsTitle}>Incident Reports Overview</h2><p className="text-xs text-slate-500">This week's reports from Barangay {barangayName}</p></div><button onClick={onOpenMonitoring} className="rounded-lg bg-[#1f567d] px-3 py-2 text-xs font-bold text-white hover:bg-[#174866]">View all</button></div>
             <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
               <table className="w-full table-fixed text-left">
                 <colgroup><col className="w-[21%]" /><col className="w-[15%]" /><col className="w-[28%]" /><col className="w-[8%]" /><col className="w-[28%]" /></colgroup>
@@ -177,7 +180,7 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
                   ><td className="truncate px-3 py-3 font-mono text-[0.72rem] font-bold text-[#173750]" title={item.report_code || undefined}>{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td><td className="px-3 py-3">{item.incident_type || 'Incident'}</td><td className="truncate px-3 py-3" title={item.location}>{item.location}</td><td className="px-3 py-3">{item.estimated_people ?? '—'}</td><td className="px-3 py-3"><span className={`incident-status-chip ${isPending ? 'bg-orange-100 text-orange-700' : isResolved ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{formatIncidentStatus(item.status)}</span></td></tr>;
                 })}</tbody>
               </table>
-              {!recentIncidents.length ? <p className="p-10 text-center text-sm text-slate-500">{loading ? 'Loading incidents…' : 'No incidents recorded.'}</p> : null}
+              {!recentIncidents.length ? <p className="p-10 text-center text-sm text-slate-500">{loading ? 'Loading incidents…' : 'No incidents recorded this week.'}</p> : null}
             </div>
           </article>
 

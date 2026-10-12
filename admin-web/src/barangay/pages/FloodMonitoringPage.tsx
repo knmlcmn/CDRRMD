@@ -20,6 +20,7 @@ type HardwareSlot = {
   hardwareId: string;
   assignedArea: string;
   waterLevelLabel: string;
+  distanceCm: number | null;
   fillPct: number;
   hasReading: boolean;
   sensorStatus: WaterLevelSensorStatus;
@@ -215,6 +216,7 @@ export default function FloodMonitoringPage({
           hardwareId: sensorAssignment.hardwareId,
           assignedArea: `Brgy. ${sensorAssignment.barangayName}`,
           waterLevelLabel: latestReport?.level || 'No Reading',
+          distanceCm: null,
           fillPct: 0,
           hasReading: false,
           sensorStatus: sensorStatuses[sensorAssignment.hardwareId] || 'Active',
@@ -232,6 +234,7 @@ export default function FloodMonitoringPage({
           waterLevelLabel: typeof firebaseReading.distanceCm === 'number'
             ? `Distance: ${firebaseReading.distanceCm.toFixed(1)} cm`
             : firebaseReading.waterLevelLabel || firebaseReading.waterLevel || hardwareSlot.waterLevelLabel,
+          distanceCm: firebaseReading.distanceCm ?? null,
           fillPct: typeof firebaseReading.fillPct === 'number'
             ? firebaseReading.fillPct
             : distanceToFillPct(firebaseReading.distanceCm),
@@ -372,17 +375,17 @@ export default function FloodMonitoringPage({
             </div>
             <div className={d.monitoring.incidentsTableWrap}>
               <table className={d.monitoring.floodReportsTable}>
-                <thead><tr><th>Report ID</th><th>Level</th><th>Hardware no.</th><th>Water level</th><th>Status</th></tr></thead>
+                <colgroup><col className="w-1/4" /><col className="w-1/4" /><col className="w-1/4" /><col className="w-1/4" /></colgroup>
+                <thead><tr><th>Level</th><th>Hardware no.</th><th>Water level</th><th>Distance (cm)</th></tr></thead>
                 <tbody>
                   {displayedReports.length === 0 ? (
-                    <tr><td colSpan={5} className={d.table.empty}>{showReportHistory ? 'No flood report history yet.' : 'No active moderate or high flood reports.'}</td></tr>
+                    <tr><td colSpan={4} className={d.table.empty}>{showReportHistory ? 'No flood report history yet.' : 'No active moderate or high flood reports.'}</td></tr>
                   ) : displayedReports.map((item) => (
                     <tr key={item.firebaseKey} className={d.monitoring.rowBase}>
-                      <td>{item.reportId}</td>
                       <td><span className={[d.monitoring.statusChip, item.level === 'High' ? d.monitoring.floodLevelHigh : d.monitoring.floodLevelModerate].join(' ')}>{item.level}</span></td>
                       <td>{item.hardwareNo}</td>
                       <td>{item.waterLevelPercentage.toFixed(0)}%</td>
-                      <td><span className={[d.monitoring.statusChip, item.active ? d.monitoring.floodStatusActive : d.monitoring.floodStatusUnavailable].join(' ')}>{item.status}</span></td>
+                      <td>{item.active && hardwareSlots[0]?.distanceCm !== null && hardwareSlots[0]?.distanceCm !== undefined ? hardwareSlots[0].distanceCm.toFixed(1) : item.distanceCm === null ? '—' : item.distanceCm.toFixed(1)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -26,6 +26,7 @@ type HardwareSlot = {
   hardwareNo: string;
   assignedArea: string;
   waterLevelLabel: string;
+  distanceCm: number | null;
   fillPct: number;
   hasReading: boolean;
   sensorStatus: SensorStatus;
@@ -336,6 +337,7 @@ async function syncFirebaseFloodReports(
         level,
         hardwareNo: slot.hardwareNo,
         status: 'Active',
+        distanceCm: slot.distanceCm,
         waterLevelPercentage: Number(slot.fillPct.toFixed(1)),
         active: true,
         createdAt: shouldStartEvent ? nowIso : saved.createdAt,
@@ -352,6 +354,7 @@ async function syncFirebaseFloodReports(
       const hasChanged = shouldStartEvent
         || saved.level !== next.level
         || saved.location !== next.location
+        || saved.distanceCm !== next.distanceCm
         || saved.waterLevelPercentage !== next.waterLevelPercentage;
       if (hasChanged) {
         writes.push(putFirebaseFloodReport(next));
@@ -416,6 +419,7 @@ export default function FloodMonitoringPage({
           hardwareNo: `HW-${String(index + 1).padStart(2, '0')}`,
           assignedArea,
           waterLevelLabel: 'No Reading',
+          distanceCm: null,
           fillPct: 0,
           hasReading: false,
           sensorStatus: savedSensorStatuses[hardwareId] || 'Active',
@@ -436,6 +440,7 @@ export default function FloodMonitoringPage({
           waterLevelLabel: typeof firebaseReading.distanceCm === 'number'
             ? `Distance: ${firebaseReading.distanceCm.toFixed(1)} cm`
             : firebaseReading.waterLevelLabel || firebaseReading.waterLevel || hardwareSlot.waterLevelLabel,
+          distanceCm: firebaseReading.distanceCm ?? null,
           fillPct: typeof firebaseReading.fillPct === 'number'
             ? firebaseReading.fillPct
             : distanceToFillPct(firebaseReading.distanceCm),
@@ -736,15 +741,18 @@ export default function FloodMonitoringPage({
             </div>
             <div className={d.monitoring.incidentsTableWrap}>
               <table className={d.monitoring.floodReportsTable}>
+                <colgroup>
+                  <col className="w-[34%]" /><col className="w-[22%]" /><col className="w-[22%]" /><col className="w-[22%]" />
+                </colgroup>
                 <thead>
                   <tr>
-                    <th>Report ID</th><th>Location</th><th>Level</th><th>Hardware no.</th><th>Status</th>
+                    <th>Location</th><th>Level</th><th>Hardware no.</th><th>Distance (cm)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {displayedReports.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className={d.table.empty}>
+                      <td colSpan={4} className={d.table.empty}>
                         {showReportHistory ? 'No flood report history yet.' : 'No active flood reports.'}
                       </td>
                     </tr>
@@ -754,7 +762,6 @@ export default function FloodMonitoringPage({
                       onClick={() => setSelectedReportId(item.reportId)}
                       className={[d.monitoring.rowBase, selectedReport?.reportId === item.reportId ? d.monitoring.rowSelected : null].filter(Boolean).join(' ')}
                     >
-                      <td>{item.reportId}</td>
                       <td className={d.monitoring.rowLocation}>{item.location}</td>
                       <td>
                         <span
@@ -767,16 +774,7 @@ export default function FloodMonitoringPage({
                         </span>
                       </td>
                       <td>{item.hardwareNo}</td>
-                      <td>
-                        <span
-                          className={[
-                            d.monitoring.statusChip,
-                            item.status === 'Active' ? d.monitoring.floodStatusActive : d.monitoring.floodStatusUnavailable,
-                          ].join(' ')}
-                        >
-                          {item.status === 'Active' ? 'Active' : 'Unavailable'}
-                        </span>
-                      </td>
+                      <td>{item.distanceCm === null ? '—' : item.distanceCm.toFixed(1)}</td>
                     </tr>
                   ))}
                 </tbody>
