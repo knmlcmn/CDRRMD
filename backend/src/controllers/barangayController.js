@@ -160,7 +160,10 @@ async function getMyReports(req, res) {
   try {
     // Jurisdiction is fixed from the resident's GPS coordinates at submission.
     // Do not infer it from an evacuation center, text, or a nearby centroid.
-    const rows = await userModel.listReportsByAssignedBarangay(barangayName);
+    const rows = await userModel.listReportsByAssignedBarangay(
+      barangayName,
+      String(req.query?.scope || '').toLowerCase() === 'dashboard',
+    );
     return res.json(rows);
   } catch (error) {
     console.error('[getMyReports] Failed for barangay:', barangayName, error);

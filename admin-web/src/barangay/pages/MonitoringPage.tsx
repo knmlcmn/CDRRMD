@@ -133,6 +133,8 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const mapWrapRef = useRef<HTMLElement | null>(null);
   const mapFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const dataLoadInFlightRef = useRef(false);
+  const areasLoadInFlightRef = useRef(false);
   const lastFocusedRescue = useRef('');
   const [mapReady, setMapReady] = useState(false);
   const [layerVisibility] = useState<MonitoringLayerVisibility>({
@@ -170,16 +172,16 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   }, [focusReportId]);
 
   const loadData = useCallback(async (showLoading = true) => {
+    if (dataLoadInFlightRef.current) return;
+    dataLoadInFlightRef.current = true;
     if (showLoading) setLoading(true);
     try {
-      const [reportsRes, areasRes, personnelRes] = await Promise.allSettled([
+      const [reportsRes, personnelRes] = await Promise.allSettled([
         api.get('/barangay/reports/mine'),
-        api.get('/barangay/evacuation-centers'),
         api.get('/barangay/personnel'),
       ]);
 
       const reportsFailed = reportsRes.status === 'rejected';
-      const areasFailed = areasRes.status === 'rejected';
 
       if (reportsRes.status === 'fulfilled') {
         const nextReports = Array.isArray(reportsRes.value.data) ? reportsRes.value.data : [];
@@ -189,13 +191,6 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
         return;
       } else {
         setReports([]);
-      }
-
-      if (areasRes.status === 'fulfilled') {
-        const nextAreas = Array.isArray(areasRes.value.data) ? areasRes.value.data : [];
-        setEvacuationAreas((current) => sameData(current, nextAreas) ? current : nextAreas);
-      } else {
-        setEvacuationAreas([]);
       }
 
       if (personnelRes.status === 'fulfilled') {
@@ -208,7 +203,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
         setBarangayRescuers([]);
       }
 
-      if (reportsFailed && areasFailed) {
+      if (reportsFailed) {
         setError('Failed to load monitoring data.');
       } else {
         setError(null);
@@ -218,9 +213,22 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
       if (apiError.response?.status === 401) { onAuthError(); return; }
       setError(apiError.response?.data?.message || 'Failed to load monitoring data.');
     } finally {
+      dataLoadInFlightRef.current = false;
       if (showLoading) setLoading(false);
     }
   }, [onAuthError]);
+
+  const loadEvacuationAreas = useCallback(async () => {
+    if (areasLoadInFlightRef.current) return;
+    areasLoadInFlightRef.current = true;
+    try {
+      const { data } = await api.get('/barangay/evacuation-centers');
+      const nextAreas = Array.isArray(data) ? data : [];
+      setEvacuationAreas((current) => sameData(current, nextAreas) ? current : nextAreas);
+    } finally {
+      areasLoadInFlightRef.current = false;
+    }
+  }, []);
 
   const loadRainRanking = useCallback(async () => {
     try {
@@ -249,26 +257,32 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
 
   useEffect(() => {
     loadData(true).catch(() => {});
+    loadEvacuationAreas().catch(() => {});
     loadRainRanking().catch(() => {});
     const rt = setInterval(() => {
-      if (document.visibilityState === 'visible') loadData(false).catch(() => {});
+      loadData(false).catch(() => {});
     }, 5000);
+    const areasTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') loadEvacuationAreas().catch(() => {});
+    }, 60_000);
     const rr = setInterval(() => {
       if (document.visibilityState === 'visible') loadRainRanking().catch(() => {});
-    }, 60000);
+    }, 10 * 60_000);
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         loadData(false).catch(() => {});
+        loadEvacuationAreas().catch(() => {});
         loadRainRanking().catch(() => {});
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       clearInterval(rt);
+      clearInterval(areasTimer);
       clearInterval(rr);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [loadData, loadRainRanking]);
+  }, [loadData, loadEvacuationAreas, loadRainRanking]);
 
   useEffect(() => {
     const onFsChange = () => { if (!document.fullscreenElement) setIsMapFullscreen(false); };
@@ -592,11 +606,9 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
       totalToday: reports.filter((r) => new Date(r.created_at).getTime() >= dayStart).length,
       pending: reports.filter((r) => r.status === 'pending').length,
       inProgress: reports.filter((r) => r.status === 'in_progress').length,
-      resolved: reports.filter((r) => r.status === 'resolved').length,
     };
   }, [reports]);
 
-  const selectedReportIsResolved = selectedReport?.status === 'resolved';
   const incidentDetailContent = selectedReport ? (
     <>
       <h3 className={d.monitoring.selectedTitle}>Incident Detail</h3>
@@ -634,9 +646,9 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
               </p>
             </>
           ) : null}
-          {!selectedReportIsResolved ? <div style={{ marginTop: 4, padding: '6px 8px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd', fontSize: '0.9375rem', lineHeight: 1.4, color: '#0369a1' }}>
+          <div style={{ marginTop: 4, padding: '6px 8px', background: '#f0f9ff', borderRadius: 8, border: '1px solid #bae6fd', fontSize: '0.9375rem', lineHeight: 1.4, color: '#0369a1' }}>
             <strong>ℹ️ Barangay review view.</strong> Accept or decline pending reports from this barangay.
-          </div> : null}
+          </div>
         </div>
         <div className={d.monitoring.incidentDetailMetaColumn}>
           <p><strong>Assigned Team:</strong> {selectedReport.assigned_team || 'N/A'}</p>
@@ -644,8 +656,8 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
           <p><strong>Reported By:</strong> {[selectedReport.first_name, selectedReport.last_name].filter(Boolean).join(' ') || selectedReport.email || 'N/A'}</p>
           <p><strong>Reported:</strong> {new Date(selectedReport.created_at).toLocaleString()}</p>
           <p><strong>Evacuation Area:</strong> {selectedReport.evacuation_area_name || assignedEvacuationArea?.name || 'N/A'}</p>
-          {!selectedReportIsResolved ? <p><strong>Route Distance:</strong> {routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : isRescueAwaitingPickup(selectedReport) ? 'Calculating...' : 'N/A'}</p> : null}
-          {!selectedReportIsResolved ? <p><strong>Route ETA:</strong> {routeEtaMinutes ? `${routeEtaMinutes} mins` : isRescueAwaitingPickup(selectedReport) ? 'Calculating...' : 'N/A'}</p> : null}
+          <p><strong>Route Distance:</strong> {routeDistanceKm ? `${routeDistanceKm.toFixed(2)} km` : isRescueAwaitingPickup(selectedReport) ? 'Calculating...' : 'N/A'}</p>
+          <p><strong>Route ETA:</strong> {routeEtaMinutes ? `${routeEtaMinutes} mins` : isRescueAwaitingPickup(selectedReport) ? 'Calculating...' : 'N/A'}</p>
           <p><strong>Admin Notes:</strong> {selectedReport.admin_notes || 'N/A'}</p>
           <p><strong>Reporter Notes:</strong> {selectedReport.notes || 'N/A'}</p>
           {backupRequest?.assigned_rescuer_id ? <p><strong>CDRRMD Backup:</strong> {backupRequest.rescuer_name || backupRequest.rescuer_account_id || 'Assigned team'}</p> : null}
@@ -727,7 +739,6 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
           <article className={[d.monitoring.statCardBase, d.monitoring.statReports].join(' ')}><p className={d.monitoring.statLabel}>Reports Today</p><p className={d.monitoring.statValue}>{stats.totalToday}</p></article>
           <article className={[d.monitoring.statCardBase, d.monitoring.statPending].join(' ')}><p className={d.monitoring.statLabel}>{formatIncidentStatus('pending')}</p><p className={d.monitoring.statValue}>{stats.pending}</p></article>
           <article className={[d.monitoring.statCardBase, d.monitoring.statInProgress].join(' ')}><p className={d.monitoring.statLabel}>{formatIncidentStatus('in_progress')}</p><p className={d.monitoring.statValue}>{stats.inProgress}</p></article>
-          <article className={[d.monitoring.statCardBase, d.monitoring.statResolved].join(' ')}><p className={d.monitoring.statLabel}>{formatIncidentStatus('resolved')}</p><p className={d.monitoring.statValue}>{stats.resolved}</p></article>
         </section>
 
         {/* Map + selected report */}

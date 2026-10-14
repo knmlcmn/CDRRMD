@@ -52,7 +52,7 @@ async function listIncidentHistory(req, res) {
   const barangayName = historyScope(req);
   const filters = parseFilters(req);
   const { rows } = await pool.query(
-    `SELECT r.id, r.report_code, r.report_type, r.incident_type, r.status, r.location,
+    `SELECT r.id, r.report_code, r.status, r.location,
             r.assigned_barangay, r.evacuation_area_name, r.created_at, r.resolved_at,
             NULLIF(TRIM(CONCAT_WS(' ', reporter.first_name, reporter.last_name)), '') AS reporter_name,
             CONCAT('USR-', EXTRACT(YEAR FROM reporter.created_at)::text, '-', LPAD(reporter.id::text, 5, '0')) AS reporter_account_id,
@@ -60,6 +60,7 @@ async function listIncidentHistory(req, res) {
      FROM incident_reports r
      LEFT JOIN users reporter ON reporter.id = r.reported_by
      WHERE LOWER(r.assigned_barangay) = ANY($1::text[])
+       AND r.status = 'resolved'
        AND ($2::text IS NULL OR LOWER(r.assigned_barangay) = LOWER($2))
        AND ($3::integer IS NULL OR EXTRACT(MONTH FROM r.created_at) = $3)
        AND ($4::integer IS NULL OR EXTRACT(YEAR FROM r.created_at) = $4)
@@ -80,9 +81,8 @@ async function listBackupHistory(req, res) {
   const barangayName = historyScope(req);
   const filters = parseFilters(req);
   const { rows } = await pool.query(
-    `SELECT br.id, br.barangay_name, br.created_at, br.acknowledged_at, br.declined_at,
-            br.decline_reason, br.assigned_at, br.picked_up_at, br.arrived_at,
-            ir.report_code, ir.location, ir.status AS report_status,
+    `SELECT br.id, br.barangay_name, br.created_at, br.arrived_at,
+            ir.report_code,
             NULLIF(TRIM(CONCAT_WS(' ', requester.first_name, requester.last_name)), '') AS requested_by_name,
             NULLIF(TRIM(CONCAT_WS(' ', rescuer.first_name, rescuer.last_name)), '') AS rescuer_name,
             CONCAT('RSC-', EXTRACT(YEAR FROM rescuer.created_at)::text, '-', LPAD(rescuer.id::text, 5, '0')) AS rescuer_account_id,
@@ -92,6 +92,7 @@ async function listBackupHistory(req, res) {
      LEFT JOIN users requester ON requester.id = br.requested_by
      LEFT JOIN users rescuer ON rescuer.id = br.assigned_rescuer_id
      WHERE br.dispatch_type = 'cddrmd_backup'
+       AND br.arrived_at IS NOT NULL
        AND LOWER(br.barangay_name) = ANY($1::text[])
        AND ($2::text IS NULL OR LOWER(br.barangay_name) = LOWER($2))
        AND ($3::integer IS NULL OR EXTRACT(MONTH FROM br.created_at) = $3)
@@ -114,7 +115,12 @@ async function listWaterLevelHistory(req, res) {
   const filters = parseFilters(req);
   const { rows } = await pool.query(
     `SELECT e.id, e.event_key, e.barangay_name, e.hardware_no, e.level,
-            e.water_level_percentage, e.sensor_updated_at, e.created_at,
+            e.water_level_percentage,
+            COALESCE(
+              e.distance_cm,
+              GREATEST(20, LEAST(200, 200 - (e.water_level_percentage * 1.8)))
+            ) AS distance_cm,
+            e.created_at,
             COUNT(*) OVER() AS total_count
      FROM flood_sensor_alert_events e
      WHERE LOWER(e.barangay_name) = ANY($1::text[])

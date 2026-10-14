@@ -121,7 +121,10 @@ export default function AdminShell({
           <div className={d.shell.mobileTopInner}>
             <div className={d.shell.mobileLogoWrap}>
               <img src={cdrrmdLogo} alt="CDRRMD logo" className={d.shell.mobileLogo} />
-              <p className={d.shell.mobileBrand}>CDRRMD</p>
+              <div>
+                <p className={d.shell.mobileBrand}>CDRRMD</p>
+                <p className={d.shell.mobilePortalLabel}>Admin Portal</p>
+              </div>
             </div>
             <button onClick={onLogout} className={d.shell.mobileLogout}>Logout</button>
           </div>
@@ -132,6 +135,7 @@ export default function AdminShell({
             <img src={cdrrmdLogo} alt="CDRRMD logo" className={d.shell.logo} />
             <div>
               <p className={d.shell.brand}>CDRRMD</p>
+              <p className={d.shell.city}>Admin Portal</p>
             </div>
           </div>
 

@@ -118,12 +118,46 @@ export const api = axios.create({
   timeout: 15000,
 });
 
+const pendingGetRequests = new Map<string, Promise<unknown>>();
+const originalGet = api.get.bind(api);
+let authRequestGeneration = 0;
+
+function stableRequestValue(value: unknown) {
+  if (!value || typeof value !== 'object') return String(value ?? '');
+  return JSON.stringify(Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+// Share an in-flight response between simultaneous identical reads. This does
+// not cache completed responses or delay subsequent rescue/notification polls.
+api.get = ((url: string, config?: Parameters<typeof originalGet>[1]) => {
+  const headers = config?.headers as Record<string, unknown> | undefined;
+  const explicitAuthorization = String(headers?.Authorization || headers?.authorization || '');
+  const key = [
+    authRequestGeneration,
+    explicitAuthorization,
+    config?.baseURL || api.defaults.baseURL || '',
+    url,
+    stableRequestValue(config?.params),
+    config?.responseType || 'json',
+  ].join('|');
+  const pending = pendingGetRequests.get(key);
+  if (pending) return pending;
+
+  const request = originalGet(url, config).finally(() => pendingGetRequests.delete(key));
+  pendingGetRequests.set(key, request);
+  return request;
+}) as typeof api.get;
+
 let refreshingPromise: Promise<SessionData | null> | null = null;
 let authFailureHandler: (() => void) | null = null;
 
 export function setApiAuthorizationToken(token: string | null) {
+  const nextAuthorization = token ? `Bearer ${token}` : '';
+  const currentAuthorization = String(api.defaults.headers.common.Authorization || '');
+  if (nextAuthorization !== currentAuthorization) authRequestGeneration += 1;
+
   if (token) {
-    api.defaults.headers.common.Authorization = `Bearer ${token}`;
+    api.defaults.headers.common.Authorization = nextAuthorization;
     return;
   }
   delete api.defaults.headers.common.Authorization;

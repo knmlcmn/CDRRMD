@@ -36,10 +36,9 @@ async function findNearestAvailableRescuer(client, {
   const fallbackLatitude = dispatchType === 'cddrmd_backup' ? CDRRMD_BASE.latitude : null;
   const fallbackLongitude = dispatchType === 'cddrmd_backup' ? CDRRMD_BASE.longitude : null;
   const { rows } = await client.query(
-    `SELECT u.id, u.username, u.first_name, u.last_name, u.created_at,
-            COALESCE(u.is_active, FALSE) AND u.last_seen_at >= NOW() - INTERVAL '45 seconds' AS is_online,
-            COALESCE(u.current_latitude, bb.centroid_lat, $5::double precision) AS dispatch_latitude,
-            COALESCE(u.current_longitude, bb.centroid_lon, $6::double precision) AS dispatch_longitude,
+    `SELECT u.id, u.username, u.first_name, u.last_name, u.created_at, u.barangay_name,
+            COALESCE(u.current_latitude, bb.centroid_lat, $5::double precision) AS rescuer_latitude,
+            COALESCE(u.current_longitude, bb.centroid_lon, $6::double precision) AS rescuer_longitude,
             CASE
               WHEN COALESCE(u.current_latitude, bb.centroid_lat, $5::double precision) IS NULL
                 OR COALESCE(u.current_longitude, bb.centroid_lon, $6::double precision) IS NULL
@@ -54,6 +53,8 @@ async function findNearestAvailableRescuer(client, {
      LEFT JOIN barangay_boundaries bb
        ON $2 = 'barangay_rescuer' AND LOWER(bb.barangay_name) = LOWER(u.barangay_name)
      WHERE u.role = $2 AND COALESCE(u.is_archived, FALSE) = FALSE
+       AND COALESCE(u.is_active, FALSE) = TRUE
+       AND u.last_seen_at >= NOW() - INTERVAL '45 seconds'
        AND ($1::text IS NULL OR LOWER(u.barangay_name) = LOWER($1))
        AND NOT EXISTS (
          SELECT 1 FROM backup_requests active
@@ -79,9 +80,9 @@ async function findNearestAvailableRescuer(client, {
   return {
     rescuerId: Number(rescuer.id),
     distanceKm: rescuer.distance_km == null ? null : Number(rescuer.distance_km),
-    isOnline: Boolean(rescuer.is_online),
-    dispatchLatitude: rescuer.dispatch_latitude == null ? null : Number(rescuer.dispatch_latitude),
-    dispatchLongitude: rescuer.dispatch_longitude == null ? null : Number(rescuer.dispatch_longitude),
+    barangayName: rescuer.barangay_name || barangayName || 'CDRRMD',
+    latitude: rescuer.rescuer_latitude == null ? null : Number(rescuer.rescuer_latitude),
+    longitude: rescuer.rescuer_longitude == null ? null : Number(rescuer.rescuer_longitude),
     ...buildAssignment(rescuer, { barangay_name: barangayName }, config),
   };
 }
@@ -97,9 +98,16 @@ async function assignNearestAvailableRescuer(client, dispatchId, dispatchType, c
 
   const dispatchResult = await client.query(
     `SELECT br.id, br.report_id, br.barangay_name, br.assigned_rescuer_id, br.assigned_at,
-            ir.status, ir.reported_by, ir.report_code, ir.latitude, ir.longitude
+            ir.status, ir.reported_by, ir.report_code,
+            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
+                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
+              THEN reporter.current_latitude ELSE ir.latitude END AS latitude,
+            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
+                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
+              THEN reporter.current_longitude ELSE ir.longitude END AS longitude
      FROM backup_requests br
      JOIN incident_reports ir ON ir.id = br.report_id
+     LEFT JOIN users reporter ON reporter.id = ir.reported_by
      WHERE br.id = $1 AND br.dispatch_type = $2
        AND br.arrived_at IS NULL AND br.declined_at IS NULL
      FOR UPDATE OF br, ir`,

@@ -13,6 +13,10 @@ export type WaterLevelSensor = {
 
 const DATABASE_URL = 'https://capstone-4de76-default-rtdb.asia-southeast1.firebasedatabase.app';
 const SENSOR_STATUS_PATH = 'Sensor Status Settings';
+const SNAPSHOT_DEDUPE_WINDOW_MS = 2_000;
+let sensorSnapshotPromise: Promise<WaterLevelSensor[]> | null = null;
+let sensorSnapshot: WaterLevelSensor[] | null = null;
+let sensorSnapshotAt = 0;
 
 const SENSOR_ASSIGNMENTS = [
   { id: 'waterSensor1', barangayName: 'Palingon' },
@@ -67,9 +71,13 @@ async function loadSensorStatuses(): Promise<Record<string, WaterLevelSensorStat
 }
 
 export async function loadWaterLevelSensors(): Promise<WaterLevelSensor[]> {
-  const sensorStatuses = await loadSensorStatuses();
+  const now = Date.now();
+  if (sensorSnapshot && now - sensorSnapshotAt < SNAPSHOT_DEDUPE_WINDOW_MS) return sensorSnapshot;
+  if (sensorSnapshotPromise) return sensorSnapshotPromise;
 
-  return Promise.all(SENSOR_ASSIGNMENTS.map(async (assignment) => {
+  sensorSnapshotPromise = (async () => {
+    const sensorStatuses = await loadSensorStatuses();
+    const sensors = await Promise.all(SENSOR_ASSIGNMENTS.map(async (assignment) => {
     const status = sensorStatuses[assignment.id] || 'Active';
     try {
       const response = await fetch(`${DATABASE_URL}/${assignment.id}.json`);
@@ -103,5 +111,11 @@ export async function loadWaterLevelSensors(): Promise<WaterLevelSensor[]> {
     } catch {
       return { ...assignment, status, distanceCm: null, waterLevelPercentage: 0, hasReading: false, temperatureCelsius: null, humidityPercentage: null };
     }
-  }));
+    }));
+    sensorSnapshot = sensors;
+    sensorSnapshotAt = Date.now();
+    return sensors;
+  })().finally(() => { sensorSnapshotPromise = null; });
+
+  return sensorSnapshotPromise;
 }

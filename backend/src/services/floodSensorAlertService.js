@@ -6,14 +6,14 @@ const HIGH_THRESHOLD = 61;
 let lastSyncAt = 0;
 let syncPromise = null;
 
-async function insertAlert(client, { eventKey, barangayName, hardwareNo, level, percentage, sensorUpdatedAt = null }) {
+async function insertAlert(client, { eventKey, barangayName, hardwareNo, level, percentage, distanceCm }) {
   const inserted = await client.query(
     `INSERT INTO flood_sensor_alert_events
-       (event_key, barangay_name, hardware_no, level, water_level_percentage, sensor_updated_at)
+       (event_key, barangay_name, hardware_no, level, water_level_percentage, distance_cm)
      VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (event_key, level) DO NOTHING
      RETURNING id`,
-    [eventKey, barangayName, hardwareNo, level, percentage, sensorUpdatedAt],
+    [eventKey, barangayName, hardwareNo, level, percentage, distanceCm],
   );
   if (inserted.rows.length === 0) return { published: false, recipients: 0 };
 
@@ -88,6 +88,7 @@ async function performSensorSync() {
             hardwareNo: sensor.hardwareNo,
             level: activeLevel,
             percentage,
+            distanceCm: sensor.distanceCm,
           });
         }
         if (!highestLevel || activeLevel === 'high') highestLevel = activeLevel;

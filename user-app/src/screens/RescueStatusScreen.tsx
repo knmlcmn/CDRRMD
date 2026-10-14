@@ -69,10 +69,6 @@ function normalizeStatus(value?: string | null): RescueStatus {
   return 'pending';
 }
 
-function toTitle(value: string) {
-  return value.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
 function distanceSquared(a: Coordinate, b: Coordinate) {
   const dLat = a.latitude - b.latitude;
   const dLon = a.longitude - b.longitude;
@@ -257,6 +253,7 @@ export default function RescueStatusScreen() {
   const status = normalizeStatus(report?.status);
   const hasDispatchedResponder = Boolean(report?.responder_acknowledged_at);
   const showLiveResponseDetails = status !== 'resolved';
+  const showRouteMetrics = status === 'accepted' || status === 'in_progress';
 
   const progressRatio = useMemo(() => {
     if (status === 'accepted') {
@@ -399,7 +396,7 @@ export default function RescueStatusScreen() {
         <View style={st.mainCard}>
           <View style={[st.topRow, isSmall && st.topRowSmall]}>
             <Text style={st.statusText}>Status: <Text style={st.statusStrong}>{statusLabel}</Text></Text>
-            {showLiveResponseDetails ? <Text style={st.etaText}>{etaMinutes ? `${Math.max(1, etaMinutes - 1)} - ${etaMinutes + 3} mins` : '--'}</Text> : null}
+            {showRouteMetrics ? <Text style={st.etaText}>{etaMinutes ? `${Math.max(1, etaMinutes - 1)} - ${etaMinutes + 3} mins` : '--'}</Text> : null}
           </View>
 
           <View style={st.progressTrack}>
@@ -448,11 +445,15 @@ export default function RescueStatusScreen() {
               <Text style={st.label}>Responder Tracking</Text>
               <Text style={st.value}>{responderLocation ? 'Live location and route active' : report?.assigned_team ? report?.responder_acknowledged_at ? 'Waiting for responder GPS' : 'Waiting for responder acknowledgment' : 'Waiting assignment'}</Text>
 
-              <Text style={st.label}>Route Distance</Text>
-              <Text style={st.value}>{distanceKm ? `${distanceKm.toFixed(2)} km` : '--'}</Text>
+              {showRouteMetrics ? (
+                <>
+                  <Text style={st.label}>Route Distance</Text>
+                  <Text style={st.value}>{distanceKm ? `${distanceKm.toFixed(2)} km` : '--'}</Text>
 
-              <Text style={st.label}>ETA</Text>
-              <Text style={st.value}>{etaMinutes ? `${Math.max(1, etaMinutes - 1)} - ${etaMinutes + 3} mins` : '--'}</Text>
+                  <Text style={st.label}>ETA</Text>
+                  <Text style={st.value}>{etaMinutes ? `${Math.max(1, etaMinutes - 1)} - ${etaMinutes + 3} mins` : '--'}</Text>
+                </>
+              ) : null}
             </>
           ) : null}
 
@@ -469,7 +470,6 @@ export default function RescueStatusScreen() {
             </>
           ) : null}
 
-          <Text style={st.metaHint}>Current workflow state: {toTitle(status)}</Text>
         </View>
       </ScrollView>
     </View>
@@ -579,5 +579,4 @@ const st = StyleSheet.create({
   infoTitle: { color: editorial.ink, fontSize: 18, fontWeight: '400', marginBottom: 10 },
   label: { color: '#475569', fontSize: 12, fontWeight: '700', marginTop: 8 },
   value: { color: '#181818', fontSize: 14, fontWeight: '700', marginTop: 2 },
-  metaHint: { color: '#64748b', fontSize: 12, marginTop: 8, fontWeight: '600' },
 });

@@ -3,6 +3,7 @@ import { api } from '../services/apiClient';
 import AdminShell from '../components/AdminShell';
 import AddAccountDialog, { type AccountRole } from '../components/AddAccountDialog';
 import AccountDetailsModal, { type AccountEditValues } from '../components/AccountDetailsModal';
+import { useConfirmationDialog } from '../components/ConfirmationDialog';
 import { d } from '../adminDesign';
 import type { BarangayAccount } from '../types';
 
@@ -58,6 +59,7 @@ export default function BarangayAccountsPage({
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<BarangayAccount | null>(null);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const { confirm, confirmationDialog } = useConfirmationDialog();
 
   const loadAccounts = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -76,8 +78,6 @@ export default function BarangayAccountsPage({
 
   useEffect(() => {
     loadAccounts();
-    const timer = window.setInterval(() => loadAccounts(false), 10_000);
-    return () => window.clearInterval(timer);
   }, [loadAccounts]);
 
   function viewAccount(account: BarangayAccount) {
@@ -136,7 +136,15 @@ export default function BarangayAccountsPage({
   }
 
   async function handleArchive(id: number) {
-    if (!window.confirm('Archive this barangay account?')) return;
+    const account = accounts.find((item) => item.id === id);
+    const label = account?.barangay_id || account?.username || 'this barangay account';
+    const confirmed = await confirm({
+      title: 'Archive account?',
+      message: `Archive “${label}”? You can restore it later.`,
+      confirmLabel: 'Archive',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       await api.delete(`/barangay/accounts/${id}`);
@@ -145,13 +153,20 @@ export default function BarangayAccountsPage({
     } catch (error: unknown) {
       const err = error as ApiError;
       if (err.response?.status === 401) { onAuthError(); return; }
-      alert(err.response?.data?.message || 'Failed to archive account.');
+      setError(err.response?.data?.message || 'Failed to archive account.');
     } finally {
       setBusy(false);
     }
   }
 
   async function handleRestore(account: BarangayAccount) {
+    const label = account.barangay_id || account.username;
+    const confirmed = await confirm({
+      title: 'Restore account?',
+      message: `Restore the barangay account “${label}”? It will be able to access the portal again.`,
+      confirmLabel: 'Restore',
+    });
+    if (!confirmed) return;
     setArchiveBusy(true);
     try {
       await api.patch(`/barangay/accounts/${account.id}/restore`);
@@ -166,7 +181,14 @@ export default function BarangayAccountsPage({
   }
 
   async function handlePermanentDelete(account: BarangayAccount) {
-    if (!window.confirm(`Permanently delete archived account ${account.barangay_id || account.username}? This cannot be undone.`)) return;
+    const label = account.barangay_id || account.username;
+    const confirmed = await confirm({
+      title: 'Permanently delete account?',
+      message: `Permanently delete the archived barangay account “${label}”? This cannot be undone.`,
+      confirmLabel: 'Delete Permanently',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
     setArchiveBusy(true);
     try {
       await api.delete(`/barangay/accounts/${account.id}/permanent`);
@@ -224,6 +246,7 @@ export default function BarangayAccountsPage({
         <div className={d.admin.headerRow}>
           <h2 className={d.admin.title}>Barangay Accounts</h2>
           <div className={d.admin.searchRow}>
+            <button type="button" onClick={() => void loadAccounts(false)} className={d.admin.archiveButton} disabled={loading}>Refresh</button>
             <button type="button" onClick={openArchiveModal} className={d.admin.archiveButton}>
               <img src={ARCHIVE_ICON} alt="Archive" className={d.admin.archiveIcon} />
               Archive
@@ -374,6 +397,7 @@ export default function BarangayAccountsPage({
             onSave={saveAccount}
           />
         ) : null}
+        {confirmationDialog}
       </div>
     </AdminShell>
   );

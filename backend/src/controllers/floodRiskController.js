@@ -40,7 +40,7 @@ const CALAMBA_BOUNDARY_RING = [
 ];
 
 const RASTER_CELL_STEP = 0.0032;
-const RAIN_IMPACT_CACHE_TTL_MS = 5 * 60 * 1000;
+const RAIN_IMPACT_CACHE_TTL_MS = 10 * 60 * 1000;
 
 let cachedRainImpactPayload = null;
 let cachedRainImpactAt = 0;

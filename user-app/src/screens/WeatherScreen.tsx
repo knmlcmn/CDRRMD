@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   ImageBackground,
   ScrollView,
   StyleSheet,
@@ -75,8 +76,16 @@ export default function WeatherScreen() {
 
   useEffect(() => {
     fetchWeather();
-    const timer = setInterval(fetchWeather, 120_000);
-    return () => clearInterval(timer);
+    const timer = setInterval(() => {
+      if (AppState.currentState === 'active') fetchWeather();
+    }, 120_000);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') fetchWeather();
+    });
+    return () => {
+      clearInterval(timer);
+      subscription.remove();
+    };
   }, [fetchWeather]);
 
   const activeWeatherCode = data?.current?.weather_code ?? data?.hourly?.weather_code?.[0];

@@ -3,6 +3,8 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { api } from '../services/apiClient';
 import { fetchRoadRoute, type RoadCoordinate } from '../services/roadRouting';
+import { liveAlertKey } from '../utils/liveAlertKey';
+import { standardMapMarkerIcon, type StandardMapMarkerKind } from '../utils/standardMapMarker';
 
 type ResponderRole = 'rescuer' | 'barangay_rescuer';
 
@@ -21,6 +23,7 @@ type Assignment = {
   evacuees_reserved: number;
   assigned_barangay: string;
   evacuation_area_name: string | null;
+  assigned_at: string;
   responder_acknowledged_at: string | null;
 };
 
@@ -38,20 +41,12 @@ type Props = {
   onOpenIncidents: () => void;
 };
 
-function markerIcon(color: string, label: string) {
-  return L.divIcon({
-    className: '',
-    html: `<div style="display:grid;place-items:center;width:34px;height:34px;border:3px solid white;border-radius:50% 50% 50% 0;background:${color};color:white;font:800 13px system-ui;box-shadow:0 3px 9px rgba(15,23,42,.35);transform:rotate(-45deg)"><span style="transform:rotate(45deg)">${label}</span></div>`,
-    iconSize: [34, 34],
-    iconAnchor: [17, 32],
-  });
-}
-
-function AssignmentRouteMap({ origin, destination, route, status }: {
+function AssignmentRouteMap({ origin, destination, route, status, responderKind }: {
   origin: RoadCoordinate | null;
   destination: RoadCoordinate;
   route: RoadCoordinate[];
   status: RouteState['status'];
+  responderKind: Extract<StandardMapMarkerKind, 'barangay' | 'cddrmd'>;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -80,7 +75,7 @@ function AssignmentRouteMap({ origin, destination, route, status }: {
     layers.clearLayers();
 
     const residentPoint = L.latLng(destination.latitude, destination.longitude);
-    L.marker(residentPoint, { icon: markerIcon('#dc2626', 'R'), zIndexOffset: 1200 })
+    L.marker(residentPoint, { icon: standardMapMarkerIcon('resident'), zIndexOffset: 1200 })
       .addTo(layers)
       .bindTooltip('Resident pinpointed location', { direction: 'top' });
 
@@ -90,7 +85,7 @@ function AssignmentRouteMap({ origin, destination, route, status }: {
     }
 
     const rescuerPoint = L.latLng(origin.latitude, origin.longitude);
-    L.marker(rescuerPoint, { icon: markerIcon('#15803d', 'You'), zIndexOffset: 1300 })
+    L.marker(rescuerPoint, { icon: standardMapMarkerIcon(responderKind, true), zIndexOffset: 1300 })
       .addTo(layers)
       .bindTooltip('Your current location', { direction: 'top' });
 
@@ -107,7 +102,7 @@ function AssignmentRouteMap({ origin, destination, route, status }: {
     }
     map.fitBounds(bounds, { maxZoom: 17, padding: [42, 42] });
     window.setTimeout(() => map.invalidateSize(), 50);
-  }, [destination.latitude, destination.longitude, origin, route]);
+  }, [destination.latitude, destination.longitude, origin, responderKind, route]);
 
   const message = status === 'waiting-location'
     ? 'Waiting for your GPS location…'
@@ -131,18 +126,47 @@ export default function RescuerAssignmentModal({ responderRole, onAuthError, onO
   const [route, setRoute] = useState<RouteState>({ coordinates: [], distanceKm: null, etaMinutes: null, status: 'waiting-location' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const knownAssignmentIds = useRef<Set<number> | null>(null);
-  const dismissedAssignmentIds = useRef(new Set<number>());
+  const dismissedAssignmentIds = useRef(new Set<string>());
+  const loadInFlightRef = useRef(false);
+
+  useEffect(() => {
+    let stopped = false;
+    let heartbeatInFlight = false;
+    const sendHeartbeat = async () => {
+      if (stopped || heartbeatInFlight) return;
+      heartbeatInFlight = true;
+      try {
+        await api.post('/rescuers/presence/heartbeat');
+      } catch (caught: unknown) {
+        const apiError = caught as ApiError;
+        if (!stopped && apiError.response?.status === 401) onAuthError();
+      } finally {
+        heartbeatInFlight = false;
+      }
+    };
+    const sendWhenVisible = () => {
+      if (document.visibilityState === 'visible') void sendHeartbeat();
+    };
+
+    void sendHeartbeat();
+    const timer = window.setInterval(sendWhenVisible, 15_000);
+    window.addEventListener('focus', sendWhenVisible);
+    document.addEventListener('visibilitychange', sendWhenVisible);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', sendWhenVisible);
+      document.removeEventListener('visibilitychange', sendWhenVisible);
+    };
+  }, [onAuthError]);
 
   const loadAssignments = useCallback(async () => {
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
     try {
       const { data } = await api.get<Assignment[]>('/rescuers/incidents/mine');
       const active = (Array.isArray(data) ? data : []).filter((item) => !item.responder_acknowledged_at);
-      const previousIds = knownAssignmentIds.current;
-      const candidate = previousIds === null
-        ? active.find((item) => !dismissedAssignmentIds.current.has(item.backup_request_id))
-        : active.find((item) => !previousIds.has(item.backup_request_id) && !dismissedAssignmentIds.current.has(item.backup_request_id));
-      knownAssignmentIds.current = new Set(active.map((item) => item.backup_request_id));
+      const candidate = active.find((item) => !dismissedAssignmentIds.current.has(liveAlertKey(item.backup_request_id, item.assigned_at)));
       setAssignment((current) => {
         if (current) return active.find((item) => item.backup_request_id === current.backup_request_id) || candidate || null;
         return candidate || null;
@@ -150,13 +174,24 @@ export default function RescuerAssignmentModal({ responderRole, onAuthError, onO
     } catch (caught: unknown) {
       const apiError = caught as ApiError;
       if (apiError.response?.status === 401) onAuthError();
+    } finally {
+      loadInFlightRef.current = false;
     }
   }, [onAuthError]);
 
   useEffect(() => {
     void loadAssignments();
-    const timer = window.setInterval(() => void loadAssignments(), 5_000);
-    return () => window.clearInterval(timer);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void loadAssignments();
+    };
+    const timer = window.setInterval(refreshWhenVisible, 5_000);
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
   }, [loadAssignments]);
 
   useEffect(() => {
@@ -207,7 +242,7 @@ export default function RescuerAssignmentModal({ responderRole, onAuthError, onO
     if (!assignment) return undefined;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        dismissedAssignmentIds.current.add(assignment.backup_request_id);
+        dismissedAssignmentIds.current.add(liveAlertKey(assignment.backup_request_id, assignment.assigned_at));
         setAssignment(null);
       }
     };
@@ -234,7 +269,7 @@ export default function RescuerAssignmentModal({ responderRole, onAuthError, onO
 
   function standby() {
     if (!assignment) return;
-    dismissedAssignmentIds.current.add(assignment.backup_request_id);
+    dismissedAssignmentIds.current.add(liveAlertKey(assignment.backup_request_id, assignment.assigned_at));
     setAssignment(null);
   }
 
@@ -261,7 +296,7 @@ export default function RescuerAssignmentModal({ responderRole, onAuthError, onO
             <p className="mt-5 font-mono text-sm font-bold text-slate-400">{assignment.report_code}</p>
           </div>
 
-          <AssignmentRouteMap origin={location} destination={destination} route={route.coordinates} status={route.status} />
+          <AssignmentRouteMap origin={location} destination={destination} route={route.coordinates} status={route.status} responderKind={responderRole === 'barangay_rescuer' ? 'barangay' : 'cddrmd'} />
         </div>
 
         {error ? <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p> : null}

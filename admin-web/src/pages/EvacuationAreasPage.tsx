@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/apiClient';
 import AdminShell from '../components/AdminShell';
+import { useConfirmationDialog } from '../components/ConfirmationDialog';
 import { d } from '../adminDesign';
 import type { EvacuationAreaItem } from '../types';
 
@@ -60,19 +61,6 @@ function toForm(area: EvacuationAreaItem): DetailForm {
     latitude: String(area.latitude),
     longitude: String(area.longitude),
   };
-}
-
-function haversineKm(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }) {
-  const toRad = (value: number) => (value * Math.PI) / 180;
-  const earthRadiusKm = 6371;
-  const dLat = toRad(b.latitude - a.latitude);
-  const dLon = toRad(b.longitude - a.longitude);
-  const lat1 = toRad(a.latitude);
-  const lat2 = toRad(b.latitude);
-  const h =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  return 2 * earthRadiusKm * Math.asin(Math.sqrt(h));
 }
 
 function buildMapHtml(areas: EvacuationAreaItem[], selectedId: number | null, previewPin?: { lat: number; lng: number } | null) {
@@ -170,6 +158,7 @@ function buildMapHtml(areas: EvacuationAreaItem[], selectedId: number | null, pr
 }
 
 export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenAdmin, onOpenUsers, onOpenBarangay, onOpenRescuers, onOpenMonitoring, onOpenFloodMonitoring, onOpenPostUpdates, onOpenHistory }: Props) {
+  const { confirm, confirmationDialog } = useConfirmationDialog();
   const [areas, setAreas] = useState<EvacuationAreaItem[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form, setForm] = useState<DetailForm | null>(null);
@@ -392,6 +381,15 @@ export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenA
       return;
     }
 
+    if (!isCreating) {
+      const confirmed = await confirm({
+        title: 'Save changes?',
+        message: `The evacuation area “${form.name}” was changed. Do you want to save these changes?`,
+        confirmLabel: 'Save Changes',
+      });
+      if (!confirmed) return;
+    }
+
     setSaving(true);
     setError(null);
     try {
@@ -444,6 +442,14 @@ export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenA
       return;
     }
 
+    const confirmed = await confirm({
+      title: 'Delete evacuation area?',
+      message: `Delete “${form.name}”? This action cannot be undone.`,
+      confirmLabel: 'Delete',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
+
     setSaving(true);
     setError(null);
     try {
@@ -459,19 +465,7 @@ export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenA
 
   const mapHtml = useMemo(() => buildMapHtml(areas, selectedId, previewPin), [areas, selectedId, previewPin]);
 
-  const otherAreas = useMemo<Array<EvacuationAreaItem & { distanceKm: number }>>(() => {
-    const origin = form
-      ? { latitude: Number(form.latitude), longitude: Number(form.longitude) }
-      : CALAMBA_CENTER;
-
-    return areas
-      .filter((item) => (form ? item.id !== form.id : true))
-      .map((item) => ({
-        ...item,
-        distanceKm: haversineKm(origin, { latitude: item.latitude, longitude: item.longitude }),
-      }))
-      .sort((a, b) => a.distanceKm - b.distanceKm);
-  }, [areas, form]);
+  const otherAreas = form ? areas.filter((item) => item.id !== form.id) : areas;
 
   return (
     <AdminShell
@@ -648,7 +642,6 @@ export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenA
                       >
                         <p className={d.evac.otherName}>{area.name}</p>
                         <p className={d.evac.otherBarangay}>{area.barangay}</p>
-                        <p className={d.evac.otherDistance}>{area.distanceKm.toFixed(2)} km away</p>
                       </button>
                     ))}
                   </div>
@@ -657,6 +650,7 @@ export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenA
             </div>
 
             {loading ? <p className={d.page.loading}>Loading evacuation data...</p> : null}
+            {confirmationDialog}
       </div>
     </AdminShell>
   );

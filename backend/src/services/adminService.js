@@ -94,10 +94,6 @@ async function updateAdmin(actor, adminId, payload) {
     throw httpError(400, 'Invalid admin id.');
   }
 
-  if (actor?.userId !== id) {
-    throw httpError(403, 'You can only edit your own admin account.');
-  }
-
   const existing = await userModel.findAdminById(id);
   if (!existing) {
     throw httpError(404, 'Admin not found.');
@@ -144,13 +140,9 @@ async function deleteAdmin(actor, adminId) {
     throw httpError(400, 'Invalid admin id.');
   }
 
-  if (actor?.userId !== id) {
-    throw httpError(403, 'You can only archive your own admin account.');
-  }
-
   const removed = await userModel.archiveAdminById(id, actor?.userId || null);
   if (!removed) {
-    throw httpError(404, 'Admin not found.');
+    throw httpError(400, 'Admin not found, already archived, or this is the only active admin account.');
   }
 }
 

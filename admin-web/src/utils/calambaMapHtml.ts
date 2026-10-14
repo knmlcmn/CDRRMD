@@ -1097,10 +1097,7 @@ export function buildCalambaMapHtml(
       }
 
       function clipCanvasToCalamba(context) {
-        var ring = payload.boundaryGeoJson && payload.boundaryGeoJson.features && payload.boundaryGeoJson.features[0]
-          && payload.boundaryGeoJson.features[0].geometry && payload.boundaryGeoJson.features[0].geometry.coordinates
-          ? payload.boundaryGeoJson.features[0].geometry.coordinates[0]
-          : null;
+        var ring = activeBoundaryRing();
         if (!Array.isArray(ring) || ring.length < 4) return false;
         context.beginPath();
         ring.forEach(function(coord, index) {
@@ -1540,6 +1537,19 @@ export function buildCalambaMapHtml(
           .trim();
       }
 
+      function isFeatureInJurisdiction(feature) {
+        if (!jurisdictionBarangayKey) return true;
+        var props = feature && feature.properties ? feature.properties : {};
+        return normalizeBarangayName(props.barangay_name || props.barangayName || props.name) === jurisdictionBarangayKey;
+      }
+
+      function scopeFeatureCollectionToJurisdiction(collection) {
+        if (!jurisdictionBarangayKey || !collection || !Array.isArray(collection.features)) return collection;
+        return Object.assign({}, collection, {
+          features: collection.features.filter(isFeatureInJurisdiction),
+        });
+      }
+
       var HARDWARE_FLOOD_MODERATE_MIN = ${MODERATE_WATER_LEVEL_THRESHOLD};
       var HARDWARE_FLOOD_HIGH_MIN = ${HIGH_WATER_LEVEL_THRESHOLD};
       var HARDWARE_FLOOD_COLORS = ${JSON.stringify(HARDWARE_FLOOD_COLORS)};
@@ -1723,7 +1733,11 @@ export function buildCalambaMapHtml(
           '<div class="row"><span class="legend-map-icon" style="background:#ea580c"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" /></span>CDRRMD Responder</div>' +
           '<div class="row"><span class="legend-map-icon" style="background:#e11d48"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" /></span>Evacuation Area</div>' +
           '<div class="row"><span class="legend-map-line"></span>Responder Route</div>' +
-          '<div class="row"><span class="legend-map-boundary"></span>Calamba Boundary</div>';
+          '<div class="row"><span class="legend-map-boundary"></span>' +
+            escapeHtml(mapBehavior.jurisdictionBarangayName
+              ? 'Barangay ' + mapBehavior.jurisdictionBarangayName + ' Boundary'
+              : 'Calamba Boundary') +
+          '</div>';
 
         var noLayers = !floodOn && !weatherOn && !windOn;
 
@@ -1960,6 +1974,7 @@ export function buildCalambaMapHtml(
         var features = source.features.filter(function(feature) {
           var props = feature && feature.properties ? feature.properties : {};
           var key = normalizeBarangayName(props.barangay_name || props.barangayName || props.name);
+          if (jurisdictionBarangayKey && key !== jurisdictionBarangayKey) return false;
           var impact = weatherImpactByBarangay[key];
           var value = metric === 'temperature' ? impact && impact.temperatureCelsius : impact && impact.humidityPercentage;
           return value != null && Number.isFinite(Number(value));
@@ -2010,8 +2025,9 @@ export function buildCalambaMapHtml(
             return response.json();
           })
           .then(function(data) {
-            barangayBoundaryGeoJsonData = data;
-            latestBarangayGeoJsonData = data;
+            var scopedData = scopeFeatureCollectionToJurisdiction(data);
+            barangayBoundaryGeoJsonData = scopedData;
+            latestBarangayGeoJsonData = scopedData;
             renderBarangayBoundaryLayer();
           })
           .catch(function() {
@@ -2077,7 +2093,11 @@ export function buildCalambaMapHtml(
           })
           .then(function(data) {
             lastLegendUpdatedAt = data && data.updatedAt ? data.updatedAt : new Date().toISOString();
-            var impacts = Array.isArray(data && data.barangayImpacts) ? data.barangayImpacts : [];
+            var impacts = Array.isArray(data && data.barangayImpacts)
+              ? data.barangayImpacts.filter(function(item) {
+                  return !jurisdictionBarangayKey || normalizeBarangayName(item && item.barangayName) === jurisdictionBarangayKey;
+                })
+              : [];
             var hasActiveRain = impacts.some(function(item) {
               var rain = Number(item && item.rainIntensityMmPerHour);
               return Number.isFinite(rain) && rain > ${MIN_ACTIVE_RAIN_MM_PER_HOUR};
@@ -2107,7 +2127,7 @@ export function buildCalambaMapHtml(
                 features: data.barangayOverlay.features.filter(function(feature) {
                   var props = feature && feature.properties ? feature.properties : {};
                   var key = normalizeBarangayName(props.barangay_name || props.barangayName || props.name);
-                  return Boolean(weatherImpactByBarangay[key]);
+                  return (!jurisdictionBarangayKey || key === jurisdictionBarangayKey) && Boolean(weatherImpactByBarangay[key]);
                 }),
               };
             } else {
@@ -2559,17 +2579,19 @@ export function buildCalambaMapHtml(
       renderBarangayBoundaries();
       setRainIntensityFromMmPerHour(0);
       refreshRainImpactData();
-      setInterval(renderFloodHazardLayer, 30000);
+      setInterval(function() {
+        if (document.visibilityState === 'visible') renderFloodHazardLayer();
+      }, 30000);
       setInterval(function() {
         if (document.visibilityState === 'visible') refreshRainImpactData();
       }, 60000);
       setInterval(function() {
-        if (Boolean(visibility.floodHazard)) {
+        if (document.visibilityState === 'visible' && Boolean(visibility.floodHazard)) {
           refreshHardwareFloodLevels();
         }
       }, 10000);
       setInterval(function() {
-        if (Boolean(visibility.weatherOverlay) || Boolean(visibility.windOverlay)) {
+        if (document.visibilityState === 'visible' && (Boolean(visibility.weatherOverlay) || Boolean(visibility.windOverlay))) {
           windLoadState = 'idle';
           loadWindFieldData();
         }

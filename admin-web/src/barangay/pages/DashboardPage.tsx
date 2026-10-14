@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { API_BASE_URL, api } from '../../services/apiClient';
 import type { EvacuationAreaItem } from '../../types';
 import { buildCalambaMapHtml } from '../../utils/calambaMapHtml';
@@ -62,39 +62,76 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
   const [sensor, setSensor] = useState<WaterLevelSensor | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const incidentsInFlight = useRef(false);
+  const centersInFlight = useRef(false);
+  const sensorInFlight = useRef(false);
 
-  const loadDashboard = useCallback(async (showLoading = false) => {
-    if (showLoading) setLoading(true);
+  const loadIncidents = useCallback(async () => {
+    if (incidentsInFlight.current) return;
+    incidentsInFlight.current = true;
     try {
-      const [incidentResponse, centerResponse, sensors] = await Promise.all([
-        api.get<Incident[]>('/barangay/reports/mine'),
-        api.get<Center[]>('/barangay/evacuation-centers'),
-        loadWaterLevelSensors(),
-      ]);
+      const incidentResponse = await api.get<Incident[]>('/barangay/reports/mine', { params: { scope: 'dashboard' } });
       setIncidents(Array.isArray(incidentResponse.data) ? incidentResponse.data : []);
-      setCenters(Array.isArray(centerResponse.data) ? centerResponse.data : []);
-      setSensor(sensors.find((item) => item.barangayName.toLowerCase() === barangayName.trim().toLowerCase()) || null);
       setError('');
     } catch (requestError: unknown) {
       const status = (requestError as { response?: { status?: number } })?.response?.status;
       if (status === 401) return onAuthError();
-      setError('Unable to refresh the Barangay dashboard. Retrying shortly.');
+      setError('Unable to refresh incident reports. Retrying shortly.');
     } finally {
-      if (showLoading) setLoading(false);
+      incidentsInFlight.current = false;
     }
-  }, [barangayName, onAuthError]);
+  }, [onAuthError]);
+
+  const loadCenters = useCallback(async () => {
+    if (centersInFlight.current) return;
+    centersInFlight.current = true;
+    try {
+      const centerResponse = await api.get<Center[]>('/barangay/evacuation-centers');
+      setCenters(Array.isArray(centerResponse.data) ? centerResponse.data : []);
+    } catch (requestError: unknown) {
+      const status = (requestError as { response?: { status?: number } })?.response?.status;
+      if (status === 401) onAuthError();
+    } finally {
+      centersInFlight.current = false;
+    }
+  }, [onAuthError]);
+
+  const loadSensor = useCallback(async () => {
+    if (sensorInFlight.current) return;
+    sensorInFlight.current = true;
+    try {
+      const sensors = await loadWaterLevelSensors();
+      setSensor(sensors.find((item) => item.barangayName.toLowerCase() === barangayName.trim().toLowerCase()) || null);
+    } catch {
+      // Keep the last sensor reading and retry on the next critical refresh.
+    } finally {
+      sensorInFlight.current = false;
+    }
+  }, [barangayName]);
 
   useEffect(() => {
-    void loadDashboard(true);
-    const timer = window.setInterval(() => void loadDashboard(), 5_000);
-    return () => window.clearInterval(timer);
-  }, [loadDashboard]);
+    Promise.allSettled([loadIncidents(), loadCenters(), loadSensor()]).finally(() => setLoading(false));
+    const incidentTimer = window.setInterval(() => void loadIncidents(), 5_000);
+    const centerTimer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadCenters();
+    }, 60_000);
+    const sensorTimer = window.setInterval(() => void loadSensor(), 10_000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void loadCenters();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.clearInterval(incidentTimer);
+      window.clearInterval(centerTimer);
+      window.clearInterval(sensorTimer);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [loadCenters, loadIncidents, loadSensor]);
 
   const incidentSummary = useMemo(() => ({
     active: incidents.filter((item) => ['pending', 'accepted', 'in_progress'].includes(String(item.status).toLowerCase())).length,
     pending: incidents.filter((item) => String(item.status).toLowerCase() === 'pending').length,
     inProgress: incidents.filter((item) => ['accepted', 'in_progress'].includes(String(item.status).toLowerCase())).length,
-    resolved: incidents.filter((item) => String(item.status).toLowerCase() === 'resolved').length,
   }), [incidents]);
 
   const recentIncidents = useMemo(() => incidents
@@ -145,12 +182,11 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
       <div className="space-y-3 bg-[#eaf3fb] px-3 pb-3 pt-0 sm:px-4 sm:pb-4 sm:pt-0">
         {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p> : null}
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-3 sm:grid-cols-3">
           {[
             ['Active Incidents', incidentSummary.active, 'border-rose-400', 'text-rose-600'],
             ['Pending Review', incidentSummary.pending, 'border-sky-400', 'text-sky-600'],
             ['Response Active', incidentSummary.inProgress, 'border-amber-400', 'text-amber-600'],
-            ['Resolved', incidentSummary.resolved, 'border-emerald-400', 'text-emerald-600'],
           ].map(([label, value, border, tone]) => <article key={String(label)} className={`rounded-xl border border-slate-200 border-t-4 ${border} bg-white px-4 py-3 shadow-sm`}><p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p><p className={`mt-1 text-3xl font-black ${tone}`}>{value}</p></article>)}
         </section>
 
@@ -163,11 +199,10 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
                 <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-3 py-3">Case ID</th><th className="px-3 py-3">Incident</th><th className="px-3 py-3">Location</th><th className="px-3 py-3">People</th><th className="px-3 py-3">Status</th></tr></thead>
                 <tbody className="text-[0.82rem]">{recentIncidents.map((item) => {
                   const isPending = String(item.status).toLowerCase() === 'pending';
-                  const isResolved = String(item.status).toLowerCase() === 'resolved';
                   const canReopenRescue = isPending && String(item.report_type || '').toLowerCase() === 'rescue';
                   return <tr
                     key={item.id}
-                    className={`border-t border-slate-100 hover:bg-slate-50 ${isPending ? 'border-l-4 border-l-orange-400 bg-orange-50/70' : ''} ${isResolved ? 'border-l-4 border-l-emerald-400 bg-emerald-50/70 hover:bg-emerald-100' : ''} ${canReopenRescue ? 'cursor-pointer focus-within:bg-orange-100 hover:bg-orange-100' : ''}`}
+                    className={`border-t border-slate-100 hover:bg-slate-50 ${isPending ? 'border-l-4 border-l-orange-400 bg-orange-50/70' : ''} ${canReopenRescue ? 'cursor-pointer focus-within:bg-orange-100 hover:bg-orange-100' : ''}`}
                     onClick={canReopenRescue ? () => onOpenPendingRescue(item.id) : undefined}
                     onKeyDown={canReopenRescue ? (event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
@@ -177,7 +212,7 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
                     } : undefined}
                     tabIndex={canReopenRescue ? 0 : undefined}
                     title={canReopenRescue ? 'Open pending rescue request' : undefined}
-                  ><td className="truncate px-3 py-3 font-mono text-[0.72rem] font-bold text-[#173750]" title={item.report_code || undefined}>{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td><td className="px-3 py-3">{item.incident_type || 'Incident'}</td><td className="truncate px-3 py-3" title={item.location}>{item.location}</td><td className="px-3 py-3">{item.estimated_people ?? '—'}</td><td className="px-3 py-3"><span className={`incident-status-chip ${isPending ? 'bg-orange-100 text-orange-700' : isResolved ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>{formatIncidentStatus(item.status)}</span></td></tr>;
+                  ><td className="truncate px-3 py-3 font-mono text-[0.72rem] font-bold text-[#173750]" title={item.report_code || undefined}>{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td><td className="px-3 py-3">{item.incident_type || 'Incident'}</td><td className="truncate px-3 py-3" title={item.location}>{item.location}</td><td className="px-3 py-3">{item.estimated_people ?? '—'}</td><td className="px-3 py-3"><span className={`incident-status-chip ${isPending ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{formatIncidentStatus(item.status)}</span></td></tr>;
                 })}</tbody>
               </table>
               {!recentIncidents.length ? <p className="p-10 text-center text-sm text-slate-500">{loading ? 'Loading incidents…' : 'No incidents recorded this week.'}</p> : null}

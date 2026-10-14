@@ -176,7 +176,7 @@ export default function BarangayShell({
               <NavLabel icon="evacuation" label="Evacuation Center" />
             </button>
             <button onClick={onOpenAccount} className={itemClass(activeView === 'account')}>
-              <NavLabel icon="account" label="My Account" />
+              <NavLabel icon="account" label="Account" />
             </button>
             <button onClick={onOpenHistory} className={itemClass(activeView === 'history')}>
               <NavLabel icon="history" label="History" />
@@ -253,7 +253,7 @@ export default function BarangayShell({
               activeView === 'account' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            My Account
+            Account
           </button>
           <button
             onClick={onOpenHistory}

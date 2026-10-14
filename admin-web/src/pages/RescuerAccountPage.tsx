@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import RescuerShell from '../components/RescuerShell';
+import AccountDetailsModal, { type AccountEditValues } from '../components/AccountDetailsModal';
 import { api } from '../services/apiClient';
 import { d } from '../adminDesign';
 
@@ -13,17 +14,6 @@ type Props = {
   onOpenAccount: () => void;
 };
 
-type Account = {
-  accountId: string | null;
-  username: string;
-  role: string;
-  email: string | null;
-  firstName: string | null;
-  lastName: string | null;
-  address: string | null;
-  contactNumber: string | null;
-};
-
 type RescuerAccount = {
   id: number;
   rescuer_id: string;
@@ -33,19 +23,29 @@ type RescuerAccount = {
   last_name: string | null;
   address: string | null;
   contact_number: string | null;
+  barangay_name?: string | null;
   is_online: boolean;
   is_self: boolean;
   last_login: string | null;
 };
 
-const emptyForm = { firstName: '', lastName: '', email: '', address: '', contactNumber: '' };
+function toEditValues(account: RescuerAccount): AccountEditValues {
+  return {
+    username: account.username || '',
+    email: account.email || '',
+    password: '',
+    firstName: account.first_name || '',
+    lastName: account.last_name || '',
+    address: account.address || '',
+    contactNumber: account.contact_number || '',
+    barangayName: '',
+  };
+}
 
 export default function RescuerAccountPage(props: Props) {
-  const { onAuthError } = props;
-  const [account, setAccount] = useState<Account | null>(null);
+  const { onAuthError, responderRole } = props;
   const [rescuers, setRescuers] = useState<RescuerAccount[]>([]);
-  const [form, setForm] = useState(emptyForm);
-  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [selectedRescuer, setSelectedRescuer] = useState<RescuerAccount | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -53,17 +53,8 @@ export default function RescuerAccountPage(props: Props) {
 
   const loadAccount = useCallback(async () => {
     try {
-      const [profileResponse, accountsResponse] = await Promise.all([
-        api.get<{ user: Account }>('/auth/me'),
-        api.get<RescuerAccount[]>('/rescuers/accounts'),
-      ]);
-      const { user } = profileResponse.data;
-      setAccount(user);
-      setRescuers(Array.isArray(accountsResponse.data) ? accountsResponse.data : []);
-      setForm({
-        firstName: user.firstName || '', lastName: user.lastName || '',
-        email: user.email || '', address: user.address || '', contactNumber: user.contactNumber || '',
-      });
+      const { data } = await api.get<RescuerAccount[]>('/rescuers/accounts');
+      setRescuers(Array.isArray(data) ? data : []);
     } catch (caught: unknown) {
       const apiError = caught as { response?: { status?: number; data?: { message?: string } } };
       if (apiError.response?.status === 401) onAuthError();
@@ -73,15 +64,19 @@ export default function RescuerAccountPage(props: Props) {
 
   useEffect(() => { void loadAccount(); }, [loadAccount]);
 
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    if (saving) return;
+  async function save(values: AccountEditValues) {
+    if (saving || !selectedRescuer?.is_self) return;
     setSaving(true); setError(''); setMessage('');
     try {
-      const { data } = await api.put<{ user: Account }>('/auth/me', form);
-      setAccount(data.user);
+      await api.put('/auth/me', {
+        firstName: values.firstName,
+        lastName: values.lastName,
+        email: values.email,
+        address: values.address,
+        contactNumber: values.contactNumber,
+      });
       await loadAccount();
-      setIsFormOpen(false);
+      setSelectedRescuer(null);
       setMessage('Your account information was updated.');
     } catch (caught: unknown) {
       const apiError = caught as { response?: { status?: number; data?: { message?: string } } };
@@ -119,28 +114,12 @@ export default function RescuerAccountPage(props: Props) {
         <div className={d.admin.headerRow}>
           <h2 className={d.admin.title}>Rescuer Account Management</h2>
           <div className={d.admin.searchRow}>
-            <button type="button" onClick={() => { setError(''); setMessage(''); setIsFormOpen(true); }} className={d.admin.actionAdd}>Edit My Profile</button>
             <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search by name, email, username, or contact" className={d.admin.search} />
           </div>
         </div>
 
         {error ? <div className={d.page.error}>{error}</div> : null}
         {message ? <div className="mb-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{message}</div> : null}
-
-        {isFormOpen ? (
-          <form onSubmit={save} className={d.admin.form}>
-            <div className={d.admin.idBox}>Editing: {account?.accountId || 'CDRRMD Rescuer Account'}</div>
-            <input value={form.firstName} onChange={(event) => setForm((current) => ({ ...current, firstName: event.target.value }))} placeholder="First Name" className={d.form.inputSm} />
-            <input value={form.lastName} onChange={(event) => setForm((current) => ({ ...current, lastName: event.target.value }))} placeholder="Last Name" className={d.form.inputSm} />
-            <input value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} placeholder="Email" type="email" className={d.form.inputSm} required />
-            <input value={form.contactNumber} onChange={(event) => setForm((current) => ({ ...current, contactNumber: event.target.value }))} placeholder="Contact Number" className={d.form.inputSm} />
-            <input value={form.address} onChange={(event) => setForm((current) => ({ ...current, address: event.target.value }))} placeholder="Address" className={d.form.inputSm} />
-            <div className={d.admin.formActions}>
-              <button disabled={saving || !account} className={d.btn.emerald}>{saving ? 'Saving...' : 'Save Changes'}</button>
-              <button type="button" onClick={() => setIsFormOpen(false)} className={d.btn.secondary}>Cancel</button>
-            </div>
-          </form>
-        ) : null}
 
         <div className={d.table.wrap}>
           <table className={d.table.main}>
@@ -155,13 +134,38 @@ export default function RescuerAccountPage(props: Props) {
                   <td className={d.admin.tdHiddenLg}>{rescuer.contact_number || 'N/A'}</td>
                   <td className={d.admin.thHiddenMd}><span className={['status-chip', rescuer.is_online ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'].join(' ')}>{rescuer.is_online ? 'Online' : 'Offline'}</span></td>
                   <td className={`${d.admin.tdHiddenTruncateXl} text-xs text-slate-500`}>{formatLastLogin(rescuer.last_login)}</td>
-                  <td><div className={d.admin.actions}>{rescuer.is_self ? <button type="button" onClick={() => setIsFormOpen(true)} className={d.btn.secondaryXs}>Edit</button> : <span className="text-slate-400">-</span>}</div></td>
+                  <td><div className={d.admin.actions}><button type="button" onClick={() => { setSelectedRescuer(rescuer); setError(''); setMessage(''); }} className={d.btn.secondaryXs}>View</button></div></td>
                 </tr>
               ))}
               {!filteredRescuers.length ? <tr><td colSpan={8} className={d.table.empty}>No rescuer account found.</td></tr> : null}
             </tbody>
           </table>
         </div>
+        {selectedRescuer ? (
+          <AccountDetailsModal
+            key={selectedRescuer.id}
+            title={responderRole === 'barangay_rescuer' ? 'Barangay Rescuer Account' : 'CDRRMD Rescuer Account'}
+            accountId={selectedRescuer.rescuer_id}
+            initialValues={toEditValues(selectedRescuer)}
+            details={[
+              { label: 'Name', value: [selectedRescuer.first_name, selectedRescuer.last_name].filter(Boolean).join(' ') || 'N/A' },
+              { label: 'Status', value: selectedRescuer.is_online ? 'Online' : 'Offline' },
+              ...(responderRole === 'barangay_rescuer' ? [{ label: 'Barangay', value: selectedRescuer.barangay_name || 'N/A' }] : []),
+              { label: 'Username', value: selectedRescuer.username || 'N/A' },
+              { label: 'Email', value: selectedRescuer.email || 'N/A' },
+              { label: 'Contact', value: selectedRescuer.contact_number || 'N/A' },
+              { label: 'Address', value: selectedRescuer.address || 'N/A' },
+              { label: 'Last Login', value: formatLastLogin(selectedRescuer.last_login) },
+            ]}
+            canEdit={selectedRescuer.is_self}
+            usernameReadOnly
+            showPassword={false}
+            busy={saving}
+            error={error}
+            onClose={() => { setSelectedRescuer(null); setError(''); }}
+            onSave={save}
+          />
+        ) : null}
       </div>
     </RescuerShell>
   );

@@ -573,6 +573,7 @@ async function getReports(req, res) {
     return;
   }
 
+  const dashboardScope = String(req.query?.scope || '').toLowerCase() === 'dashboard';
   const result = await pool.query(
     `SELECT
       r.id,
@@ -632,8 +633,11 @@ async function getReports(req, res) {
        LIMIT 1
      ) dispatch ON TRUE
      LEFT JOIN users responder ON responder.id = dispatch.assigned_rescuer_id
+     WHERE r.status <> 'resolved'
+       AND ($1::boolean = FALSE OR r.created_at >= (date_trunc('week', NOW() AT TIME ZONE 'Asia/Manila') AT TIME ZONE 'Asia/Manila'))
      ORDER BY r.created_at DESC
      LIMIT 200`,
+    [dashboardScope],
   );
 
   return res.json(result.rows);
@@ -701,7 +705,8 @@ async function getReportHistory(req, res) {
             u.username AS reporter_username, u.contact_number, u.email
      FROM incident_reports r
      LEFT JOIN users u ON u.id = r.reported_by
-     WHERE ($1::text IS NULL OR LOWER(r.assigned_barangay) = LOWER($1))
+     WHERE r.status = 'resolved'
+       AND ($1::text IS NULL OR LOWER(r.assigned_barangay) = LOWER($1))
        AND ($2::integer IS NULL OR EXTRACT(MONTH FROM r.created_at) = $2)
        AND ($3::integer IS NULL OR EXTRACT(YEAR FROM r.created_at) = $3)
        AND ($4::text = ''

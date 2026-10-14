@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AdminShell from '../components/AdminShell';
 import { d } from '../adminDesign';
 import { loadFloodReportHistory, type FloodSensorReport } from '../services/floodReportHistory';
@@ -397,8 +397,11 @@ export default function FloodMonitoringPage({
   const [pendingSensorStatus, setPendingSensorStatus] = useState<{ hardwareId: string; status: SensorStatus } | null>(null);
   const [savingSensorStatus, setSavingSensorStatus] = useState(false);
   const [sensorStatusError, setSensorStatusError] = useState<string | null>(null);
+  const loadInFlightRef = useRef(false);
 
   const loadData = useCallback(async (showLoading = true) => {
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
     if (showLoading) {
       setLoading(true);
     }
@@ -473,6 +476,7 @@ export default function FloodMonitoringPage({
       }
       setError(apiError.response?.data?.message || (err instanceof Error ? err.message : 'Failed to load flood monitoring data.'));
     } finally {
+      loadInFlightRef.current = false;
       if (showLoading) {
         setLoading(false);
       }

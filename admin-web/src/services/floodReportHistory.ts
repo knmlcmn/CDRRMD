@@ -17,6 +17,7 @@ export type FloodSensorReport = {
 const FIREBASE_DATABASE_URL =
   'https://capstone-4de76-default-rtdb.asia-southeast1.firebasedatabase.app';
 const FLOOD_REPORTS_PATH = 'Flood Reports';
+let historyRequest: Promise<FloodSensorReport[]> | null = null;
 
 function normalizeFloodReport(firebaseKey: string, value: unknown): FloodSensorReport | null {
   if (!value || typeof value !== 'object') return null;
@@ -51,6 +52,8 @@ function normalizeFloodReport(firebaseKey: string, value: unknown): FloodSensorR
 }
 
 export async function loadFloodReportHistory(): Promise<FloodSensorReport[]> {
+  if (historyRequest) return historyRequest;
+  historyRequest = (async () => {
   const baseUrl = FIREBASE_DATABASE_URL.replace(/\/$/, '');
   const encodedPath = encodeURIComponent(FLOOD_REPORTS_PATH);
   const response = await fetch(`${baseUrl}/${encodedPath}.json`);
@@ -68,4 +71,6 @@ export async function loadFloodReportHistory(): Promise<FloodSensorReport[]> {
     },
     [],
   );
+  })().finally(() => { historyRequest = null; });
+  return historyRequest;
 }

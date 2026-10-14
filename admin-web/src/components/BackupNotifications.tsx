@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/apiClient';
 import BackupModal from './BackupModal';
-import RescueRequestRouteMap from '../barangay/components/RescueRequestRouteMap';
+import RescueRequestRouteMap, { type RescueRequestRouteMapHandle } from '../barangay/components/RescueRequestRouteMap';
 import RescueImagePreview from '../barangay/components/RescueImagePreview';
+import AssignedRescuerField from './AssignedRescuerField';
+import { useRescuerAssignmentPreview } from '../services/rescuerAssignmentPreview';
+import { liveAlertKey } from '../utils/liveAlertKey';
 import '../barangay/components/BackupModal.css';
 
 type Request = {
@@ -35,7 +38,7 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
   onConfirm: (reportId: number) => void;
 }) {
   const [requests, setRequests] = useState<Request[]>([]);
-  const [dismissed, setDismissed] = useState<Set<number>>(() => new Set());
+  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState<'confirm' | null>(null);
   const [error, setError] = useState('');
   const [showImage, setShowImage] = useState(false);
@@ -44,6 +47,7 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
   const [routeMetrics, setRouteMetrics] = useState<{ distanceKm: number; etaMinutes: number } | null>();
   const acknowledging = useRef(false);
   const pending = useRef(false);
+  const rescueMapRef = useRef<RescueRequestRouteMapHandle | null>(null);
   useEffect(() => {
     let stopped = false;
     const refresh = async () => {
@@ -60,17 +64,29 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void refresh();
     }, 5000);
-    window.addEventListener('focus', refresh);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
       stopped = true;
       window.clearInterval(timer);
-      window.removeEventListener('focus', refresh);
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
   }, []);
 
   const active = requests.find((request) =>
     !request.acknowledged_at && Number(request.report_id) === reopenReportId)
-    ?? requests.find((request) => !request.acknowledged_at && !dismissed.has(request.id));
+    ?? requests.find((request) => !request.acknowledged_at && !dismissed.has(liveAlertKey(request.id, request.created_at)));
+  const assignmentPreviewUrl = active ? `/backup-requests/${active.id}/rescuer-preview` : null;
+  const {
+    preview: assignmentPreview,
+    loading: assignmentPreviewLoading,
+    error: assignmentPreviewError,
+    refresh: refreshAssignmentPreview,
+  } = useRescuerAssignmentPreview(assignmentPreviewUrl);
 
   useEffect(() => {
     setShowImage(false);
@@ -82,7 +98,7 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
 
   const standby = () => {
     if (busy) return;
-    setDismissed((current) => new Set(current).add(active.id));
+    setDismissed((current) => new Set(current).add(liveAlertKey(active.id, active.created_at)));
     onStandby();
   };
   const confirmDispatch = async () => {
@@ -91,17 +107,17 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
     setBusy('confirm');
     setError('');
     try {
-      const { data: preview } = await api.get<{ rescuer?: { rescuerId?: number } | null }>(`/backup-requests/${active.id}/rescuer-preview`);
-      if (!preview?.rescuer?.rescuerId) {
+      if (!assignmentPreview?.rescuer?.rescuerId) {
         throw new Error('No available CDRRMD Rescuer can be dispatched right now.');
       }
-      await api.patch(`/backup-requests/${active.id}/acknowledge`, { rescuerId: preview.rescuer.rescuerId });
-      setDismissed((current) => new Set(current).add(active.id));
+      await api.patch(`/backup-requests/${active.id}/acknowledge`, { rescuerId: assignmentPreview.rescuer.rescuerId });
+      setDismissed((current) => new Set(current).add(liveAlertKey(active.id, active.created_at)));
       setRequests((current) => current.filter((request) => request.id !== active.id));
       onStandby();
       onConfirm(active.report_id);
     } catch (requestError: unknown) {
-      const apiError = requestError as { response?: { data?: { message?: string } }; message?: string };
+      const apiError = requestError as { response?: { status?: number; data?: { message?: string } }; message?: string };
+      if (apiError.response?.status === 409) refreshAssignmentPreview();
       setError(apiError.response?.data?.message || apiError.message || 'Unable to confirm dispatch. Please try again.');
     } finally {
       acknowledging.current = false;
@@ -114,6 +130,10 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
   const evacuationLatitude = Number(active.evacuation_latitude);
   const evacuationLongitude = Number(active.evacuation_longitude);
   const hasRouteLocations = [residentLatitude, residentLongitude, evacuationLatitude, evacuationLongitude].every(Number.isFinite);
+  const assignedRescuer = assignmentPreview?.rescuer;
+  const assignedRescuerLocation = assignedRescuer?.latitude != null && assignedRescuer.longitude != null
+    ? { latitude: assignedRescuer.latitude, longitude: assignedRescuer.longitude }
+    : null;
   const reportDescription = String(active.report_notes || '').trim();
   const visibleDescription = /^selected evacuation area:/i.test(reportDescription) ? '' : reportDescription;
   const openProofImage = async () => {
@@ -148,8 +168,9 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
           <dl className="rescue-request-details">
             <div><dt>Contact</dt><dd>{active.reporter_contact || active.reporter_email || 'Not provided'}</dd></div>
             <div><dt>People</dt><dd>{active.estimated_people || 1}</dd></div>
-            <div><dt>Rescue location</dt><dd>{active.report_location}</dd></div>
+            <div><dt>Rescue location</dt><dd><button type="button" className="rescue-request-detail-button" onClick={() => rescueMapRef.current?.focusResident()}>{active.report_location}</button></dd></div>
             <div><dt>Assigned evacuation</dt><dd>{active.evacuation_area_name || 'Automatic nearest center'}</dd></div>
+            <AssignedRescuerField responderLabel="CDRRMD Rescuer" rescuer={assignedRescuer} loading={assignmentPreviewLoading} onSelect={assignedRescuerLocation ? () => rescueMapRef.current?.focusRescuer() : undefined} />
             <div><dt>Shortest route</dt><dd>{routeMetrics ? `${routeMetrics.distanceKm.toFixed(2)} km · about ${routeMetrics.etaMinutes} min` : routeMetrics === null ? 'Road route unavailable' : 'Calculating…'}</dd></div>
           </dl>
           {visibleDescription ? <p className="rescue-request-description">{visibleDescription}</p> : null}
@@ -162,18 +183,28 @@ export default function BackupNotifications({ reopenReportId, onStandby, onConfi
         </div>
         {hasRouteLocations ? (
           <RescueRequestRouteMap
+            ref={rescueMapRef}
             resident={{ latitude: residentLatitude, longitude: residentLongitude }}
             evacuationArea={{ latitude: evacuationLatitude, longitude: evacuationLongitude }}
+            rescuer={assignedRescuerLocation}
+            responderKind="cddrmd"
             residentName={residentName}
             evacuationAreaName={active.evacuation_area_name || 'Assigned evacuation center'}
+            rescuerName={assignedRescuer?.rescuerName}
             onRouteMetrics={setRouteMetrics}
           />
         ) : <div className="rescue-request-route-unavailable">Route location unavailable</div>}
       </div>
-      {error ? <p role="alert" className="rescue-request-error">{error}</p> : null}
+      {error || assignmentPreviewError ? <p role="alert" className="rescue-request-error">{error || assignmentPreviewError}</p> : null}
       <div className="rescue-request-actions">
-        <button className="rescue-request-button rescue-request-button-primary" disabled={busy !== null} onClick={() => void confirmDispatch()}>
-          {busy === 'confirm' ? 'Confirming…' : 'Confirm Dispatch'}
+        <button className="rescue-request-button rescue-request-button-primary" disabled={busy !== null || assignmentPreviewLoading || !assignmentPreview?.rescuer} onClick={() => void confirmDispatch()}>
+          {busy === 'confirm'
+            ? 'Confirming…'
+            : assignmentPreviewLoading
+              ? 'Finding Rescuer…'
+              : assignmentPreview?.rescuer
+                ? 'Confirm Dispatch'
+                : 'No Rescuer Available'}
         </button>
         <button className="rescue-request-button" disabled={busy !== null} onClick={standby}>Standby Request</button>
       </div>

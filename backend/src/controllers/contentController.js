@@ -290,26 +290,25 @@ async function deleteEvacuationArea(req, res) {
 }
 
 async function getDashboardSummary(req, res) {
-  const [rescueAlertsRes, activeTeamsRes, areasRes, evacueesRes, latestReportsRes] = await Promise.all([
+  const [metricsRes, latestReportsRes] = await Promise.all([
     pool.query(
-      `SELECT COUNT(*)::int AS count
-       FROM incident_reports
-       WHERE report_type = 'rescue'
-         AND status IN ('pending', 'accepted', 'in_progress')`,
-    ),
-    pool.query(
-      `SELECT COUNT(DISTINCT assigned_team)::int AS count
-       FROM incident_reports
-       WHERE report_type = 'rescue'
-         AND status IN ('accepted', 'in_progress')
-         AND assigned_team IS NOT NULL
-         AND TRIM(assigned_team) <> ''`,
-    ),
-    pool.query('SELECT COUNT(*)::int AS count FROM evacuation_areas WHERE is_active = TRUE'),
-    pool.query(
-      `SELECT COALESCE(SUM(evacuees), 0)::int AS total
-       FROM evacuation_areas
-       WHERE is_active = TRUE`,
+      `WITH incident_metrics AS (
+         SELECT
+           COUNT(*) FILTER (
+             WHERE report_type = 'rescue' AND status IN ('pending', 'accepted', 'in_progress')
+           )::int AS emergency_alerts,
+           COUNT(DISTINCT assigned_team) FILTER (
+             WHERE report_type = 'rescue' AND status IN ('accepted', 'in_progress')
+               AND assigned_team IS NOT NULL AND TRIM(assigned_team) <> ''
+           )::int AS active_teams
+         FROM incident_reports
+       ), area_metrics AS (
+         SELECT COUNT(*)::int AS evacuation_areas,
+                COALESCE(SUM(evacuees), 0)::int AS total_evacuees
+         FROM evacuation_areas
+         WHERE is_active = TRUE
+       )
+       SELECT * FROM incident_metrics CROSS JOIN area_metrics`,
     ),
     pool.query(
       `SELECT
@@ -326,9 +325,13 @@ async function getDashboardSummary(req, res) {
        FROM incident_reports ir
        LEFT JOIN users u ON u.id = ir.reported_by
        WHERE ir.report_type = 'rescue'
-       ORDER BY ir.created_at DESC`,
+         AND ir.created_at >= (date_trunc('week', NOW() AT TIME ZONE 'Asia/Manila') AT TIME ZONE 'Asia/Manila')
+       ORDER BY ir.created_at DESC
+       LIMIT 200`,
     ),
   ]);
+
+  const metrics = metricsRes.rows[0] || {};
 
   const reportIncidents = latestReportsRes.rows.map((item) => {
     const firstName = item.first_name || '';
@@ -352,10 +355,10 @@ async function getDashboardSummary(req, res) {
 
   return res.json({
     cards: {
-      emergencyAlerts: rescueAlertsRes.rows[0]?.count ?? 0,
-      activeTeams: activeTeamsRes.rows[0]?.count ?? 0,
-      evacuationAreas: areasRes.rows[0]?.count ?? 0,
-      totalEvacuees: evacueesRes.rows[0]?.total ?? 0,
+      emergencyAlerts: metrics.emergency_alerts ?? 0,
+      activeTeams: metrics.active_teams ?? 0,
+      evacuationAreas: metrics.evacuation_areas ?? 0,
+      totalEvacuees: metrics.total_evacuees ?? 0,
     },
     incidents,
   });

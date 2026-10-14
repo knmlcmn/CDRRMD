@@ -284,6 +284,7 @@ async function listMyIncidents(req, res) {
        AND br.dispatch_type = $2
        AND ($3::text IS NULL OR LOWER(ir.assigned_barangay) = LOWER($3))
        AND br.arrived_at IS NULL
+       AND br.declined_at IS NULL
        AND ir.status IN ('pending', 'accepted', 'in_progress')
      ORDER BY br.assigned_at, br.id`,
     [req.user.userId, scope.dispatchType, scope.barangayName],
@@ -306,6 +307,7 @@ async function findMyIncidentHistory(req, currentWeekOnly) {
        AND br.dispatch_type = $2
        AND ($3::text IS NULL OR LOWER(ir.assigned_barangay) = LOWER($3))
        AND br.arrived_at IS NOT NULL
+       AND ir.status = 'resolved'
        ${currentWeekOnly ? "AND br.arrived_at >= (date_trunc('week', NOW() AT TIME ZONE 'Asia/Manila') AT TIME ZONE 'Asia/Manila')" : ''}
      ORDER BY br.arrived_at DESC, br.id DESC
     `,
@@ -334,12 +336,27 @@ async function listFloodReports(req, res) {
      FROM incident_reports ir
      LEFT JOIN users reporter ON reporter.id = ir.reported_by
      WHERE ir.report_type = 'flood'
+       AND ir.status <> 'resolved'
        AND ($1::text IS NULL OR LOWER(ir.assigned_barangay) = LOWER($1))
      ORDER BY ir.created_at DESC
      LIMIT 200`,
     [scope.barangayName],
   );
   return res.json(rows);
+}
+
+async function heartbeatPresence(req, res) {
+  responseScope(req);
+  const { rows } = await pool.query(
+    `UPDATE users
+     SET is_active = TRUE, last_seen_at = NOW()
+     WHERE id = $1 AND role IN ('rescuer', 'barangay_rescuer')
+       AND COALESCE(is_archived, FALSE) = FALSE
+     RETURNING last_seen_at`,
+    [req.user.userId],
+  );
+  if (!rows[0]) throw httpError(404, 'Responder account not found.');
+  return res.json({ online: true, lastSeenAt: rows[0].last_seen_at });
 }
 
 async function updateMyLocation(req, res) {
@@ -530,5 +547,6 @@ module.exports = {
   listMyIncidentHistory,
   listMyCompleteIncidentHistory,
   listFloodReports,
+  heartbeatPresence,
   updateMyLocation,
 };

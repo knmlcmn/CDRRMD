@@ -26,6 +26,9 @@
 .rescue-request-details div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; }
 .rescue-request-details dt { color: #64748b; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .rescue-request-details dd { margin: 0; color: #173f5d; font-size: 13px; font-weight: 750; overflow-wrap: anywhere; }
+.rescue-request-detail-button { border: 0; border-radius: 4px; background: transparent; padding: 0; color: inherit; cursor: pointer; font: inherit; font-weight: inherit; text-align: left; }
+.rescue-request-detail-button:hover { color: #0284c7; text-decoration: underline; text-underline-offset: 2px; }
+.rescue-request-detail-button:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
 .rescue-request-meta { margin: 18px 0 0 !important; color: #94a3b8; font-size: 12px; line-height: 1.4 !important; }
 .rescue-request-meta-row { display: flex; align-items: center; justify-content: flex-start; gap: 16px; margin-top: 14px; color: #94a3b8; font-size: 12px; font-weight: 700; }
 .rescue-request-view-image { border: 0; border-radius: 999px; background: #2ba7ed; padding: 9px 18px; color: #fff; cursor: pointer; font-size: 12px; font-weight: 850; box-shadow: 0 5px 14px rgba(43, 167, 237, .22); }
@@ -35,14 +38,12 @@
 .rescue-request-route-map-canvas { position: absolute; inset: 0; }
 .rescue-request-route-map-status { position: absolute; right: 10px; bottom: 10px; left: 10px; z-index: 500; border-radius: 7px; background: rgba(15, 47, 73, .88); padding: 7px 9px; color: #fff; font-size: 11px; font-weight: 800; text-align: center; }
 .rescue-request-route-unavailable { display: grid; place-items: center; padding: 20px; color: #64748b; font-size: 12px; font-weight: 800; text-align: center; }
-.rescue-route-pin { box-sizing: border-box; display: grid; width: 32px; height: 32px; place-items: center; border: 3px solid #fff; border-radius: 50% 50% 50% 0; background: var(--pin-color); box-shadow: 0 3px 9px rgba(0, 0, 0, .35); color: #fff; font: 900 12px/1 sans-serif; transform: rotate(-45deg); }
-.rescue-route-pin span { transform: rotate(45deg); }
 .rescue-request-error { margin: 16px 0 0 !important; border-radius: 8px; background: #fef2f2; padding: 9px 11px; color: #b91c1c; font-size: 13px; font-weight: 700; }
 .rescue-request-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; border-top: 1px solid #e2e8f0; padding-top: 16px; }
 .rescue-request-button { min-height: 44px; border: 1px solid #cbd5e1; border-radius: 8px; background: #e2e8f0; color: #475569; cursor: pointer; font-size: 14px; font-weight: 800; }
 .rescue-request-button-primary { border-color: #fff; background: #17833d; color: #fff; box-shadow: 0 0 0 3px #fff, 0 0 0 6px #214f70; }
 .rescue-request-button:hover { filter: brightness(.97); }
-.rescue-request-button:disabled { cursor: wait; opacity: .6; }
+.rescue-request-button:disabled { cursor: not-allowed; opacity: .6; }
 .rescue-request-button:focus-visible { outline: 3px solid #38bdf8; outline-offset: 3px; }
 
 .rescue-image-preview { position: fixed; inset: 0; width: fit-content; max-width: calc(100vw - 40px); max-height: calc(100dvh - 40px); margin: auto; overflow: visible; border: 0; padding: 0; background: transparent; box-shadow: none; }

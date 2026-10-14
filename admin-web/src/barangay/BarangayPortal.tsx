@@ -7,10 +7,13 @@ import DashboardPage from './pages/DashboardPage';
 import HistoryPage from './pages/HistoryPage';
 import WaterLevelAlert, { type WaterLevelNoticeKind } from './components/WaterLevelAlert';
 import BackupModal from './components/BackupModal';
-import RescueRequestRouteMap from './components/RescueRequestRouteMap';
+import RescueRequestRouteMap, { type RescueRequestRouteMapHandle } from './components/RescueRequestRouteMap';
 import RescueImagePreview from './components/RescueImagePreview';
+import AssignedRescuerField from '../components/AssignedRescuerField';
 import { API_BASE_URL, api, setAuthToken } from '../services/apiClient';
+import { useRescuerAssignmentPreview } from '../services/rescuerAssignmentPreview';
 import { loadWaterLevelSensors, type WaterLevelSensor } from './services/waterLevelSensors';
+import { liveAlertKey, removeAlertKeysForId } from '../utils/liveAlertKey';
 
 type View = 'dashboard' | 'monitoring' | 'flood-monitoring' | 'evacuation-center' | 'account' | 'history';
 type RescueRequestNotice = {
@@ -46,7 +49,7 @@ type Props = {
 export default function BarangayPortal({ token, barangayName, onLogout, onAuthError }: Props) {
   const [view, setView] = useState<View>('dashboard');
   const [pendingRescueRequests, setPendingRescueRequests] = useState<RescueRequestNotice[]>([]);
-  const [dismissedRescueIds, setDismissedRescueIds] = useState<Set<number>>(() => new Set());
+  const [dismissedRescueIds, setDismissedRescueIds] = useState<Set<string>>(() => new Set());
   const [openedRescueRequestId, setOpenedRescueRequestId] = useState<number | null>(null);
   const [rescueDecisionId, setRescueDecisionId] = useState<number | null>(null);
   const [rescueDecisionError, setRescueDecisionError] = useState('');
@@ -58,6 +61,7 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
   const [notices, setNotices] = useState<Array<{ id: number; alert: WaterLevelSensor; kind: WaterLevelNoticeKind }>>([]);
   const noticeIdRef = useRef(0);
   const lastWarningLevelRef = useRef<number | null>(null);
+  const rescueMapRef = useRef<RescueRequestRouteMapHandle | null>(null);
 
   const showNotice = useCallback((alert: WaterLevelSensor, kind: WaterLevelNoticeKind) => {
     setNotices([{ id: ++noticeIdRef.current, alert, kind }]);
@@ -86,9 +90,16 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void checkRescueRequests();
     }, 5_000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void checkRescueRequests();
+    };
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
       stopped = true;
       window.clearInterval(timer);
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
   }, [onAuthError, token]);
 
@@ -147,7 +158,14 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
     openedRescueRequestId == null
       ? null
       : pendingRescueRequests.find((request) => request.id === openedRescueRequestId)
-  ) || pendingRescueRequests.find((request) => !dismissedRescueIds.has(request.id)) || null;
+  ) || pendingRescueRequests.find((request) => !dismissedRescueIds.has(liveAlertKey(request.id, request.created_at))) || null;
+  const assignmentPreviewUrl = activeRescueRequest ? `/barangay/reports/${activeRescueRequest.id}/rescuer-preview` : null;
+  const {
+    preview: assignmentPreview,
+    loading: assignmentPreviewLoading,
+    error: assignmentPreviewError,
+    refresh: refreshAssignmentPreview,
+  } = useRescuerAssignmentPreview(assignmentPreviewUrl);
   const residentName = activeRescueRequest
     ? [activeRescueRequest.first_name, activeRescueRequest.last_name].filter(Boolean).join(' ').trim() || 'Resident'
     : 'Resident';
@@ -156,6 +174,10 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
   const evacuationLatitude = Number(activeRescueRequest?.evacuation_latitude);
   const evacuationLongitude = Number(activeRescueRequest?.evacuation_longitude);
   const hasRouteLocations = [residentLatitude, residentLongitude, evacuationLatitude, evacuationLongitude].every(Number.isFinite);
+  const assignedRescuer = assignmentPreview?.rescuer;
+  const assignedRescuerLocation = assignedRescuer?.latitude != null && assignedRescuer.longitude != null
+    ? { latitude: assignedRescuer.latitude, longitude: assignedRescuer.longitude }
+    : null;
 
   useEffect(() => {
     setRescueRouteMetrics(undefined);
@@ -165,17 +187,13 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
   }, [activeRescueRequest?.id]);
 
   const standbyRescueRequest = (request: RescueRequestNotice) => {
-    setDismissedRescueIds((current) => new Set(current).add(request.id));
+    setDismissedRescueIds((current) => new Set(current).add(liveAlertKey(request.id, request.created_at)));
     setOpenedRescueRequestId((current) => current === request.id ? null : current);
     setRescueDecisionError('');
   };
 
   const reopenPendingRescueRequest = (reportId: number) => {
-    setDismissedRescueIds((current) => {
-      const next = new Set(current);
-      next.delete(reportId);
-      return next;
-    });
+    setDismissedRescueIds((current) => removeAlertKeysForId(current, reportId));
     setOpenedRescueRequestId(reportId);
     setRescueDecisionError('');
   };
@@ -188,9 +206,10 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
       await api.patch(`/barangay/reports/${request.id}/status`, {
         status: 'accepted',
         notes: `Barangay ${barangayName} confirmed dispatch from the resident rescue notification.`,
+        rescuerId: assignmentPreview?.rescuer?.rescuerId,
       });
       setPendingRescueRequests((current) => current.filter((item) => item.id !== request.id));
-      setDismissedRescueIds((current) => new Set(current).add(request.id));
+      setDismissedRescueIds((current) => new Set(current).add(liveAlertKey(request.id, request.created_at)));
       setOpenedRescueRequestId(null);
       setFocusReportId(request.id);
     } catch (error: unknown) {
@@ -199,6 +218,7 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
         onAuthError();
         return;
       }
+      if (apiError.response?.status === 409) refreshAssignmentPreview();
       setRescueDecisionError(apiError.response?.data?.message || 'Unable to update this rescue request. Please try again.');
     } finally {
       setRescueDecisionId(null);
@@ -241,8 +261,9 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
           <dl className="rescue-request-details">
             <div><dt>Contact</dt><dd>{activeRescueRequest.contact_number || activeRescueRequest.email || 'Not provided'}</dd></div>
             <div><dt>People</dt><dd>{activeRescueRequest.estimated_people || 1}</dd></div>
-            <div><dt>Rescue location</dt><dd>{activeRescueRequest.location}</dd></div>
+            <div><dt>Rescue location</dt><dd><button type="button" className="rescue-request-detail-button" onClick={() => rescueMapRef.current?.focusResident()}>{activeRescueRequest.location}</button></dd></div>
             <div><dt>Assigned evacuation</dt><dd>{activeRescueRequest.evacuation_area_name || 'Automatic nearest center'}</dd></div>
+            <AssignedRescuerField responderLabel="Barangay Rescuer" rescuer={assignedRescuer} loading={assignmentPreviewLoading} onSelect={assignedRescuerLocation ? () => rescueMapRef.current?.focusRescuer() : undefined} />
             <div><dt>Shortest route</dt><dd>{rescueRouteMetrics ? `${rescueRouteMetrics.distanceKm.toFixed(2)} km · about ${rescueRouteMetrics.etaMinutes} min` : rescueRouteMetrics === null ? 'Road route unavailable' : 'Calculating…'}</dd></div>
           </dl>
           {visibleRescueDescription ? <p className="rescue-request-description">{visibleRescueDescription}</p> : null}
@@ -259,18 +280,28 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
         </div>
         {hasRouteLocations ? (
           <RescueRequestRouteMap
+            ref={rescueMapRef}
             resident={{ latitude: residentLatitude, longitude: residentLongitude }}
             evacuationArea={{ latitude: evacuationLatitude, longitude: evacuationLongitude }}
+            rescuer={assignedRescuerLocation}
+            responderKind="barangay"
             residentName={residentName}
             evacuationAreaName={activeRescueRequest.evacuation_area_name || 'Assigned evacuation center'}
+            rescuerName={assignedRescuer?.rescuerName}
             onRouteMetrics={setRescueRouteMetrics}
           />
         ) : <div className="rescue-request-route-unavailable">Route location unavailable</div>}
       </div>
-      {rescueDecisionError ? <p className="rescue-request-error" role="alert">{rescueDecisionError}</p> : null}
+      {rescueDecisionError || assignmentPreviewError ? <p className="rescue-request-error" role="alert">{rescueDecisionError || assignmentPreviewError}</p> : null}
       <div className="rescue-request-actions">
-        <button className="rescue-request-button rescue-request-button-primary" disabled={rescueDecisionId !== null} onClick={() => void decideRescueRequest(activeRescueRequest)}>
-          {rescueDecisionId === activeRescueRequest.id ? 'Processing…' : 'Confirm Dispatch'}
+        <button className="rescue-request-button rescue-request-button-primary" disabled={rescueDecisionId !== null || assignmentPreviewLoading || !assignmentPreview?.rescuer} onClick={() => void decideRescueRequest(activeRescueRequest)}>
+          {rescueDecisionId === activeRescueRequest.id
+            ? 'Confirming…'
+            : assignmentPreviewLoading
+              ? 'Finding Rescuer…'
+              : assignmentPreview?.rescuer
+                ? 'Confirm Dispatch'
+                : 'No Rescuer Available'}
         </button>
         <button className="rescue-request-button" disabled={rescueDecisionId !== null} onClick={() => standbyRescueRequest(activeRescueRequest)}>Standby Request</button>
       </div>

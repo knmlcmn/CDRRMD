@@ -1,38 +1,73 @@
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { fetchRoadRoute, type RoadCoordinate } from '../../services/roadRouting';
+import { standardMapMarkerIcon } from '../../utils/standardMapMarker';
 
 type RouteMetrics = { distanceKm: number; etaMinutes: number };
 
 type Props = {
   resident: RoadCoordinate;
   evacuationArea: RoadCoordinate;
+  rescuer?: RoadCoordinate | null;
+  responderKind: 'barangay' | 'cddrmd';
   residentName: string;
   evacuationAreaName: string;
+  rescuerName?: string;
   onRouteMetrics: (metrics: RouteMetrics | null) => void;
 };
 
-function markerIcon(color: string, symbol: string) {
-  return L.divIcon({
-    className: '',
-    html: `<div class="rescue-route-pin" style="--pin-color:${color}"><span>${symbol}</span></div>`,
-    iconSize: [34, 34],
-    iconAnchor: [17, 33],
-    popupAnchor: [0, -30],
-  });
-}
+export type RescueRequestRouteMapHandle = {
+  focusResident: () => void;
+  focusRescuer: () => void;
+};
 
-export default function RescueRequestRouteMap({
+const RescueRequestRouteMap = forwardRef<RescueRequestRouteMapHandle, Props>(function RescueRequestRouteMap({
   resident,
   evacuationArea,
+  rescuer,
+  responderKind,
   residentName,
   evacuationAreaName,
+  rescuerName = 'Assigned rescuer',
   onRouteMetrics,
-}: Props) {
+}, ref) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const residentMarkerRef = useRef<L.Marker | null>(null);
+  const rescuerMarkerRef = useRef<L.Marker | null>(null);
+  const selectedMarkerRef = useRef<'resident' | 'rescuer' | null>(null);
   const [message, setMessage] = useState('Loading shortest route…');
+  const rescuerLatitude = rescuer?.latitude;
+  const rescuerLongitude = rescuer?.longitude;
+  const hasRescuerLocation = rescuerLatitude != null && rescuerLongitude != null;
+
+  useImperativeHandle(ref, () => ({
+    focusResident: () => {
+      selectedMarkerRef.current = 'resident';
+      const map = mapRef.current;
+      const residentMarker = residentMarkerRef.current;
+      const rescuerMarker = rescuerMarkerRef.current;
+      if (map && rescuerMarker && map.hasLayer(rescuerMarker)) map.removeLayer(rescuerMarker);
+      if (map && residentMarker && !map.hasLayer(residentMarker)) residentMarker.addTo(map);
+      residentMarkerRef.current?.setIcon(standardMapMarkerIcon('resident', true));
+      rescuerMarkerRef.current?.setIcon(standardMapMarkerIcon(responderKind));
+      map?.flyTo([resident.latitude, resident.longitude], 18, { duration: 0.6 });
+    },
+    focusRescuer: () => {
+      if (rescuerLatitude != null && rescuerLongitude != null) {
+        selectedMarkerRef.current = 'rescuer';
+        const map = mapRef.current;
+        const residentMarker = residentMarkerRef.current;
+        const rescuerMarker = rescuerMarkerRef.current;
+        if (map && residentMarker && map.hasLayer(residentMarker)) map.removeLayer(residentMarker);
+        if (map && rescuerMarker && !map.hasLayer(rescuerMarker)) rescuerMarker.addTo(map);
+        residentMarkerRef.current?.setIcon(standardMapMarkerIcon('resident'));
+        rescuerMarkerRef.current?.setIcon(standardMapMarkerIcon(responderKind, true));
+        map?.flyTo([rescuerLatitude, rescuerLongitude], 18, { duration: 0.6 });
+      }
+    },
+  }), [rescuerLatitude, rescuerLongitude, resident.latitude, resident.longitude, responderKind]);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -56,17 +91,24 @@ export default function RescueRequestRouteMap({
 
     const residentPoint = L.latLng(resident.latitude, resident.longitude);
     const evacuationPoint = L.latLng(evacuationArea.latitude, evacuationArea.longitude);
-    L.marker(residentPoint, { icon: markerIcon('#dc2626', '●'), zIndexOffset: 1200 })
+    residentMarkerRef.current = L.marker(residentPoint, { icon: standardMapMarkerIcon('resident'), zIndexOffset: 1200 })
       .addTo(map)
       .bindTooltip(residentName, { direction: 'top' });
-    L.marker(evacuationPoint, { icon: markerIcon('#15803d', 'E'), zIndexOffset: 1100 })
+    L.marker(evacuationPoint, { icon: standardMapMarkerIcon('evacuation'), zIndexOffset: 1100 })
       .addTo(map)
       .bindTooltip(evacuationAreaName, { direction: 'top' });
+    if (rescuerLatitude != null && rescuerLongitude != null) {
+      rescuerMarkerRef.current = L.marker([rescuerLatitude, rescuerLongitude], { icon: standardMapMarkerIcon(responderKind), zIndexOffset: 1300 })
+        .bindTooltip(rescuerName, { direction: 'top' });
+    }
 
     const directBounds = L.latLngBounds([residentPoint, evacuationPoint]);
     map.fitBounds(directBounds, { maxZoom: 16, padding: [34, 34] });
 
-    void fetchRoadRoute(resident, evacuationArea)
+    void fetchRoadRoute(
+      { latitude: resident.latitude, longitude: resident.longitude },
+      { latitude: evacuationArea.latitude, longitude: evacuationArea.longitude },
+    )
       .then((route) => {
         if (cancelled) return;
         const points = route.coordinates.map((point) => L.latLng(point.latitude, point.longitude));
@@ -80,11 +122,17 @@ export default function RescueRequestRouteMap({
         const routeBounds = routeLine.getBounds();
         routeBounds.extend(residentPoint);
         routeBounds.extend(evacuationPoint);
-        map.fitBounds(routeBounds, {
-          maxZoom: 16,
-          paddingTopLeft: [36, 38],
-          paddingBottomRight: [36, 38],
-        });
+        if (selectedMarkerRef.current === 'resident') {
+          map.flyTo(residentPoint, 18, { duration: 0.6 });
+        } else if (selectedMarkerRef.current === 'rescuer' && rescuerLatitude != null && rescuerLongitude != null) {
+          map.flyTo([rescuerLatitude, rescuerLongitude], 18, { duration: 0.6 });
+        } else {
+          map.fitBounds(routeBounds, {
+            maxZoom: 16,
+            paddingTopLeft: [36, 38],
+            paddingBottomRight: [36, 38],
+          });
+        }
         onRouteMetrics({ distanceKm: route.distanceKm, etaMinutes: route.etaMinutes });
         setMessage('');
         window.setTimeout(() => map.invalidateSize(), 80);
@@ -106,8 +154,11 @@ export default function RescueRequestRouteMap({
       cancelled = true;
       map.remove();
       mapRef.current = null;
+      residentMarkerRef.current = null;
+      rescuerMarkerRef.current = null;
+      selectedMarkerRef.current = null;
     };
-  }, [evacuationArea.latitude, evacuationArea.longitude, evacuationAreaName, onRouteMetrics, resident.latitude, resident.longitude, residentName]);
+  }, [evacuationArea.latitude, evacuationArea.longitude, evacuationAreaName, hasRescuerLocation, onRouteMetrics, rescuerLatitude, rescuerLongitude, rescuerName, resident.latitude, resident.longitude, residentName, responderKind]);
 
   return (
     <div className="rescue-request-route-map" aria-label={`Route from ${residentName} to ${evacuationAreaName}`}>
@@ -115,4 +166,6 @@ export default function RescueRequestRouteMap({
       {message ? <span className="rescue-request-route-map-status">{message}</span> : null}
     </div>
   );
-}
+});
+
+export default RescueRequestRouteMap;

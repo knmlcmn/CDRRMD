@@ -28,8 +28,18 @@ function readNumber(payload, ...keys) {
   return null;
 }
 
+function distanceToWaterLevelPercentage(distanceCm) {
+  if (!Number.isFinite(distanceCm)) return null;
+  if (distanceCm <= 20) return 100;
+  if (distanceCm >= 200) return 0;
+  return ((200 - distanceCm) / 180) * 100;
+}
+
 function normalizeReading(payload) {
-  if (typeof payload === 'number') return { distanceCm: Number.isFinite(payload) ? payload : null };
+  if (typeof payload === 'number') {
+    const distanceCm = Number.isFinite(payload) ? payload : null;
+    return { distanceCm, waterLevelPercentage: distanceToWaterLevelPercentage(distanceCm) };
+  }
   if (!payload || typeof payload !== 'object') return {};
 
   const nested = payload.distance && typeof payload.distance === 'object' ? payload.distance : null;
@@ -41,10 +51,11 @@ function normalizeReading(payload) {
       ?? readNumber(payload, 'distanceCm', 'distance_cm');
   let waterLevelPercentage = reportedPercentage;
   if (waterLevelPercentage === null && distanceCm !== null) {
-    waterLevelPercentage = distanceCm <= 20 ? 100 : distanceCm >= 200 ? 0 : ((200 - distanceCm) / 180) * 100;
+    waterLevelPercentage = distanceToWaterLevelPercentage(distanceCm);
   }
 
   return {
+    distanceCm,
     waterLevelPercentage: waterLevelPercentage === null ? null : Math.max(0, Math.min(100, waterLevelPercentage)),
     temperatureCelsius: readNumber(payload, 'temperatureCelsius', 'temperature_celsius', 'temperature', 'tempC', 'temp')
       ?? readNumber(nested, 'temperatureCelsius', 'temperature_celsius', 'temperature', 'tempC', 'temp'),
@@ -85,6 +96,7 @@ async function loadHardwareSensorSnapshot() {
         longitude: Number.isFinite(reading.longitude) ? reading.longitude : assignment.longitude,
         active: String(status || 'Active') !== 'Unavailable',
         readable: payload !== null,
+        distanceCm: reading.distanceCm ?? null,
         waterLevelPercentage: reading.waterLevelPercentage ?? null,
         temperatureCelsius: reading.temperatureCelsius ?? null,
         humidityPercentage: reading.humidityPercentage === null

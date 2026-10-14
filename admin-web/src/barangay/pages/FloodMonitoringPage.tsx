@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import BarangayShell from '../components/BarangayShell';
 import { d } from '../barangayDesign';
 import { loadFloodReportHistory, type FloodSensorReport } from '../../services/floodReportHistory';
@@ -192,8 +192,11 @@ export default function FloodMonitoringPage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hardwareSlots, setHardwareSlots] = useState<HardwareSlot[]>([]);
+  const loadInFlightRef = useRef(false);
 
   const loadData = useCallback(async (showLoading = true) => {
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
     if (showLoading) setLoading(true);
 
     try {
@@ -257,6 +260,7 @@ export default function FloodMonitoringPage({
       }
       setError(apiError.response?.data?.message || 'Failed to load flood monitoring data.');
     } finally {
+      loadInFlightRef.current = false;
       if (showLoading) setLoading(false);
     }
   }, [barangayName, onAuthError, sensorAssignment]);

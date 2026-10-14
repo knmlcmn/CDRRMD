@@ -14,10 +14,17 @@ async function previewNearestRescuer(req, res) {
   const reportId = Number(req.params.id);
   if (!Number.isSafeInteger(reportId) || reportId <= 0) throw httpError(400, 'Invalid rescue report.');
   const { rows } = await pool.query(
-    `SELECT id, status, notes, latitude, longitude
-     FROM incident_reports
-     WHERE id = $1 AND report_type = 'rescue' AND status = 'pending'
-       AND LOWER(assigned_barangay) = LOWER($2)`,
+    `SELECT ir.id, ir.status, ir.notes,
+            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
+                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
+              THEN reporter.current_latitude ELSE ir.latitude END AS latitude,
+            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
+                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
+              THEN reporter.current_longitude ELSE ir.longitude END AS longitude
+     FROM incident_reports ir
+     LEFT JOIN users reporter ON reporter.id = ir.reported_by
+     WHERE ir.id = $1 AND ir.report_type = 'rescue' AND ir.status = 'pending'
+       AND LOWER(ir.assigned_barangay) = LOWER($2)`,
     [reportId, barangayName],
   );
   const report = rows[0];

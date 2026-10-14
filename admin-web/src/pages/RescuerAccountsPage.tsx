@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import AdminShell from '../components/AdminShell';
 import AddAccountDialog, { type AccountRole } from '../components/AddAccountDialog';
 import AccountDetailsModal, { type AccountEditValues } from '../components/AccountDetailsModal';
+import { useConfirmationDialog } from '../components/ConfirmationDialog';
 import { api } from '../services/apiClient';
 import type { RescuerAccount } from '../types';
 import { d } from '../adminDesign';
@@ -73,6 +74,7 @@ export default function RescuerAccountsPage(props: Props) {
   const [accountRole, setAccountRole] = useState<RescuerRole>('rescuer');
   const isBarangayRescuer = accountRole === 'barangay_rescuer';
   const accountLabel = isBarangayRescuer ? 'Barangay Rescuer' : 'CDRRMD Rescuer';
+  const { confirm, confirmationDialog } = useConfirmationDialog();
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -90,8 +92,6 @@ export default function RescuerAccountsPage(props: Props) {
 
   useEffect(() => {
     void loadAccounts();
-    const timer = window.setInterval(() => void loadAccounts(), 10_000);
-    return () => window.clearInterval(timer);
   }, [loadAccounts]);
 
   const filtered = useMemo(() => {
@@ -127,7 +127,13 @@ export default function RescuerAccountsPage(props: Props) {
   }
 
   async function archiveAccount(account: RescuerAccount) {
-    if (!window.confirm(`Archive ${account.rescuer_id}?`)) return;
+    const confirmed = await confirm({
+      title: 'Archive account?',
+      message: `Archive the ${accountLabel} account “${account.rescuer_id}”? You can restore it later.`,
+      confirmLabel: 'Archive',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
     setBusy(true);
     try {
       await api.delete(`/rescuers/accounts/${account.id}`);
@@ -156,6 +162,12 @@ export default function RescuerAccountsPage(props: Props) {
   }
 
   async function restoreAccount(account: RescuerAccount) {
+    const confirmed = await confirm({
+      title: 'Restore account?',
+      message: `Restore the ${accountLabel} account “${account.rescuer_id}”? It will be able to access the portal again.`,
+      confirmLabel: 'Restore',
+    });
+    if (!confirmed) return;
     setArchiveBusy(true);
     try {
       await api.patch(`/rescuers/accounts/${account.id}/restore`);
@@ -169,7 +181,13 @@ export default function RescuerAccountsPage(props: Props) {
   }
 
   async function permanentlyDeleteAccount(account: RescuerAccount) {
-    if (!window.confirm(`Permanently delete archived account ${account.rescuer_id}? This cannot be undone.`)) return;
+    const confirmed = await confirm({
+      title: 'Permanently delete account?',
+      message: `Permanently delete the archived ${accountLabel} account “${account.rescuer_id}”? This cannot be undone.`,
+      confirmLabel: 'Delete Permanently',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
     setArchiveBusy(true);
     try {
       await api.delete(`/rescuers/accounts/${account.id}/permanent`);
@@ -222,6 +240,7 @@ export default function RescuerAccountsPage(props: Props) {
             </div>
           </div>
           <div className={d.admin.searchRow}>
+            <button type="button" onClick={() => void loadAccounts()} className={d.admin.archiveButton} disabled={loading}>Refresh</button>
             <button type="button" onClick={() => { setShowArchive(true); void loadArchivedAccounts(); }} className={d.admin.archiveButton}><img src={ARCHIVE_ICON} alt="Archive" className={d.admin.archiveIcon} /> Archive</button>
             <select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)} className={d.admin.search} aria-label="Filter rescuer accounts by availability"><option value="all">All Rescuers</option><option value="available">Available</option><option value="assigned">Assigned</option></select>
             <input className={d.admin.search} placeholder={`Search ${accountLabel} Account`} value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -280,6 +299,7 @@ export default function RescuerAccountsPage(props: Props) {
             onSave={saveAccount}
           />
         ) : null}
+        {confirmationDialog}
       </div>
     </AdminShell>
   );

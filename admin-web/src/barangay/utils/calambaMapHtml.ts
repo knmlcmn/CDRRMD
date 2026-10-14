@@ -2227,12 +2227,14 @@ export function buildCalambaMapHtml(
       renderBarangayBoundaries();
       setRainIntensityFromMmPerHour(0);
       refreshRainImpactData();
-      setInterval(renderFloodHazardLayer, 30000);
+      setInterval(function() {
+        if (document.visibilityState === 'visible') renderFloodHazardLayer();
+      }, 30000);
       setInterval(function() {
         if (document.visibilityState === 'visible') refreshRainImpactData();
       }, 60000);
       setInterval(function() {
-        if (Boolean(visibility.weatherOverlay) || Boolean(visibility.windOverlay)) {
+        if (document.visibilityState === 'visible' && (Boolean(visibility.weatherOverlay) || Boolean(visibility.windOverlay))) {
           windLoadState = 'idle';
           loadWindFieldData();
         }

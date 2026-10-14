@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import RescuerShell from '../components/RescuerShell';
 import { d } from '../adminDesign';
 import { api } from '../services/apiClient';
 import { loadWaterLevelSensors, type WaterLevelSensor } from '../services/waterLevelSensors';
 import { HIGH_WATER_LEVEL_THRESHOLD as HIGH_WATER_THRESHOLD, MODERATE_WATER_LEVEL_THRESHOLD as FLOOD_REPORT_THRESHOLD } from '../services/waterLevelHazard';
+import { formatIncidentStatus } from '../utils/incidentStatus';
 
 type Props = {
   responderRole: 'rescuer' | 'barangay_rescuer';
@@ -45,8 +46,11 @@ export default function RescuerFloodMonitoringPage(props: Props) {
   const [sensors, setSensors] = useState<WaterLevelSensor[]>([]);
   const [reports, setReports] = useState<FloodReport[]>([]);
   const [error, setError] = useState('');
+  const loadInFlightRef = useRef(false);
 
   const loadData = useCallback(async () => {
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
     try {
       const [next, reportsResponse] = await Promise.all([
         loadWaterLevelSensors(),
@@ -60,6 +64,8 @@ export default function RescuerFloodMonitoringPage(props: Props) {
       const apiError = caught as { response?: { status?: number; data?: { message?: string } } };
       if (apiError.response?.status === 401) onAuthError();
       else setError(apiError.response?.data?.message || 'Unable to load flood monitoring data.');
+    } finally {
+      loadInFlightRef.current = false;
     }
   }, [onAuthError]);
 
@@ -109,7 +115,7 @@ export default function RescuerFloodMonitoringPage(props: Props) {
               <table className={d.monitoring.floodReportsTable}>
                 <thead><tr><th>Report ID</th><th>Barangay</th><th>Location</th><th>Water Level</th><th>Status</th><th>Reporter</th></tr></thead>
                 <tbody>
-                  {reports.map((report) => <tr key={report.id}><td>{report.report_code}</td><td>{report.assigned_barangay || '-'}</td><td>{report.location}</td><td>{report.water_level || '-'}</td><td><span className={d.monitoring.statusChip}>{report.status.replace(/_/g, ' ')}</span></td><td>{report.reporter_name || '-'}</td></tr>)}
+                  {reports.map((report) => <tr key={report.id}><td>{report.report_code}</td><td>{report.assigned_barangay || '-'}</td><td>{report.location}</td><td>{report.water_level || '-'}</td><td><span className={d.monitoring.statusChip}>{formatIncidentStatus(report.status)}</span></td><td>{report.reporter_name || '-'}</td></tr>)}
                   {!reports.length ? <tr><td colSpan={6} className={d.table.empty}>No flood reports yet.</td></tr> : null}
                 </tbody>
               </table>

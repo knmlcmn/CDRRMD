@@ -121,9 +121,16 @@ router.get('/:id/rescuer-preview', async (req, res) => {
   if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ message: 'Invalid request ID.' });
   const { rows } = await pool.query(
     `SELECT br.id, br.barangay_name, br.acknowledged_at,
-            ir.notes, ir.admin_notes, ir.latitude, ir.longitude
+            ir.notes, ir.admin_notes,
+            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
+                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
+              THEN reporter.current_latitude ELSE ir.latitude END AS latitude,
+            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
+                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
+              THEN reporter.current_longitude ELSE ir.longitude END AS longitude
      FROM backup_requests br
      JOIN incident_reports ir ON ir.id = br.report_id
+     LEFT JOIN users reporter ON reporter.id = ir.reported_by
      WHERE br.id = $1 AND br.dispatch_type = 'cddrmd_backup'
        AND br.acknowledged_at IS NULL AND br.declined_at IS NULL AND br.arrived_at IS NULL`,
     [id],
@@ -132,6 +139,7 @@ router.get('/:id/rescuer-preview', async (req, res) => {
   if (!request) return res.status(404).json({ message: 'Pending backup request not found.' });
   const rescuer = await findNearestAvailableRescuer(pool, {
     dispatchType: 'cddrmd_backup',
+    barangayName: request.barangay_name,
     latitude: request.latitude,
     longitude: request.longitude,
   });

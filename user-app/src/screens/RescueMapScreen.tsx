@@ -1309,7 +1309,7 @@ function buildLeafletHtml(
       loadBarangayFloodLayer();
       if (Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
       setInterval(function() {
-        if (Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
+        if (document.visibilityState === 'visible' && Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
       }, 10000);
       loadOsmWaterways();
       loadWeatherTimeline();

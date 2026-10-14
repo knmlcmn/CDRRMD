@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { d } from '../adminDesign';
+import { useConfirmationDialog } from './ConfirmationDialog';
 
 export type AccountEditValues = {
   username: string;
@@ -26,6 +27,9 @@ type Props = {
   error?: string | null;
   barangayOptions?: string[];
   addressPlaceholder?: string;
+  canEdit?: boolean;
+  usernameReadOnly?: boolean;
+  showPassword?: boolean;
   onClose: () => void;
   onSave: (values: AccountEditValues) => Promise<void>;
 };
@@ -39,11 +43,15 @@ export default function AccountDetailsModal({
   error,
   barangayOptions,
   addressPlaceholder = 'Address',
+  canEdit = true,
+  usernameReadOnly = false,
+  showPassword = true,
   onClose,
   onSave,
 }: Props) {
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState(initialValues);
+  const { confirm, confirmationDialog } = useConfirmationDialog();
 
   function update(field: keyof AccountEditValues, value: string) {
     setValues((current) => ({ ...current, [field]: value }));
@@ -51,6 +59,12 @@ export default function AccountDetailsModal({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    const confirmed = await confirm({
+      title: 'Save changes?',
+      message: 'The account information was changed. Do you want to save these changes?',
+      confirmLabel: 'Save Changes',
+    });
+    if (!confirmed) return;
     await onSave(values);
   }
 
@@ -63,7 +77,7 @@ export default function AccountDetailsModal({
             <p className="text-xs text-slate-500">{accountId}</p>
           </div>
           <div className="flex items-center gap-2">
-            {!editing ? <button type="button" onClick={() => setEditing(true)} className={d.btn.secondary}>Edit Account</button> : null}
+            {!editing && canEdit ? <button type="button" onClick={() => setEditing(true)} className={d.btn.secondary}>Edit Account</button> : null}
             <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-300 text-lg font-bold text-slate-600 hover:bg-slate-100" aria-label="Close">X</button>
           </div>
         </div>
@@ -74,7 +88,7 @@ export default function AccountDetailsModal({
               <input value={values.firstName} onChange={(event) => update('firstName', event.target.value)} placeholder="First Name" className={d.form.input} />
               <input value={values.lastName} onChange={(event) => update('lastName', event.target.value)} placeholder="Last Name" className={d.form.input} />
               <input value={values.email} onChange={(event) => update('email', event.target.value)} placeholder="Email" type="email" className={d.form.input} required />
-              <input value={values.username} onChange={(event) => update('username', event.target.value)} placeholder="Username" className={d.form.input} required />
+              <input value={values.username} onChange={(event) => update('username', event.target.value)} placeholder="Username" className={`${d.form.input} disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500`} disabled={usernameReadOnly} required />
               <input value={values.contactNumber} onChange={(event) => update('contactNumber', event.target.value)} placeholder="Contact Number" className={d.form.input} />
               <input value={values.address} onChange={(event) => update('address', event.target.value)} placeholder={addressPlaceholder} className={d.form.input} />
               {barangayOptions ? (
@@ -83,7 +97,7 @@ export default function AccountDetailsModal({
                   {barangayOptions.map((barangay) => <option key={barangay} value={barangay}>{barangay}</option>)}
                 </select>
               ) : null}
-              <input value={values.password} onChange={(event) => update('password', event.target.value)} placeholder="New password (optional)" type="password" autoComplete="new-password" className={`${d.form.input} ${barangayOptions ? '' : 'sm:col-span-2'}`} />
+              {showPassword ? <input value={values.password} onChange={(event) => update('password', event.target.value)} placeholder="New password (optional)" type="password" autoComplete="new-password" className={`${d.form.input} ${barangayOptions ? '' : 'sm:col-span-2'}`} /> : null}
               {error ? <p className={`${d.page.error} sm:col-span-2`}>{error}</p> : null}
               <div className="flex justify-end gap-2 sm:col-span-2">
                 <button type="button" onClick={() => { setValues(initialValues); setEditing(false); }} className={d.btn.secondary} disabled={busy}>Cancel</button>
@@ -99,6 +113,7 @@ export default function AccountDetailsModal({
           )}
         </div>
       </div>
+      {confirmationDialog}
     </div>
   );
 }

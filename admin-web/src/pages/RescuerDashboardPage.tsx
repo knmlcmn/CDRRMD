@@ -4,6 +4,7 @@ import { api } from '../services/apiClient';
 import { fetchRoadRoute } from '../services/roadRouting';
 import type { EvacuationAreaItem } from '../types';
 import { buildCalambaMapHtml, type Coordinate } from '../utils/calambaMapHtml';
+import { formatIncidentStatus } from '../utils/incidentStatus';
 
 type Props = {
   responderRole: 'rescuer' | 'barangay_rescuer';
@@ -84,9 +85,12 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
   const mapFrameRef = useRef<HTMLIFrameElement | null>(null);
   const lastFocusedRescue = useRef('');
   const hasAutoCenteredOnLocation = useRef(false);
+  const loadInFlightRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
 
   const loadData = useCallback(async () => {
+    if (loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
     try {
       const [incidentResponse, historyResponse] = await Promise.all([
         api.get<Assignment[]>('/rescuers/incidents/mine'),
@@ -101,6 +105,8 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
       const err = error as ApiError;
       if (err.response?.status === 401) return onAuthError();
       setError(err.response?.data?.message || 'Failed to load assigned incidents.');
+    } finally {
+      loadInFlightRef.current = false;
     }
   }, [onAuthError]);
 
@@ -318,7 +324,7 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
           {selected ? (
             <section className="rounded-xl bg-white p-4 text-sm shadow">
               <h2 className="font-black text-[#19374f]">{selected.report_code}</h2>
-              <div className="mt-3 space-y-1.5"><p><strong>Status:</strong> {selected.status.replace(/_/g, ' ')}</p><p><strong>Resident:</strong> {selected.reporter_name || '-'}</p><p><strong>Contact:</strong> {selected.reporter_contact || '-'}</p><p><strong>People to rescue:</strong> {selected.estimated_people ?? selected.evacuees_reserved ?? 1}</p><p><strong>Incident:</strong> {selected.incident_type.replace(/_/g, ' ')}</p><p><strong>Location:</strong> {selected.location}</p><p><strong>Your current position:</strong> {location ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` : 'Waiting for GPS...'}</p><p><strong>Route destination:</strong> {selected.picked_up_at ? selected.evacuation_area_name || 'Nearest available evacuation center' : 'Resident pinned location'}</p><p><strong>Barangay team:</strong> Barangay {selected.assigned_barangay}</p><p><strong>Distance:</strong> {distanceKm != null ? `${distanceKm.toFixed(2)} km` : 'Calculating...'}</p><p><strong>ETA:</strong> {etaMinutes != null ? `${etaMinutes} minutes` : 'Calculating...'}</p></div>
+              <div className="mt-3 space-y-1.5"><p><strong>Status:</strong> {formatIncidentStatus(selected.status, Boolean(selected.picked_up_at))}</p><p><strong>Resident:</strong> {selected.reporter_name || '-'}</p><p><strong>Contact:</strong> {selected.reporter_contact || '-'}</p><p><strong>People to rescue:</strong> {selected.estimated_people ?? selected.evacuees_reserved ?? 1}</p><p><strong>Incident:</strong> {selected.incident_type.replace(/_/g, ' ')}</p><p><strong>Location:</strong> {selected.location}</p><p><strong>Your current position:</strong> {location ? `${location.latitude.toFixed(6)}, ${location.longitude.toFixed(6)}` : 'Waiting for GPS...'}</p><p><strong>Route destination:</strong> {selected.picked_up_at ? selected.evacuation_area_name || 'Nearest available evacuation center' : 'Resident pinned location'}</p><p><strong>Barangay team:</strong> Barangay {selected.assigned_barangay}</p><p><strong>Distance:</strong> {distanceKm != null ? `${distanceKm.toFixed(2)} km` : 'Calculating...'}</p><p><strong>ETA:</strong> {etaMinutes != null ? `${etaMinutes} minutes` : 'Calculating...'}</p></div>
               <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">{!selected.responder_acknowledged_at ? 'Review your live location and the road route to the resident, then press Dispatch when you are ready to proceed.' : selected.picked_up_at ? `You reached the resident. Follow the updated road route to ${selected.evacuation_area_name}. Barangay Evacuation Personnel will confirm arrival.` : 'Dispatch active. Follow the road route to the resident; arrival is confirmed automatically within 50 meters of the pinned location.'}</div>
               {!selected.responder_acknowledged_at ? <button disabled={busy || !location} onClick={() => void dispatchAssignment()} className="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-3 font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Dispatching...' : location ? 'Dispatch' : 'Waiting for GPS...'}</button> : null}
             </section>

@@ -509,6 +509,12 @@ async function archiveAdminById(id, archivedBy) {
      WHERE id = $1
        AND role = 'admin'
        AND COALESCE(is_archived, FALSE) = FALSE
+       AND EXISTS (
+         SELECT 1 FROM users other
+         WHERE other.role = 'admin'
+           AND other.id <> $1
+           AND COALESCE(other.is_archived, FALSE) = FALSE
+       )
      RETURNING id`,
     [id, archivedBy],
   );
@@ -706,7 +712,7 @@ async function createBarangayAccount(account) {
 async function updateBarangayAccount(account) {
   const baseFields = [
     account.username, account.email, account.firstName, account.lastName,
-    account.address, account.contactNumber, account.barangayName,
+    account.address, account.contactNumber,
   ];
   if (account.passwordHash) {
     const result = await pool.query(
@@ -717,7 +723,7 @@ async function updateBarangayAccount(account) {
        RETURNING id,
          CONCAT('BRG-', EXTRACT(YEAR FROM created_at)::text, '-', LPAD(id::text, 5, '0')) AS barangay_id,
          username, email, first_name, last_name, address, contact_number, role, barangay_name, created_at`,
-      [...baseFields, account.passwordHash, account.id],
+      [...baseFields, account.passwordHash, account.barangayName, account.id],
     );
     return result.rows[0] || null;
   }
@@ -729,7 +735,7 @@ async function updateBarangayAccount(account) {
      RETURNING id,
        CONCAT('BRG-', EXTRACT(YEAR FROM created_at)::text, '-', LPAD(id::text, 5, '0')) AS barangay_id,
        username, email, first_name, last_name, address, contact_number, role, barangay_name, created_at`,
-    [...baseFields, account.id],
+    [...baseFields, account.barangayName, account.id],
   );
   return result.rows[0] || null;
 }
@@ -825,13 +831,14 @@ async function listReportsByEvacuationAreaBarangay(barangayName) {
      JOIN users u ON u.id = ir.reported_by
      LEFT JOIN evacuation_areas ea ON ea.id = ir.evacuation_area_id
      WHERE LOWER(COALESCE(ea.barangay, ir.evacuation_area_name, '')) = LOWER($1)
+       AND ir.status <> 'resolved'
      ORDER BY ir.created_at DESC`,
     [barangayName],
   );
   return result.rows;
 }
 
-async function listReportsByAssignedBarangay(barangayName) {
+async function listReportsByAssignedBarangay(barangayName, currentWeekOnly = false) {
   const result = await pool.query(
     `SELECT
        ir.id, ir.report_code, ir.report_type, ir.location,
@@ -872,8 +879,10 @@ async function listReportsByAssignedBarangay(barangayName) {
      LEFT JOIN users responder ON responder.id = dispatch.assigned_rescuer_id
      WHERE LOWER(ir.assigned_barangay) = LOWER($1)
        AND ir.report_type = 'rescue'
+       AND ir.status <> 'resolved'
+       AND ($2::boolean = FALSE OR ir.created_at >= (date_trunc('week', NOW() AT TIME ZONE 'Asia/Manila') AT TIME ZONE 'Asia/Manila'))
      ORDER BY ir.created_at DESC`,
-    [barangayName],
+    [barangayName, currentWeekOnly],
   );
   return result.rows;
 }

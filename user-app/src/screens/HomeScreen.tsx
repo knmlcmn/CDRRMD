@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AppState,
   Image,
+  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -40,6 +41,15 @@ type AlertItem = {
   created_at?: string;
 };
 type AnnouncementItem = { id: number; title: string; body: string; created_at?: string };
+type PublishedUpdate = {
+  kind: 'alert' | 'announcement';
+  id: number;
+  title: string;
+  body: string;
+  createdAt?: string;
+  category?: string;
+  severity?: string;
+};
 type NotificationItem = {
   id: number;
   user_id?: number;
@@ -117,6 +127,19 @@ function newsIcon(item: AnnouncementItem, index: number): HomeFeedIconName {
   return index === 0 ? 'weatherUpdate' : index === 1 ? 'reduction' : 'announcement';
 }
 
+function updateLabel(value?: string) {
+  return String(value || '')
+    .replace(/^signal_/, 'Signal No. ')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function publishedAt(value?: string) {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
+}
+
 export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
   const navigation = useNavigation();
   const { width: screenWidth, uiScale: designScale, horizontalPadding } = useResponsiveLayout();
@@ -125,6 +148,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [weather, setWeather] = useState<WeatherResponse | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedUpdate, setSelectedUpdate] = useState<PublishedUpdate | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
   const [expandedCaseKey, setExpandedCaseKey] = useState<string | null>(null);
   const [reportLogs, setReportLogs] = useState<Record<number, ReportLogItem[]>>({});
@@ -175,7 +199,10 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
   useEffect(() => {
     load().catch(() => {});
     const timer = setInterval(() => loadNotifications().catch(() => {}), 8_000);
-    const weatherTimer = setInterval(() => refreshWeather().catch(() => {}), 120_000);
+    const weatherTimer = setInterval(() => {
+      const browserVisible = typeof document === 'undefined' || document.visibilityState === 'visible';
+      if (AppState.currentState === 'active' && browserVisible) refreshWeather().catch(() => {});
+    }, 120_000);
     const appStateSubscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') loadNotifications().catch(() => {});
     });
@@ -432,6 +459,72 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
         </View>
       ) : null}
 
+      <Modal
+        visible={selectedUpdate !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setSelectedUpdate(null)}
+      >
+        <View style={st.updateDetailOverlay}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close update details"
+            style={st.updateDetailBackdrop}
+            onPress={() => setSelectedUpdate(null)}
+          />
+          {selectedUpdate ? (
+            <View style={[st.updateDetailPanel, { width: Math.min(screenWidth - 32, 620) }]}>
+              <View style={st.updateDetailHeader}>
+                <View style={st.updateDetailHeadingCopy}>
+                  <Text style={st.updateDetailType}>
+                    {selectedUpdate.kind === 'alert' ? 'Latest Alert' : 'News & Announcement'}
+                  </Text>
+                  <Text style={st.updateDetailTitle}>{selectedUpdate.title}</Text>
+                </View>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Close update details"
+                  style={st.updateDetailClose}
+                  onPress={() => setSelectedUpdate(null)}
+                >
+                  <MaterialCommunityIcons name="close" size={22} color={editorial.ink} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={st.updateDetailMetaRow}>
+                {selectedUpdate.category ? (
+                  <View style={st.updateDetailBadge}>
+                    <Text style={st.updateDetailBadgeText}>{updateLabel(selectedUpdate.category)}</Text>
+                  </View>
+                ) : null}
+                {selectedUpdate.severity ? (
+                  <View style={st.updateDetailBadge}>
+                    <Text style={st.updateDetailBadgeText}>{updateLabel(selectedUpdate.severity)}</Text>
+                  </View>
+                ) : null}
+                {selectedUpdate.createdAt ? (
+                  <Text style={st.updateDetailDate}>{publishedAt(selectedUpdate.createdAt)}</Text>
+                ) : null}
+              </View>
+
+              <ScrollView style={st.updateDetailBodyScroll} showsVerticalScrollIndicator>
+                <Text style={st.updateDetailBody}>{selectedUpdate.body}</Text>
+              </ScrollView>
+
+              <TouchableOpacity
+                accessibilityRole="button"
+                style={st.updateDetailDone}
+                activeOpacity={0.85}
+                onPress={() => setSelectedUpdate(null)}
+              >
+                <Text style={st.updateDetailDoneText}>Close</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </View>
+      </Modal>
+
       <ScrollView
         contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -505,14 +598,30 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
           ) : (
             alerts.slice(0, 3).map((item) => {
               return (
-                <View key={item.id} style={[st.card, cardLayout]}>
+                <TouchableOpacity
+                  key={item.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Read alert: ${item.title}`}
+                  style={[st.card, cardLayout]}
+                  activeOpacity={0.8}
+                  onPress={() => setSelectedUpdate({
+                    kind: 'alert',
+                    id: item.id,
+                    title: item.title,
+                    body: item.body,
+                    createdAt: item.created_at,
+                    category: item.category,
+                    severity: item.severity,
+                  })}
+                >
                   <HomeFeedArtwork name={alertIcon(item)} scale={0.82 * designScale} />
                   <View style={[st.cardCopy, { marginHorizontal: 5 * designScale }]}>
                     <Text style={[st.cardTitle, cardTitleLayout]} numberOfLines={1}>{item.title}</Text>
                     <Text style={[st.cardBody, cardBodyLayout]} numberOfLines={1}>{alertSummary(item)}</Text>
                   </View>
                   <Text style={[st.cardTime, { fontSize: 4 * designScale }]}>{relativeTime(item.created_at)}</Text>
-                </View>
+                  <MaterialCommunityIcons name="chevron-right" size={13 * designScale} color="#111111" />
+                </TouchableOpacity>
               );
             })
           )}
@@ -523,7 +632,20 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
             <View style={[st.card, cardLayout]}><Text style={st.cardMuted}>No announcements yet.</Text></View>
           ) : (
             news.slice(0, 3).map((item, index) => (
-              <TouchableOpacity key={item.id} style={[st.card, cardLayout]} activeOpacity={0.8}>
+              <TouchableOpacity
+                key={item.id}
+                accessibilityRole="button"
+                accessibilityLabel={`Read news or announcement: ${item.title}`}
+                style={[st.card, cardLayout]}
+                activeOpacity={0.8}
+                onPress={() => setSelectedUpdate({
+                  kind: 'announcement',
+                  id: item.id,
+                  title: item.title,
+                  body: item.body,
+                  createdAt: item.created_at,
+                })}
+              >
                 <HomeFeedArtwork name={newsIcon(item, index)} scale={0.82 * designScale} />
                 <View style={[st.cardCopy, { marginHorizontal: 5 * designScale }]}>
                   <Text style={[st.cardTitle, cardTitleLayout]} numberOfLines={1}>{item.title}</Text>
@@ -623,6 +745,72 @@ const st = StyleSheet.create({
   notificationUpdateTitle: { color: editorial.ink, fontSize: 12, fontWeight: '700' },
   notificationUpdateBody: { color: editorial.muted, fontSize: 11, marginTop: 2 },
   notificationUpdateTime: { color: '#64748b', fontSize: 10, marginTop: 2 },
+  updateDetailOverlay: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+  },
+  updateDetailBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+  },
+  updateDetailPanel: {
+    maxHeight: '82%',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: editorial.border,
+    backgroundColor: editorial.surface,
+    padding: 18,
+    shadowColor: '#000000',
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 12,
+  },
+  updateDetailHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  updateDetailHeadingCopy: { flex: 1, paddingRight: 12 },
+  updateDetailType: { color: editorial.accent, fontSize: 12, fontWeight: '700' },
+  updateDetailTitle: { color: editorial.ink, fontSize: 22, lineHeight: 28, fontWeight: '800', marginTop: 3 },
+  updateDetailClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: editorial.accentSoft,
+  },
+  updateDetailMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    marginTop: 12,
+    marginBottom: 14,
+    gap: 7,
+  },
+  updateDetailBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    backgroundColor: editorial.accentSoft,
+  },
+  updateDetailBadgeText: { color: editorial.accent, fontSize: 11, fontWeight: '700' },
+  updateDetailDate: { color: editorial.muted, fontSize: 11 },
+  updateDetailBodyScroll: { flexGrow: 0 },
+  updateDetailBody: { color: editorial.ink, fontSize: 15, lineHeight: 23 },
+  updateDetailDone: {
+    minHeight: 44,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 18,
+    backgroundColor: editorial.accent,
+  },
+  updateDetailDoneText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
   scrollContent: { flexGrow: 1, width: '100%', backgroundColor: editorial.background },
 
   barangayHero: {

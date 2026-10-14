@@ -11,6 +11,7 @@ export type WaterLevelSensor = {
 
 const DATABASE_URL = 'https://capstone-4de76-default-rtdb.asia-southeast1.firebasedatabase.app';
 const SENSOR_STATUS_PATH = 'Sensor Status Settings';
+let statusRequest: Promise<Record<string, WaterLevelSensorStatus>> | null = null;
 
 const SENSOR_ASSIGNMENTS = [
   { id: 'waterSensor1', barangayName: 'Palingon' },
@@ -39,6 +40,8 @@ function readNumber(payload: unknown, ...keys: string[]) {
 }
 
 export async function loadWaterLevelSensorStatuses(): Promise<Record<string, WaterLevelSensorStatus>> {
+  if (statusRequest) return statusRequest;
+  statusRequest = (async () => {
   try {
     const response = await fetch(`${DATABASE_URL}/${encodeURIComponent(SENSOR_STATUS_PATH)}.json`);
     if (!response.ok) return {};
@@ -58,6 +61,8 @@ export async function loadWaterLevelSensorStatuses(): Promise<Record<string, Wat
   } catch {
     return {};
   }
+  })().finally(() => { statusRequest = null; });
+  return statusRequest;
 }
 
 export async function loadWaterLevelSensors(): Promise<WaterLevelSensor[]> {

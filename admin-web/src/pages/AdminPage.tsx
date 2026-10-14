@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { FormEvent } from 'react';
 import { api } from '../services/apiClient';
 import AdminShell from '../components/AdminShell';
 import AddAccountDialog, { type AccountRole } from '../components/AddAccountDialog';
+import AccountDetailsModal, { type AccountEditValues } from '../components/AccountDetailsModal';
+import { useConfirmationDialog } from '../components/ConfirmationDialog';
 import { d } from '../adminDesign';
 import type { AdminAccount } from '../types';
 
@@ -48,34 +49,8 @@ type Props = {
   onAuthError: () => void;
 };
 
-type AdminForm = {
-  id: number | null;
-  adminId: string;
-  username: string;
-  email: string;
-  password: string;
-  firstName: string;
-  lastName: string;
-  address: string;
-  contactNumber: string;
-};
-
-const EMPTY_FORM: AdminForm = {
-  id: null,
-  adminId: '',
-  username: '',
-  email: '',
-  password: '',
-  firstName: '',
-  lastName: '',
-  address: '',
-  contactNumber: '',
-};
-
-function toForm(admin: AdminAccount): AdminForm {
+function toEditValues(admin: AdminAccount): AccountEditValues {
   return {
-    id: admin.id,
-    adminId: admin.admin_id || '',
     username: admin.username || '',
     email: admin.email || '',
     password: '',
@@ -83,6 +58,7 @@ function toForm(admin: AdminAccount): AdminForm {
     lastName: admin.last_name || '',
     address: admin.address || '',
     contactNumber: admin.contact_number || '',
+    barangayName: '',
   };
 }
 
@@ -93,14 +69,14 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
   const [saving, setSaving] = useState(false);
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
   const [currentUserId] = useState<number | null>(() => decodeJwtUserId());
 
-  const [isFormOpen, setIsFormOpen] = useState(false);
   const [isArchiveOpen, setIsArchiveOpen] = useState(false);
-  const [form, setForm] = useState<AdminForm>(EMPTY_FORM);
+  const [selectedAdmin, setSelectedAdmin] = useState<AdminAccount | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-
-  const isEdit = form.id !== null;
+  const { confirm, confirmationDialog } = useConfirmationDialog();
 
   const loadAdmins = useCallback(async () => {
     setLoading(true);
@@ -127,6 +103,7 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
 
   async function loadArchivedAdmins() {
     setArchiveBusy(true);
+    setArchiveError(null);
     try {
       const response = await api.get('/admins/archived');
       setArchivedAdmins(Array.isArray(response.data) ? response.data : []);
@@ -136,43 +113,37 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
         onAuthError();
         return;
       }
-      setError(apiError.response?.data?.message || 'Failed to load archived admin accounts.');
+      setArchiveError(apiError.response?.data?.message || 'Failed to load archived admin accounts.');
     } finally {
       setArchiveBusy(false);
     }
   }
 
   function openArchiveModal() {
+    setArchiveError(null);
     setIsArchiveOpen(true);
     loadArchivedAdmins().catch(() => {});
   }
 
-  function openEditForm(admin: AdminAccount) {
-    setForm(toForm(admin));
-    setIsFormOpen(true);
-  }
-
-  async function onSubmitForm(event: FormEvent) {
-    event.preventDefault();
+  async function saveAdmin(values: AccountEditValues) {
+    if (!selectedAdmin) return;
     setSaving(true);
-    setError(null);
+    setFormError(null);
 
     try {
       const payload = {
-        username: form.username,
-        email: form.email,
-        password: form.password,
-        firstName: form.firstName,
-        lastName: form.lastName,
-        address: form.address,
-        contactNumber: form.contactNumber,
+        username: values.username.trim(),
+        email: values.email.trim(),
+        password: values.password,
+        firstName: values.firstName.trim(),
+        lastName: values.lastName.trim(),
+        address: values.address.trim(),
+        contactNumber: values.contactNumber.trim(),
       };
 
-      if (form.id === null) return;
-      await api.put(`/admins/${form.id}`, payload);
+      await api.put(`/admins/${selectedAdmin.id}`, payload);
 
-      setIsFormOpen(false);
-      setForm(EMPTY_FORM);
+      setSelectedAdmin(null);
       await loadAdmins();
     } catch (err: unknown) {
       const apiError = err as { response?: { status?: number; data?: { message?: string } } };
@@ -180,17 +151,20 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
         onAuthError();
         return;
       }
-      setError(apiError.response?.data?.message || 'Failed to save admin account.');
+      setFormError(apiError.response?.data?.message || 'Failed to save admin account.');
     } finally {
       setSaving(false);
     }
   }
 
   async function onDeleteAdmin(admin: AdminAccount) {
-    const confirmed = window.confirm(`Archive admin ${admin.username}?`);
-    if (!confirmed) {
-      return;
-    }
+    const confirmed = await confirm({
+      title: 'Archive account?',
+      message: `Archive the admin account “${admin.username}”? You can restore it later.`,
+      confirmLabel: 'Archive',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
 
     setSaving(true);
     setError(null);
@@ -214,8 +188,14 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
   }
 
   async function onRestoreAdmin(admin: AdminAccount) {
+    const confirmed = await confirm({
+      title: 'Restore account?',
+      message: `Restore the admin account “${admin.username}”? It will be able to access the portal again.`,
+      confirmLabel: 'Restore',
+    });
+    if (!confirmed) return;
     setArchiveBusy(true);
-    setError(null);
+    setArchiveError(null);
     try {
       await api.patch(`/admins/${admin.id}/restore`);
       await Promise.all([loadAdmins(), loadArchivedAdmins()]);
@@ -225,20 +205,23 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
         onAuthError();
         return;
       }
-      setError(apiError.response?.data?.message || 'Failed to restore admin account.');
+      setArchiveError(apiError.response?.data?.message || 'Failed to restore admin account.');
     } finally {
       setArchiveBusy(false);
     }
   }
 
   async function onPermanentlyDeleteAdmin(admin: AdminAccount) {
-    const confirmed = window.confirm(`Permanently delete archived admin ${admin.username}? This cannot be undone.`);
-    if (!confirmed) {
-      return;
-    }
+    const confirmed = await confirm({
+      title: 'Permanently delete account?',
+      message: `Permanently delete the archived admin account “${admin.username}”? This cannot be undone.`,
+      confirmLabel: 'Delete Permanently',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
 
     setArchiveBusy(true);
-    setError(null);
+    setArchiveError(null);
     try {
       await api.delete(`/admins/${admin.id}/permanent`);
       await loadArchivedAdmins();
@@ -248,7 +231,7 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
         onAuthError();
         return;
       }
-      setError(apiError.response?.data?.message || 'Failed to permanently delete admin account.');
+      setArchiveError(apiError.response?.data?.message || 'Failed to permanently delete admin account.');
     } finally {
       setArchiveBusy(false);
     }
@@ -320,29 +303,6 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
 
             {error ? <div className={d.page.error}>{error}</div> : null}
 
-            {isFormOpen ? (
-              <form onSubmit={onSubmitForm} className={d.admin.form}>
-                <div className={d.admin.idBox}>
-                  ID: {form.adminId || form.id}
-                </div>
-                <input value={form.username} onChange={(e) => setForm((prev) => ({ ...prev, username: e.target.value }))} placeholder="Username" className={d.form.inputSm} required />
-                <input value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} placeholder="Email" className={d.form.inputSm} required />
-                <input value={form.password} onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))} placeholder={isEdit ? 'Password (optional)' : 'Password'} className={d.form.inputSm} required={!isEdit} />
-                <input value={form.firstName} onChange={(e) => setForm((prev) => ({ ...prev, firstName: e.target.value }))} placeholder="First Name" className={d.form.inputSm} />
-                <input value={form.lastName} onChange={(e) => setForm((prev) => ({ ...prev, lastName: e.target.value }))} placeholder="Last Name" className={d.form.inputSm} />
-                <input value={form.contactNumber} onChange={(e) => setForm((prev) => ({ ...prev, contactNumber: e.target.value }))} placeholder="Contact" className={d.form.inputSm} />
-                <input value={form.address} onChange={(e) => setForm((prev) => ({ ...prev, address: e.target.value }))} placeholder="Address" className={d.form.inputSm} />
-                <div className={d.admin.formActions}>
-                  <button disabled={saving} className={d.btn.emerald}>
-                    Save Changes
-                  </button>
-                  <button type="button" onClick={() => setIsFormOpen(false)} className={d.btn.secondary}>
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ) : null}
-
             <div className={d.table.wrap}>
               <table className={d.table.main}>
                 <thead className={d.admin.tableHead}>
@@ -381,18 +341,8 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
                       <td className={d.admin.tdHiddenTruncateXl + ' text-xs text-slate-500'}>{formatLastLogin(admin.last_login)}</td>
                       <td>
                         <div className={d.admin.actions}>
-                          {isOwner ? (
-                            <>
-                              <button onClick={() => openEditForm(admin)} className={d.btn.secondaryXs}>
-                                Edit
-                              </button>
-                              <button onClick={() => onDeleteAdmin(admin)} className={d.btn.dangerXs}>
-                                Archive
-                              </button>
-                            </>
-                          ) : (
-                            <span className="text-xs text-slate-400 italic">—</span>
-                          )}
+                          <button type="button" onClick={() => { setSelectedAdmin(admin); setFormError(null); }} className={d.btn.secondaryXs}>View</button>
+                          <button type="button" onClick={() => onDeleteAdmin(admin)} className={d.btn.dangerXs}>Archive</button>
                         </div>
                       </td>
                     </tr>
@@ -417,6 +367,7 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
                     <button onClick={() => setIsArchiveOpen(false)} className={d.modal.close}>Close</button>
                   </div>
                   <div className={d.admin.archiveModalBody}>
+                    {archiveError ? <p className={d.page.error} role="alert">{archiveError}</p> : null}
                     {archiveBusy ? <p className={d.page.loading}>Loading archive...</p> : null}
                     {!archiveBusy && archivedAdmins.length === 0 ? <p className={d.admin.archiveEmpty}>No archived admin accounts.</p> : null}
                     {!archiveBusy && archivedAdmins.length > 0 ? (
@@ -439,6 +390,29 @@ export default function AdminPage({ onLogout, onOpenDashboard, onOpenUsers, onOp
                 </div>
               </div>
             ) : null}
+            {selectedAdmin ? (
+              <AccountDetailsModal
+                key={selectedAdmin.id}
+                title="Admin Account"
+                accountId={selectedAdmin.admin_id || `ADM-${selectedAdmin.id}`}
+                initialValues={toEditValues(selectedAdmin)}
+                details={[
+                  { label: 'Name', value: [selectedAdmin.first_name, selectedAdmin.last_name].filter(Boolean).join(' ') || 'N/A' },
+                  { label: 'Status', value: selectedAdmin.is_active ? 'Active' : 'Inactive' },
+                  { label: 'Username', value: selectedAdmin.username || 'N/A' },
+                  { label: 'Email', value: selectedAdmin.email || 'N/A' },
+                  { label: 'Contact', value: selectedAdmin.contact_number || 'N/A' },
+                  { label: 'Address', value: selectedAdmin.address || 'N/A' },
+                  { label: 'Last Login', value: formatLastLogin(selectedAdmin.last_login) },
+                ]}
+                canEdit
+                busy={saving}
+                error={formError}
+                onClose={() => { setSelectedAdmin(null); setFormError(null); }}
+                onSave={saveAdmin}
+              />
+            ) : null}
+        {confirmationDialog}
       </div>
     </AdminShell>
   );

@@ -106,6 +106,8 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
   const [waterLevelNoticeKind, setWaterLevelNoticeKind] = useState<WaterLevelNoticeKind>('warning');
   const notifiedWaterLevelsRef = useRef<Record<string, number>>({});
   const postUpdateTimerRef = useRef<number | null>(null);
+  const routineLoadInFlightRef = useRef(false);
+  const criticalLoadInFlightRef = useRef(false);
   const [cards, setCards] = useState<DashboardSummary['cards']>({
     emergencyAlerts: 0,
     activeTeams: 0,
@@ -123,34 +125,23 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
   const [mapReady, setMapReady] = useState(false);
 
   const loadFeed = useCallback(async (showLoading = true) => {
+    if (routineLoadInFlightRef.current) return;
+    routineLoadInFlightRef.current = true;
     if (showLoading) {
       setLoading(true);
     }
     setError(null);
 
     try {
-      const [areasResponse, summaryResponse, reportsResponse] = await Promise.all([
+      const [areasResponse, summaryResponse, cdrrmdResponse, barangayResponderResponse] = await Promise.all([
         api.get('/content/evacuation-areas'),
         api.get('/content/dashboard-summary'),
-        api.get('/reports'),
-      ]);
-
-      setAreas(areasResponse.data);
-      setCards(summaryResponse.data.cards);
-      setIncidents(summaryResponse.data.incidents);
-      setOperationalReports(Array.isArray(reportsResponse.data) ? reportsResponse.data : []);
-
-      // Load secondary map feeds after the core dashboard. This halves the
-      // initial request burst against a connection-limited serverless database.
-      const [backupResponse, cdrrmdResponse, barangayResponderResponse] = await Promise.all([
-        // These feeds enhance the dashboard, but a temporary failure in one of
-        // them must not discard the core summary, reports, and evacuation data.
-        api.get('/backup-requests').catch(() => ({ data: [] })),
         api.get('/rescuers/accounts', { params: { role: 'rescuer' } }).catch(() => ({ data: [] })),
         api.get('/rescuers/accounts', { params: { role: 'barangay_rescuer' } }).catch(() => ({ data: [] })),
       ]);
 
-      setBackupRequests(Array.isArray(backupResponse.data) ? backupResponse.data : []);
+      setAreas(areasResponse.data);
+      setCards(summaryResponse.data.cards);
       setCityRescuers([
         ...(Array.isArray(cdrrmdResponse.data) ? cdrrmdResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'cddrmd' as const })),
         ...(Array.isArray(barangayResponderResponse.data) ? barangayResponderResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'barangay' as const })),
@@ -163,9 +154,40 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       }
       setError(apiError.response?.data?.message || 'Failed to load dashboard data.');
     } finally {
+      routineLoadInFlightRef.current = false;
       if (showLoading) {
         setLoading(false);
       }
+    }
+  }, [onAuthError]);
+
+  const loadCriticalFeed = useCallback(async () => {
+    if (criticalLoadInFlightRef.current) return;
+    criticalLoadInFlightRef.current = true;
+    try {
+      const [reportsResponse, backupResponse] = await Promise.all([
+        api.get('/reports', { params: { scope: 'dashboard' } }),
+        api.get('/backup-requests'),
+      ]);
+      const reports = Array.isArray(reportsResponse.data) ? reportsResponse.data : [];
+      setOperationalReports(reports);
+      setBackupRequests(Array.isArray(backupResponse.data) ? backupResponse.data : []);
+      setIncidents(reports.map((report: MonitoringReport) => ({
+        caseId: report.report_code || `RPT-${report.id}`,
+        type: report.report_type || report.incident_type || 'incident',
+        requesterName: [report.first_name, report.last_name].filter(Boolean).join(' ') || 'Unknown',
+        location: report.location || 'Calamba City',
+        latitude: report.latitude,
+        longitude: report.longitude,
+        status: report.status || 'pending',
+        title: report.incident_type || report.report_type || 'Incident Report',
+        createdAt: report.created_at,
+      })));
+    } catch (err: unknown) {
+      const apiError = err as { response?: { status?: number } };
+      if (apiError.response?.status === 401) onAuthError();
+    } finally {
+      criticalLoadInFlightRef.current = false;
     }
   }, [onAuthError]);
 
@@ -225,11 +247,16 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
 
   useEffect(() => {
     loadFeed(true);
+    loadCriticalFeed().catch(() => {});
     checkWaterLevelAlerts().catch(() => {});
 
     const refreshTimer = setInterval(() => {
-      loadFeed(false);
-    }, 7000);
+      if (document.visibilityState === 'visible') loadFeed(false);
+    }, 60_000);
+
+    const criticalTimer = setInterval(() => {
+      loadCriticalFeed().catch(() => {});
+    }, 5_000);
 
     const waterLevelTimer = setInterval(() => {
       checkWaterLevelAlerts().catch(() => {});
@@ -238,6 +265,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
         loadFeed(false);
+        loadCriticalFeed().catch(() => {});
         loadWaterLevels().catch(() => {});
       }
     };
@@ -246,11 +274,12 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
 
     return () => {
       clearInterval(refreshTimer);
+      clearInterval(criticalTimer);
       clearInterval(waterLevelTimer);
       if (postUpdateTimerRef.current !== null) window.clearTimeout(postUpdateTimerRef.current);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [loadFeed]);
+  }, [loadCriticalFeed, loadFeed]);
 
   useEffect(() => {
     const onFsChange = () => {
@@ -674,13 +703,12 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                     {barangayRescueRows.map((item) => {
                       const normalizedStatus = String(item.status || '').toLowerCase();
                       const isPending = normalizedStatus === 'pending';
-                      const isResolved = normalizedStatus === 'resolved';
                       return (
-                        <tr key={item.caseId} className={isPending ? 'border-l-4 border-l-orange-400 !bg-orange-50' : isResolved ? 'border-l-4 border-l-emerald-400 !bg-emerald-50' : ''}>
+                        <tr key={item.caseId} className={isPending ? 'border-l-4 border-l-orange-400 !bg-orange-50' : ''}>
                           <td className={d.dashboard.tdStrong}>{item.caseId}</td>
                           <td className={d.dashboard.tdTruncate}>{item.barangay}</td>
                           <td className={d.dashboard.thHiddenMd}>{titleCase(item.requesterName || 'Unknown')}</td>
-                          <td><span className={`${d.dashboard.statusChip} incident-status-chip ${isPending ? '!bg-orange-100 !text-orange-700' : isResolved ? '!bg-emerald-100 !text-emerald-700' : ''}`}>{formatIncidentStatus(item.status)}</span></td>
+                          <td><span className={`${d.dashboard.statusChip} incident-status-chip ${isPending ? '!bg-orange-100 !text-orange-700' : ''}`}>{formatIncidentStatus(item.status)}</span></td>
                         </tr>
                       );
                     })}

@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const pool = require('./db');
+const runSchemaMigrations = require('./schemaMigrations');
 const { resolveBarangayAtLocation } = require('../services/barangayJurisdictionService');
 
 const SUPPORTED_BARANGAYS = [
@@ -144,43 +145,6 @@ async function initDb() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
-    CREATE TABLE IF NOT EXISTS evacuation_admissions (
-      id SERIAL PRIMARY KEY,
-      report_id INTEGER NOT NULL UNIQUE REFERENCES incident_reports(id) ON DELETE RESTRICT,
-      evacuation_area_id INTEGER NOT NULL REFERENCES evacuation_areas(id) ON DELETE RESTRICT,
-      confirmed_by INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-      admitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS evacuation_count_logs (
-      id SERIAL PRIMARY KEY,
-      evacuation_area_id INTEGER NOT NULL REFERENCES evacuation_areas(id) ON DELETE RESTRICT,
-      old_count INTEGER NOT NULL,
-      new_count INTEGER NOT NULL,
-      reason VARCHAR(40) NOT NULL,
-      reference_id INTEGER,
-      changed_by INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-
-    CREATE TABLE IF NOT EXISTS evacuation_departures (
-      id SERIAL PRIMARY KEY,
-      evacuation_area_id INTEGER NOT NULL REFERENCES evacuation_areas(id) ON DELETE RESTRICT,
-      evacuee_name VARCHAR(200) NOT NULL,
-      notes TEXT,
-      recorded_by INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-      status VARCHAR(20) NOT NULL DEFAULT 'pending',
-      requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      departed_at TIMESTAMPTZ,
-      cancelled_at TIMESTAMPTZ
-    );
-
-    CREATE INDEX IF NOT EXISTS evacuation_admissions_area_idx
-    ON evacuation_admissions (evacuation_area_id, admitted_at DESC);
-
-    CREATE INDEX IF NOT EXISTS evacuation_departures_area_status_idx
-    ON evacuation_departures (evacuation_area_id, status, requested_at DESC);
-
     CREATE TABLE IF NOT EXISTS report_status_logs (
       id SERIAL PRIMARY KEY,
       report_id INTEGER NOT NULL REFERENCES incident_reports(id) ON DELETE CASCADE,
@@ -209,6 +173,7 @@ async function initDb() {
       hardware_no VARCHAR(80),
       level VARCHAR(20) NOT NULL,
       water_level_percentage DOUBLE PRECISION NOT NULL,
+      distance_cm DOUBLE PRECISION,
       sensor_updated_at TIMESTAMP,
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       UNIQUE (event_key, level)
@@ -301,9 +266,6 @@ async function initDb() {
 
   await pool.query(`
     ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS email VARCHAR(160);
-
-    ALTER TABLE users
     ADD COLUMN IF NOT EXISTS first_name VARCHAR(120);
 
     ALTER TABLE users
@@ -335,6 +297,9 @@ async function initDb() {
 
     ALTER TABLE user_notifications
     ADD COLUMN IF NOT EXISTS source_event_key VARCHAR(160);
+
+    ALTER TABLE flood_sensor_alert_events
+    ADD COLUMN IF NOT EXISTS distance_cm DOUBLE PRECISION;
 
     ALTER TABLE users
     DROP CONSTRAINT IF EXISTS users_username_key;
@@ -823,6 +788,10 @@ async function initDb() {
        AND LOWER(COALESCE(barangay_name, '')) NOT IN (${SUPPORTED_BARANGAY_SQL})`,
   );
 
+  // Schema repairs must run in every environment, including production where
+  // development accounts are intentionally not seeded.
+  await runSchemaMigrations(pool);
+
   // Default accounts are for local development only. Production deployments
   // must create staff credentials explicitly rather than exposing known passwords.
   if (process.env.NODE_ENV === 'production' && process.env.SEED_DEFAULT_ACCOUNTS !== 'true') {
@@ -832,6 +801,11 @@ async function initDb() {
   const username = 'admin';
   const email = 'admin@cddrmd.local';
   const password = 'Admin@123';
+
+  const existingAdminResult = await pool.query(
+    "SELECT EXISTS (SELECT 1 FROM users WHERE role = 'admin') AS exists",
+  );
+  const hasAnyAdmin = existingAdminResult.rows[0]?.exists === true;
 
   const existingByEmail = await pool.query(
     'SELECT id FROM users WHERE LOWER(email) = LOWER($1) ORDER BY id ASC LIMIT 1',
@@ -844,24 +818,11 @@ async function initDb() {
 
   const adminSeedId = existingByEmail.rows[0]?.id || existingByUsername.rows[0]?.id || null;
 
-  if (!adminSeedId) {
+  if (!adminSeedId && !hasAnyAdmin) {
     const passwordHash = await bcrypt.hash(password, 10);
     await pool.query(
       'INSERT INTO users (username, email, password_hash, role) VALUES ($1, $2, $3, $4)',
       [username, email, passwordHash, 'admin'],
-    );
-  } else {
-    await pool.query(
-      `UPDATE users
-       SET
-         username = COALESCE(username, $1),
-         email = COALESCE(email, $2),
-         role = 'admin',
-         is_archived = FALSE,
-         archived_at = NULL,
-         archived_by = NULL
-       WHERE id = $3`,
-      [username, email, adminSeedId],
     );
   }
 
@@ -876,22 +837,12 @@ async function initDb() {
     [secondaryAdminUsername, secondaryAdminEmail],
   );
 
-  if (secondaryAdminExisting.rows.length === 0) {
+  if (secondaryAdminExisting.rows.length === 0 && !hasAnyAdmin) {
     const secondaryAdminPasswordHash = await bcrypt.hash(password, 10);
     await pool.query(
       `INSERT INTO users (username, email, password_hash, role)
        VALUES ($1, $2, $3, 'admin')`,
       [secondaryAdminUsername, secondaryAdminEmail, secondaryAdminPasswordHash],
-    );
-  } else {
-    await pool.query(
-      `UPDATE users
-       SET
-         username = COALESCE(username, $1),
-         email = COALESCE(email, $2),
-         role = 'admin'
-       WHERE id = $3`,
-      [secondaryAdminUsername, secondaryAdminEmail, secondaryAdminExisting.rows[0].id],
     );
   }
 

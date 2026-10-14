@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../services/apiClient';
 import AdminShell from '../components/AdminShell';
 import AddAccountDialog, { type AccountRole } from '../components/AddAccountDialog';
+import { useConfirmationDialog } from '../components/ConfirmationDialog';
 import { d } from '../adminDesign';
 import type { UserAccount } from '../types';
 
@@ -59,6 +60,7 @@ export default function UsersPage(props: Props) {
   const [error, setError] = useState<string | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const { confirm, confirmationDialog } = useConfirmationDialog();
 
   const handleApiError = useCallback((error: unknown, fallback: string, target: 'page' | 'modal' = 'page') => {
     const apiError = error as { response?: { status?: number; data?: { message?: string } } };
@@ -86,10 +88,6 @@ export default function UsersPage(props: Props) {
 
   useEffect(() => {
     loadUsers().catch(() => {});
-    const interval = window.setInterval(() => {
-      loadUsers(false).catch(() => {});
-    }, 30000);
-    return () => window.clearInterval(interval);
   }, [loadUsers]);
 
   const rows = useMemo(() => {
@@ -184,7 +182,13 @@ export default function UsersPage(props: Props) {
   }
 
   async function archiveUser(user: UserAccount) {
-    if (!window.confirm(`Archive user ${user.username}?`)) return;
+    const confirmed = await confirm({
+      title: 'Archive account?',
+      message: `Archive the user account “${user.username}”? You can restore it later.`,
+      confirmLabel: 'Archive',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
     setArchiveBusy(true);
     setError(null);
     try {
@@ -200,6 +204,12 @@ export default function UsersPage(props: Props) {
   }
 
   async function restoreUser(user: UserAccount) {
+    const confirmed = await confirm({
+      title: 'Restore account?',
+      message: `Restore the user account “${user.username}”? The user will be able to access the system again.`,
+      confirmLabel: 'Restore',
+    });
+    if (!confirmed) return;
     setArchiveBusy(true);
     setError(null);
     try {
@@ -213,7 +223,13 @@ export default function UsersPage(props: Props) {
   }
 
   async function permanentlyDeleteUser(user: UserAccount) {
-    if (!window.confirm(`Permanently delete archived user ${user.username}? This cannot be undone.`)) return;
+    const confirmed = await confirm({
+      title: 'Permanently delete account?',
+      message: `Permanently delete the archived user account “${user.username}”? This cannot be undone.`,
+      confirmLabel: 'Delete Permanently',
+      tone: 'danger',
+    });
+    if (!confirmed) return;
     setArchiveBusy(true);
     setError(null);
     try {
@@ -254,6 +270,7 @@ export default function UsersPage(props: Props) {
         <div className={d.admin.headerRow}>
           <h2 className={d.admin.title}>User Accounts</h2>
           <div className={d.admin.searchRow}>
+            <button type="button" onClick={() => loadUsers(false).catch(() => {})} className={d.admin.archiveButton} disabled={loading}>Refresh</button>
             <button type="button" onClick={() => { setIsArchiveOpen(true); loadArchivedUsers().catch(() => {}); }} className={d.admin.archiveButton}>
               <img src={ARCHIVE_ICON} alt="Archive" className={d.admin.archiveIcon} />
               Archive
@@ -352,6 +369,7 @@ export default function UsersPage(props: Props) {
             <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"><h3 className="text-lg font-black text-[#1a3650]">Save changes?</h3><p className="mt-2 text-sm text-slate-600">The account information was changed. Do you want to save these changes?</p><div className="mt-5 grid grid-cols-2 gap-3"><button type="button" onClick={() => setIsSaveConfirmOpen(false)} className={d.btn.secondary} disabled={saveBusy}>Cancel</button><button type="button" onClick={saveChanges} className={d.btn.primary} disabled={saveBusy}>{saveBusy ? 'Saving...' : 'Save Changes'}</button></div></div>
           </div>
         ) : null}
+        {confirmationDialog}
       </div>
     </AdminShell>
   );

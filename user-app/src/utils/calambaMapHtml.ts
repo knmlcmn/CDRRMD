@@ -1456,10 +1456,14 @@ export function buildCalambaMapHtml(
       renderBarangayBoundaries();
       setRainIntensityFromMmPerHour(0);
       refreshRainImpactData();
-      setInterval(renderFloodHazardLayer, 30000);
-      setInterval(refreshRainImpactData, 10000);
       setInterval(function() {
-        if (Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
+        if (document.visibilityState === 'visible') renderFloodHazardLayer();
+      }, 30000);
+      setInterval(function() {
+        if (document.visibilityState === 'visible') refreshRainImpactData();
+      }, 10 * 60 * 1000);
+      setInterval(function() {
+        if (document.visibilityState === 'visible' && Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
       }, 10000);
       renderIncidents();
       applyLayerVisibility();
