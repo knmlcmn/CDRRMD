@@ -25,7 +25,7 @@
 .rescue-request-details { display: grid; gap: 5px; margin: 10px 0; }
 .rescue-request-details div { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; }
 .rescue-request-details dt { color: #64748b; font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
-.rescue-request-details dd { margin: 0; color: #173f5d; font-size: 13px; font-weight: 750; overflow-wrap: anywhere; }
+.rescue-request-details dd { margin: 0; color: #173f5d; font-size: 13px; font-weight: 750; overflow-wrap: break-word; word-break: normal; }
 .rescue-request-detail-button { border: 0; border-radius: 4px; background: transparent; padding: 0; color: inherit; cursor: pointer; font: inherit; font-weight: inherit; text-align: left; }
 .rescue-request-detail-button:hover { color: #0284c7; text-decoration: underline; text-underline-offset: 2px; }
 .rescue-request-detail-button:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }

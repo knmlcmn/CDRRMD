@@ -10,7 +10,7 @@ const {
   verifyRefreshToken,
 } = require('../utils/authTokens');
 const { httpError } = require('../utils/httpError');
-const { SUPPORTED_BARANGAYS: RESIDENT_BARANGAYS } = require('./supportedBarangays');
+const { SUPPORTED_BARANGAYS: RESIDENT_BARANGAYS, normalizeBarangayName } = require('./supportedBarangays');
 const { resolveNearbyBarangayAtLocation } = require('./barangayBoundaryService');
 const emailOtpService = require('./emailOtpService');
 
@@ -40,7 +40,7 @@ async function persistRefreshToken(client, userId, refreshToken) {
 }
 
 async function register(payload) {
-  const { username, email, password, firstName, lastName, address, contactNumber, otp } = payload || {};
+  const { username, email, password, firstName, lastName, address, houseNumber, streetAddress, barangayName, contactNumber, otp } = payload || {};
 
   if (!email || !password) {
     throw httpError(400, 'Email and password are required.');
@@ -50,6 +50,26 @@ async function register(payload) {
 
   if (String(password).length < 6) {
     throw httpError(400, 'Password must be at least 6 characters.');
+  }
+
+  const selectedBarangay = RESIDENT_BARANGAYS.find(
+    (name) => normalizeBarangayName(name) === normalizeBarangayName(barangayName),
+  );
+  if (!selectedBarangay) {
+    throw httpError(400, 'Please select one of the six supported barangays.');
+  }
+
+  const normalizedContactNumber = String(contactNumber || '').trim();
+  if (normalizedContactNumber && !/^\d+$/.test(normalizedContactNumber)) {
+    throw httpError(400, 'Contact number must contain numbers only.');
+  }
+
+  const structuredAddress = [String(houseNumber || '').trim(), String(streetAddress || '').trim()]
+    .filter(Boolean)
+    .join(' ');
+  const finalAddress = structuredAddress || String(address || '').trim();
+  if (!finalAddress) {
+    throw httpError(400, 'House number and street address are required.');
   }
 
   const existing = await userModel.findUserByEmail(trimmedEmail);
@@ -67,11 +87,11 @@ async function register(payload) {
     email: trimmedEmail,
     firstName: String(firstName || '').trim() || null,
     lastName: String(lastName || '').trim() || null,
-    address: String(address || '').trim() || null,
-    contactNumber: String(contactNumber || '').trim() || null,
+    address: finalAddress,
+    contactNumber: normalizedContactNumber || null,
     passwordHash,
     role: 'user',
-    barangayName: null,
+    barangayName: selectedBarangay,
   });
 
   const { token, refreshToken } = issueTokens(user);

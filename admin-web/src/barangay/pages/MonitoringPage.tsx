@@ -753,7 +753,9 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
               <button
                 onClick={enterFullscreen}
                 title="Enter fullscreen"
-                style={{ position: 'absolute', bottom: 10, right: 10, zIndex: 1000, background: 'rgba(15,23,42,0.82)', border: '1px solid rgba(148,163,184,0.3)', borderRadius: 8, color: '#fff', cursor: 'pointer', padding: '6px 7px', display: 'flex', alignItems: 'center', backdropFilter: 'blur(4px)' }}
+                aria-label="Enter map fullscreen"
+                className="map-fullscreen-enter"
+                style={{ zIndex: 1000, background: 'rgba(15,23,42,0.82)', border: '1px solid rgba(148,163,184,0.3)', borderRadius: 8, color: '#fff', cursor: 'pointer', padding: '6px 7px', display: 'flex', alignItems: 'center', backdropFilter: 'blur(4px)' }}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
@@ -855,7 +857,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
                       }}
                       className={[d.monitoring.rowBase, selectedReport?.id === item.id ? d.monitoring.rowSelected : ''].join(' ')}
                     >
-                      <td className="truncate font-mono text-xs" title={item.report_code || undefined}>{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td>
+                      <td className="break-words font-mono text-xs" title={item.report_code || undefined}>{item.report_code || `RPT-${String(item.id).padStart(6, '0')}`}</td>
                       <td className={d.monitoring.rowLocation}>
                         <button
                           type="button"
@@ -866,7 +868,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
                             setMapFocusedReportId(item.id);
                             setMapFocusMode('location');
                           }}
-                          className="block w-full truncate text-left font-semibold text-[#1f567d] hover:underline"
+                          className="block w-full whitespace-normal break-words text-left font-semibold text-[#1f567d] hover:underline"
                         >
                           {item.location}
                         </button>

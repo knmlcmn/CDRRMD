@@ -154,8 +154,8 @@ export default function RescuerHistoryPage(props: Props) {
           <button type="button" onClick={() => void loadHistory()} disabled={loading} className="rounded-lg bg-[#1f4e79] px-4 py-2 text-sm font-bold text-white hover:bg-[#173b5c] disabled:opacity-60">{loading ? 'Loading...' : 'Refresh'}</button>
         </div>
 
-        <div className="mt-3 max-h-[calc(100dvh-18rem)] overflow-auto rounded-lg border border-slate-200">
-          <table className="min-w-[1050px] w-full text-left text-sm">
+        <div className="active-list-scroll mt-3 max-h-[calc(100dvh-18rem)] overflow-auto overscroll-x-contain rounded-lg border border-slate-200 pb-1">
+          <table className="min-w-[720px] w-full text-left text-sm sm:min-w-[1050px]">
             <thead className="sticky top-0 z-10 bg-[#12314b] text-white">
               <tr><th className="px-3 py-3">Incident ID</th><th className="px-3 py-3">Assignment ID</th><th className="px-3 py-3">Resident</th><th className="px-3 py-3">Barangay</th><th className="px-3 py-3">Location</th><th className="px-3 py-3">Evacuation Area</th><th className="px-3 py-3">Assigned</th><th className="px-3 py-3">Completed</th></tr>
             </thead>

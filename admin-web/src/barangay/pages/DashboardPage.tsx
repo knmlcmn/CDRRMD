@@ -182,19 +182,19 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
       <div className="space-y-3 bg-[#eaf3fb] px-3 pb-3 pt-0 sm:px-4 sm:pb-4 sm:pt-0">
         {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p> : null}
 
-        <section className="grid gap-3 sm:grid-cols-3">
+        <section className="grid grid-cols-2 gap-2 lg:grid-cols-3">
           {[
             ['Active Incidents', incidentSummary.active, 'border-rose-400', 'text-rose-600'],
             ['Pending Review', incidentSummary.pending, 'border-sky-400', 'text-sky-600'],
             ['Response Active', incidentSummary.inProgress, 'border-amber-400', 'text-amber-600'],
-          ].map(([label, value, border, tone]) => <article key={String(label)} className={`rounded-xl border border-slate-200 border-t-4 ${border} bg-white px-4 py-3 shadow-sm`}><p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p><p className={`mt-1 text-3xl font-black ${tone}`}>{value}</p></article>)}
+          ].map(([label, value, border, tone]) => <article key={String(label)} className={`rounded-xl border border-slate-200 border-t-4 ${border} bg-white px-3 py-2 shadow-sm`}><p className="text-[0.65rem] font-bold uppercase tracking-wide text-slate-500">{label}</p><p className={`mt-0.5 text-2xl font-black leading-none ${tone}`}>{value}</p></article>)}
         </section>
 
         <section className="grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.72fr)] 2xl:grid-cols-[minmax(0,1.5fr)_minmax(260px,0.72fr)_minmax(320px,0.85fr)]">
           <article className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3"><div><h2 className={d.dashboard.reportsTitle}>Incident Reports Overview</h2><p className="text-xs text-slate-500">This week's reports from Barangay {barangayName}</p></div><button onClick={onOpenMonitoring} className="rounded-lg bg-[#1f567d] px-3 py-2 text-xs font-bold text-white hover:bg-[#174866]">View all</button></div>
-            <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
-              <table className="w-full table-fixed text-left">
+            <div className="active-list-scroll min-h-0 flex-1 overflow-auto">
+              <table className="min-w-[520px] w-full table-fixed text-left">
                 <colgroup><col className="w-[21%]" /><col className="w-[15%]" /><col className="w-[28%]" /><col className="w-[8%]" /><col className="w-[28%]" /></colgroup>
                 <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-600"><tr><th className="px-3 py-3">Case ID</th><th className="px-3 py-3">Incident</th><th className="px-3 py-3">Location</th><th className="px-3 py-3">People</th><th className="px-3 py-3">Status</th></tr></thead>
                 <tbody className="text-[0.82rem]">{recentIncidents.map((item) => {

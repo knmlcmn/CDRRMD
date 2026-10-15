@@ -507,7 +507,7 @@ export default function EvacuationAreasPage({ onLogout, onOpenDashboard, onOpenA
                 <div className={d.evac.detailBody}>
                   <p className={d.evac.detailLabel}>Selected Pin Details</p>
 
-                  <div className={d.evac.formStack}>
+                  <div className={`${d.evac.formStack} min-w-0`}>
                     <input
                       value={form?.name || ''}
                       onChange={(e) => setForm((prev) => (prev ? { ...prev, name: e.target.value } : prev))}

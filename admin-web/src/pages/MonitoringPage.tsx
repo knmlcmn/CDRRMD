@@ -320,8 +320,14 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     if (statusFilter === 'active') {
       return activeRescueReports;
     }
-    return rescueReports.filter((item) => String(item.status).toLowerCase() === statusFilter);
-  }, [activeRescueReports, rescueReports, statusFilter]);
+    return rescueReports.filter((item) => {
+      const backup = backupRequests.find((request) => request.report_id === item.id);
+      const effectiveStatus = backup && !backup.acknowledged_at
+        ? 'pending'
+        : String(item.status).toLowerCase();
+      return effectiveStatus === statusFilter;
+    });
+  }, [activeRescueReports, backupRequests, rescueReports, statusFilter]);
 
   const selectedReport = useMemo(
     () => reports.find((item) => item.id === selectedReportId) ?? null,
@@ -760,8 +766,10 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
               <button
                 onClick={enterMapFullscreen}
                 title="Enter fullscreen"
+                aria-label="Enter map fullscreen"
+                className="map-fullscreen-enter"
                 style={{
-                  position: 'absolute', bottom: 10, right: 10, zIndex: 1000,
+                  zIndex: 1000,
                   background: 'rgba(15,23,42,0.82)', border: '1px solid rgba(148,163,184,0.3)',
                   borderRadius: 8, color: '#fff', cursor: 'pointer', padding: '6px 7px',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -899,12 +907,12 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
                             setMapFocusedReportId(item.id);
                             setMapFocusMode('location');
                           }}
-                          className="block w-full truncate text-left font-semibold text-[#1f567d] hover:underline"
+                          className="block w-full whitespace-normal break-words text-left font-semibold text-[#1f567d] hover:underline"
                         >
                           {item.location}
                         </button>
                       </td>
-                      <td><span className={`${d.monitoring.statusChip} incident-status-chip ${backupIsPending ? '!bg-amber-100 !text-amber-800' : ''}`}>{backupIsPending ? 'Pending' : formatIncidentStatus(item.status, Boolean(item.picked_up_at))}</span></td>
+                      <td><span className={`${d.monitoring.statusChip} incident-status-chip ${backupIsPending ? '!bg-amber-100 !text-amber-800' : ''}`}>{backupIsPending ? formatIncidentStatus('pending') : formatIncidentStatus(item.status, Boolean(item.picked_up_at))}</span></td>
                       <td>{item.assigned_team || '-'}</td>
                       <td>
                         {item.has_image || item.image_base64 ? (

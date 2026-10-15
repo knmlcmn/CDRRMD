@@ -177,12 +177,12 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
           </select>
         </label>
 
-        <section className="grid gap-3 md:grid-cols-3">
+        <section className="grid grid-cols-2 gap-2 md:grid-cols-3">
           {[
             ['Current Evacuees', selectedCenter?.current_count ?? 0, 'text-[#173750]'],
             ['Center Capacity', selectedCenter?.capacity ?? 0, 'text-[#173750]'],
             ['Remaining Capacity', selectedCenter?.remaining_capacity ?? 0, 'text-emerald-600'],
-          ].map(([label, value, color]) => <article key={String(label)} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"><p className="text-xs font-bold uppercase tracking-wide text-slate-500">{label}</p><p className={`mt-1 text-3xl font-black ${color}`}>{value}</p></article>)}
+          ].map(([label, value, color]) => <article key={String(label)} className="min-w-0 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm"><p className="break-words text-[0.65rem] font-bold uppercase leading-tight tracking-wide text-slate-500">{label}</p><p className={`mt-1 text-2xl font-black leading-none ${color}`}>{value}</p></article>)}
         </section>
 
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -194,9 +194,9 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
           </div>
         </section>
 
-        <div className="flex flex-wrap gap-2 border-b border-slate-300 pb-2">
+        <div className="active-list-scroll flex w-full gap-2 overflow-x-auto overscroll-x-contain border-b border-slate-300 pb-2">
           {([['incoming', 'Incoming'], ['resolved', 'Resolved'], ['outgoing', 'Outgoing']] as Array<[Tab, string]>).map(([key, label]) => (
-            <button key={key} type="button" onClick={() => setTab(key)} className={`rounded-lg px-5 py-2 text-sm font-black ${tab === key ? 'bg-[#143d5b] text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}>{label}{key === 'incoming' && cases.incoming.length ? ` (${cases.incoming.length})` : key === 'outgoing' && cases.outgoing.length ? ` (${cases.outgoing.length})` : ''}</button>
+            <button key={key} type="button" onClick={() => setTab(key)} className={`shrink-0 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-black ${tab === key ? 'bg-[#143d5b] text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}>{label}{key === 'incoming' && cases.incoming.length ? ` (${cases.incoming.length})` : key === 'outgoing' && cases.outgoing.length ? ` (${cases.outgoing.length})` : ''}</button>
           ))}
         </div>
 
@@ -205,8 +205,8 @@ export default function EvacuationCenterPage({ barangayName, onLogout, onOpenDas
             <div><h2 className="text-lg font-black text-[#173750]">{tab === 'incoming' ? 'Awaiting Arrival Confirmation' : tab === 'outgoing' ? 'Awaiting Departure Confirmation' : 'Completed Rescue Reports'}</h2><p className="text-sm text-slate-500">{tab === 'incoming' ? `Automatically showing incoming arrivals across Barangay ${barangayName}. Confirm only after physically verifying the evacuee.` : tab === 'outgoing' ? `Automatically showing pending departures across Barangay ${barangayName}. Confirm after the evacuee has left the center.` : `Automatically showing resolved evacuation records across Barangay ${barangayName}.`}</p></div>
             <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search individual by name" className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm sm:w-72" />
           </div>
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
-            <table className="min-w-[900px] w-full text-left text-sm">
+          <div className="active-list-scroll overflow-x-auto overscroll-x-contain rounded-lg border border-slate-200 pb-1">
+            <table className="min-w-[620px] w-full text-left text-sm sm:min-w-[900px]">
               <thead className="bg-slate-100 text-xs uppercase text-slate-600"><tr><th className="px-3 py-3">Individual</th><th className="px-3 py-3">Incident</th><th className="px-3 py-3">Barangay</th><th className="px-3 py-3">Evacuation Center</th><th className="px-3 py-3">Updated</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Action</th></tr></thead>
               <tbody>
                 {rows.map((item) => <tr key={item.id} className="border-t border-slate-200">

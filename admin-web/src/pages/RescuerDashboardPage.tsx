@@ -298,16 +298,16 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
       {error ? <p className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
       {routeNotice ? <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm font-bold text-amber-900">{routeNotice}</p> : null}
       <section className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_400px]">
-        <div className="relative min-h-[34rem] overflow-hidden rounded-xl border border-slate-300 bg-slate-800 shadow-lg">
+        <div className="relative min-h-[34rem] min-w-0 max-w-full overflow-hidden rounded-xl border border-slate-300 bg-slate-800 shadow-lg">
           {areasLoaded ? <iframe ref={mapFrameRef} onLoad={() => setMapReady(true)} title="CDRRMD Rescuer live route" srcDoc={mapHtml} className="absolute inset-0 h-full w-full border-0" /> : <p className="p-4 text-sm text-white">Loading rescue map...</p>}
-          <button type="button" onClick={() => postMapUpdate(true)} disabled={!location || !mapReady} className="absolute bottom-4 right-4 z-10 rounded-lg border border-white/40 bg-[#12314b]/95 px-4 py-2 text-sm font-black text-white shadow-lg backdrop-blur hover:bg-[#1f4e79] disabled:cursor-not-allowed disabled:opacity-50">Re-center</button>
+          <button type="button" onClick={() => postMapUpdate(true)} disabled={!location || !mapReady} className="absolute bottom-4 right-3 z-10 max-w-[calc(100%-1.5rem)] whitespace-nowrap rounded-lg border border-white/40 bg-[#12314b]/95 px-3 py-2 text-sm font-black text-white shadow-lg backdrop-blur hover:bg-[#1f4e79] disabled:cursor-not-allowed disabled:opacity-50 sm:right-4 sm:px-4">Re-center</button>
         </div>
 
         <aside className="space-y-3">
           <section className="rounded-xl bg-white p-3 shadow">
             <div className="mb-2"><h2 className="font-black text-[#19374f]">Assigned Incidents</h2><p className="text-xs text-slate-500">{responderRole === 'barangay_rescuer' ? 'Only incidents from your assigned barangay appear here.' : 'Only CDRRMD backup incidents assigned to you appear here.'}</p></div>
-            <div className="max-h-64 overflow-auto rounded-lg border border-slate-200">
-              <table className="w-full text-left text-sm">
+            <div className="active-list-scroll max-h-64 overflow-auto overscroll-x-contain rounded-lg border border-slate-200 pb-1">
+              <table className="min-w-[22rem] w-full text-left text-sm">
                 <thead className="sticky top-0 bg-[#12314b] text-white"><tr><th className="px-3 py-2">Incident</th><th className="px-3 py-2">Barangay</th><th className="px-3 py-2">Phase</th></tr></thead>
                 <tbody>
                   {assignments.map((item) => (
@@ -334,8 +334,8 @@ export default function RescuerDashboardPage({ responderRole, onLogout, onAuthEr
 
       <section className="mt-3 rounded-xl bg-white p-3 shadow">
         <div className="mb-2 flex items-center justify-between gap-3"><div><h2 className="font-black text-[#19374f]">This Week's Assignment History</h2><p className="text-xs text-slate-500">Completed {responderRole === 'barangay_rescuer' ? 'Barangay Rescuer' : 'CDRRMD backup'} assignments since Monday</p></div><span className="text-xs font-bold text-slate-500">{history.length} completed this week</span></div>
-        <div className="max-h-72 overflow-auto rounded-lg border border-slate-200">
-          <table className="min-w-[900px] w-full text-left text-sm">
+        <div className="active-list-scroll max-h-72 overflow-auto overscroll-x-contain rounded-lg border border-slate-200 pb-1">
+          <table className="min-w-[620px] w-full text-left text-sm sm:min-w-[900px]">
             <thead className="sticky top-0 bg-[#12314b] text-white"><tr><th className="px-3 py-2">Incident</th><th className="px-3 py-2">Resident</th><th className="px-3 py-2">Barangay</th><th className="px-3 py-2">Location</th><th className="px-3 py-2">Evacuation Area</th><th className="px-3 py-2">Completed</th></tr></thead>
             <tbody>
               {history.map((item) => <tr key={item.backup_request_id} className="border-t border-slate-200"><td className="px-3 py-2 font-bold">{item.report_code}</td><td className="px-3 py-2">{item.reporter_name || '-'}</td><td className="px-3 py-2">{item.assigned_barangay}</td><td className="px-3 py-2">{item.location}</td><td className="px-3 py-2">{item.evacuation_area_name || '-'}</td><td className="whitespace-nowrap px-3 py-2">{new Date(item.arrived_at).toLocaleString()}</td></tr>)}

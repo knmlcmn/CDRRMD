@@ -213,11 +213,16 @@ export function buildCalambaMapHtml(
         box-shadow: 0 8px 28px rgba(0,0,0,0.6);
         display: none;
         margin-top: 6px;
+        max-height: calc(100vh - 76px);
+        max-height: calc(100dvh - 76px);
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
         padding: 10px 8px 8px;
         position: absolute;
         right: 0;
         top: 100%;
-        width: 192px;
+        width: min(192px, calc(100vw - 20px));
         z-index: 900;
       }
       .layer-ctrl-panel-open { display: block; }
@@ -282,6 +287,20 @@ export function buildCalambaMapHtml(
         .forecast-timebar { bottom: 8px; max-width: calc(100vw - 18px); }
         .forecast-time-button { padding: 6px 7px; }
         .forecast-time-summary { overflow: hidden; text-overflow: ellipsis; }
+        .layer-ctrl-btn { gap: 4px; padding: 6px 8px; }
+        .layer-ctrl-panel {
+          border-radius: 10px;
+          margin-top: 4px;
+          max-height: calc(100vh - 66px);
+          max-height: calc(100dvh - 66px);
+          padding: 7px 6px 6px;
+          width: min(176px, calc(100vw - 20px));
+        }
+        .layer-ctrl-title { font-size: 8px; margin-bottom: 5px; padding-bottom: 4px; }
+        .layer-icon-grid { gap: 4px; }
+        .layer-icon-item { border-radius: 8px; gap: 2px; min-width: 0; padding: 4px 2px; }
+        .layer-icon-svg { height: 21px; width: 21px; }
+        .layer-icon-label { font-size: 7.5px; line-height: 1.08; overflow-wrap: anywhere; }
       }
     </style>
   </head>

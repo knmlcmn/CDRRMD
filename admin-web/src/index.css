@@ -81,6 +81,18 @@ body,
   padding-bottom: 1.25rem !important;
 }
 
+/* The mobile navigation is fixed over the page. Let evacuation details grow
+   naturally and reserve enough space for the last field/card edge to remain
+   visible above that navigation. */
+@media (max-width: 819px) {
+  .admin-desktop-scale .evacuation-page-root {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    padding-bottom: 6rem !important;
+  }
+}
+
 /* Keep the desktop admin interface at the comfortable density of 80% browser
    zoom while the browser itself stays at the standard 100% setting. */
 @media (min-width: 819.2px) {
@@ -294,6 +306,125 @@ body,
   background: #1f4e79;
 }
 
+/* Keep the map fullscreen entry control clear of the fixed mobile navigation.
+   Desktop keeps the control anchored to its map card; mobile keeps it at a
+   stable viewport position while the surrounding portal content scrolls. */
+.map-fullscreen-enter {
+  position: absolute;
+  right: 0.625rem;
+  bottom: 0.625rem;
+}
+
+/* On narrow portal screens, preserve every table column and make wide tables
+   easy to inspect without sacrificing data. The containing table regions are
+   horizontally scrollable, while tighter cells expose more columns at once. */
+@media (max-width: 819px) {
+  .admin-desktop-scale table,
+  .barangay-desktop-scale table {
+    font-size: 0.675rem;
+  }
+
+  .admin-desktop-scale table th,
+  .admin-desktop-scale table td,
+  .barangay-desktop-scale table th,
+  .barangay-desktop-scale table td {
+    padding: 0.35rem 0.4rem !important;
+    white-space: normal !important;
+    overflow-wrap: break-word;
+    word-break: normal;
+    overflow: visible !important;
+    text-overflow: clip !important;
+  }
+
+  .admin-desktop-scale table th,
+  .barangay-desktop-scale table th {
+    font-size: 0.625rem !important;
+    letter-spacing: 0.02em !important;
+  }
+
+  .admin-desktop-scale .status-chip,
+  .admin-desktop-scale .incident-status-chip,
+  .barangay-desktop-scale .status-chip,
+  .barangay-desktop-scale .incident-status-chip {
+    min-height: 1.6rem;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.625rem;
+    line-height: 1.1;
+  }
+
+  .admin-desktop-scale table button,
+  .barangay-desktop-scale table button,
+  .admin-desktop-scale table .status-chip,
+  .barangay-desktop-scale table .status-chip,
+  .admin-desktop-scale table .incident-status-chip,
+  .barangay-desktop-scale table .incident-status-chip {
+    white-space: nowrap !important;
+    word-break: normal !important;
+    overflow-wrap: normal !important;
+  }
+
+  .admin-desktop-scale table td:first-child:not([colspan]),
+  .barangay-desktop-scale table td:first-child:not([colspan]),
+  .admin-desktop-scale table td.font-mono,
+  .barangay-desktop-scale table td.font-mono,
+  .admin-desktop-scale table .truncate,
+  .barangay-desktop-scale table .truncate {
+    white-space: nowrap !important;
+    word-break: normal !important;
+    overflow: visible !important;
+    overflow-wrap: normal !important;
+    text-overflow: clip !important;
+  }
+
+  .admin-desktop-scale .admin-management-root table,
+  .barangay-desktop-scale .admin-management-root table {
+    min-width: 56rem !important;
+    table-layout: auto !important;
+  }
+
+  .admin-desktop-scale .admin-management-root table th,
+  .admin-desktop-scale .admin-management-root table td,
+  .barangay-desktop-scale .admin-management-root table th,
+  .barangay-desktop-scale .admin-management-root table td {
+    min-width: 5.5rem;
+  }
+
+  .admin-desktop-scale .admin-management-root table th:nth-last-child(2),
+  .admin-desktop-scale .admin-management-root table td:nth-last-child(2),
+  .barangay-desktop-scale .admin-management-root table th:nth-last-child(2),
+  .barangay-desktop-scale .admin-management-root table td:nth-last-child(2) {
+    min-width: 8rem;
+    white-space: nowrap !important;
+  }
+
+  .admin-desktop-scale .admin-management-root table th:last-child,
+  .admin-desktop-scale .admin-management-root table td:last-child,
+  .barangay-desktop-scale .admin-management-root table th:last-child,
+  .barangay-desktop-scale .admin-management-root table td:last-child {
+    min-width: 7rem;
+    white-space: nowrap !important;
+  }
+
+  .admin-desktop-scale table .status-chip,
+  .barangay-desktop-scale table .status-chip {
+    display: inline-flex;
+    width: max-content;
+    min-width: max-content;
+  }
+
+  .admin-desktop-scale .floodReportsTable th,
+  .admin-desktop-scale .floodReportsTable td,
+  .barangay-desktop-scale .floodReportsTable th,
+  .barangay-desktop-scale .floodReportsTable td {
+    min-width: 4.5rem;
+  }
+
+  .admin-desktop-scale .floodReportsTable td:nth-child(5),
+  .barangay-desktop-scale .floodReportsTable td:nth-child(5) {
+    white-space: nowrap !important;
+  }
+}
+
 @layer components {
   .app-bg {
     @apply bg-[radial-gradient(circle_at_12%_0%,#f0f7ff_0%,#eaf2fa_35%,#eef3f8_100%)];
@@ -309,7 +440,7 @@ body,
   }
 
   .data-table {
-    @apply w-full min-w-[720px] table-fixed text-left text-sm;
+    @apply w-full min-w-[640px] table-fixed text-left text-sm;
   }
 
   .data-table thead tr {
@@ -318,10 +449,14 @@ body,
 
   .data-table th {
     @apply px-3 py-2.5 text-xs font-bold uppercase tracking-[0.04em];
+    overflow-wrap: break-word;
+    word-break: normal;
   }
 
   .data-table td {
     @apply px-3 py-2.5 align-top text-sm text-slate-700;
+    overflow-wrap: break-word;
+    word-break: normal;
   }
 
   .data-table tbody tr {
@@ -354,11 +489,14 @@ body,
 
   .status-chip {
     @apply inline-flex rounded-full px-2 py-1 text-xs font-bold;
+    white-space: nowrap;
+    word-break: normal;
+    overflow-wrap: normal;
   }
 
   .incident-status-chip {
-    @apply mx-auto flex min-h-8 w-full max-w-[11rem] items-center justify-center rounded-lg px-2.5 py-1.5 text-center text-xs font-bold leading-tight;
-    white-space: normal;
+    @apply mx-auto inline-flex min-h-8 w-max max-w-none items-center justify-center rounded-lg px-2.5 py-1.5 text-center text-xs font-bold leading-tight;
+    white-space: nowrap;
     word-break: normal;
     overflow-wrap: normal;
   }
@@ -525,7 +663,8 @@ body,
   min-width: 0;
   flex-direction: column;
   gap: 0.3rem;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .incident-detail-column strong {

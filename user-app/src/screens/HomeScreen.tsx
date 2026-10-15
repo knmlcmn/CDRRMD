@@ -250,6 +250,12 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
     ?? require('../../assets/Calamba_City_Hall_(Chipeco_Ave.,_Calamba,_Laguna)(2018-08-21).jpg');
   const heroHeight = Math.round(126 * designScale);
   const heroImageWidth = Math.round(heroHeight * (328 / 226));
+  const heroWidth = Math.min(720, Math.max(0, screenWidth - (horizontalPadding * 2)));
+  const heroCopyLeft = 13 * designScale;
+  const heroSealWidth = 116 * designScale;
+  const heroCopyWidth = dashboardSeal
+    ? Math.max(0, heroWidth - heroCopyLeft - heroSealWidth - (13 * designScale))
+    : heroWidth * 0.52;
   const cardHeight = Math.round(27 * designScale);
   const sectionLayout = {
     fontSize: 10 * designScale,
@@ -550,8 +556,8 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
             />
             <View style={[st.heroCopy, {
               top: 13 * designScale,
-              left: 13 * designScale,
-              width: '52%',
+              left: heroCopyLeft,
+              width: heroCopyWidth,
             }]}>
               <Text style={[st.heroBarangay, {
                 fontSize: 11 * designScale,
@@ -562,7 +568,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
                 lineHeight: 8 * designScale,
                 marginTop: 2 * designScale,
               }]}>Calamba City</Text>
-              <View style={[st.heroWeatherRow, { marginTop: 7 * designScale, width: 71 * designScale }]}>
+              <View style={[st.heroWeatherRow, { marginTop: 7 * designScale, width: Math.min(heroCopyWidth, 71 * designScale) }]}>
                 <View style={st.heroMetric}>
                   <View style={st.heroWeatherItem}>
                     <WeatherConditionArtwork name={currentWeatherIcon} scale={0.8 * designScale} />
@@ -582,7 +588,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
                 fontSize: 5 * designScale,
                 lineHeight: 6 * designScale,
                 marginTop: 8 * designScale,
-                width: 104 * designScale,
+                width: heroCopyWidth,
               }]}>{weatherAdvice(currentWeatherCode, currentTemperature)}</Text>
             </View>
         </TouchableOpacity>
@@ -826,6 +832,7 @@ const st = StyleSheet.create({
   barangaySeal: { position: 'absolute', right: 1, top: -5 },
   heroCopy: {
     position: 'absolute',
+    overflow: 'hidden',
   },
   heroBarangay: { color: editorial.ink, letterSpacing: 0, fontWeight: '800', includeFontPadding: false },
   heroCity: { color: editorial.ink, fontWeight: '700', includeFontPadding: false },

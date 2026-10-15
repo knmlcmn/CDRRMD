@@ -212,57 +212,75 @@ export default function BarangayShell({
         <nav className={d.shell.mobileNav}>
           <button
             onClick={onOpenDashboard}
+            aria-label="Dashboard"
+            title="Dashboard"
             className={[
               d.shell.mobileNavItem,
               activeView === 'dashboard' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            Dashboard
+            <NavIcon name="dashboard" />
+            <span className="sr-only">Dashboard</span>
           </button>
           <button
             onClick={onOpenMonitoring}
+            aria-label="Incident Monitoring"
+            title="Incident Monitoring"
             className={[
               d.shell.mobileNavItem,
               activeView === 'monitoring' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            Monitoring
+            <NavIcon name="incidents" />
+            <span className="sr-only">Incident Monitoring</span>
           </button>
           <button
             onClick={onOpenFloodMonitoring}
+            aria-label="Flood Monitoring"
+            title="Flood Monitoring"
             className={[
               d.shell.mobileNavItem,
               activeView === 'flood-monitoring' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            Flood
+            <NavIcon name="flood" />
+            <span className="sr-only">Flood Monitoring</span>
           </button>
           <button
             onClick={onOpenEvacuationCenter}
+            aria-label="Evacuation Center"
+            title="Evacuation Center"
             className={[
               d.shell.mobileNavItem,
               activeView === 'evacuation-center' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            Evacuation
+            <NavIcon name="evacuation" />
+            <span className="sr-only">Evacuation Center</span>
           </button>
           <button
             onClick={onOpenAccount}
+            aria-label="Account"
+            title="Account"
             className={[
               d.shell.mobileNavItem,
               activeView === 'account' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            Account
+            <NavIcon name="account" />
+            <span className="sr-only">Account</span>
           </button>
           <button
             onClick={onOpenHistory}
+            aria-label="History"
+            title="History"
             className={[
               d.shell.mobileNavItem,
               activeView === 'history' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            History
+            <NavIcon name="history" />
+            <span className="sr-only">History</span>
           </button>
         </nav>
       </div>

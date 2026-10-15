@@ -179,12 +179,12 @@ export default function AdminShell({
                 {subtitle ? <p className={d.shell.subtitle}>{subtitle}</p> : null}
               </div>
               {isAccountsView ? (
-                <nav className="ml-auto flex min-w-max gap-2 overflow-x-auto" role="tablist" aria-label="Account roles">
+                <nav className="grid w-full min-w-0 grid-cols-4 gap-1 min-[820px]:ml-auto min-[820px]:flex min-[820px]:w-auto min-[820px]:gap-2" role="tablist" aria-label="Account roles">
                   {[
                     ['admin', 'Admin', onOpenAdmin],
                     ['users', 'User', onOpenUsers],
                     ['barangay', 'Barangay', onOpenBarangay],
-                    ['rescuers', 'Rescuer', onOpenRescuers],
+                    ['rescuers', 'Rescuers', onOpenRescuers],
                   ].map(([key, label, onClick]) => (
                     <button
                       key={String(key)}
@@ -192,7 +192,7 @@ export default function AdminShell({
                       role="tab"
                       aria-selected={activeView === key}
                       onClick={onClick as () => void}
-                      className={`min-w-24 rounded-lg px-4 py-2 text-sm font-black transition ${activeView === key ? 'bg-[#1f4e79] text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                      className={`min-w-0 rounded-lg px-1.5 py-2 text-[0.68rem] font-black transition sm:px-2 sm:text-xs min-[820px]:min-w-24 min-[820px]:px-4 min-[820px]:text-sm ${activeView === key ? 'bg-[#1f4e79] text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
                     >
                       {String(label)}
                     </button>

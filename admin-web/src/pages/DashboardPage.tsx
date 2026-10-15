@@ -536,9 +536,9 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
 
           <section className={d.dashboard.metricsGrid}>
             {cardsToRender.map((card) => (
-              <article key={card.key} className={`rounded-xl border border-slate-200 border-t-4 ${card.borderClass} bg-white px-3 py-2 shadow-sm`}>
-                <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{card.label}</p>
-                <p className={`mt-0.5 text-2xl font-black ${card.toneClass}`}>{card.value}</p>
+              <article key={card.key} className={`${d.dashboard.metricCard} ${card.borderClass}`}>
+                <p className={d.dashboard.metricLabel}>{card.label}</p>
+                <p className={`${d.dashboard.metricValue} ${card.toneClass}`}>{card.value}</p>
               </article>
             ))}
           </section>
@@ -632,8 +632,10 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                   <button
                     onClick={enterMapFullscreen}
                     title="Enter fullscreen"
+                    aria-label="Enter map fullscreen"
+                    className="map-fullscreen-enter"
                     style={{
-                      position: 'absolute', bottom: 10, right: 10, zIndex: 1000,
+                      zIndex: 1000,
                       background: 'rgba(15,23,42,0.82)', border: '1px solid rgba(148,163,184,0.3)',
                       borderRadius: 8, color: '#fff', cursor: 'pointer', padding: '6px 7px',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -673,6 +675,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                 <h3 id="dashboard-flood-monitoring-title" className={d.dashboard.waterLevelsTitle}>Flood Monitoring</h3>
                 <button type="button" onClick={onOpenFloodMonitoring} className={d.dashboard.waterLevelsLink}>View details</button>
               </div>
+              <div className={d.dashboard.waterLevelsTableWrap}>
               <div className={d.dashboard.waterLevelsLabels}>
                 <span>Barangay</span><span>Status</span><span>Water</span><span>Distance</span><span>Temp</span><span>Humidity</span>
               </div>
@@ -688,6 +691,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
                   </div>
                 ))}
                 {waterLevelSensors.length === 0 ? <p className={d.dashboard.waterLevelsEmpty}>Loading sensor readings...</p> : null}
+              </div>
               </div>
             </section>
 
