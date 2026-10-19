@@ -15,7 +15,7 @@ async function insertAlert(client, { eventKey, barangayName, hardwareNo, level, 
      RETURNING id`,
     [eventKey, barangayName, hardwareNo, level, percentage, distanceCm],
   );
-  if (inserted.rows.length === 0) return { published: false, recipients: 0 };
+  const published = inserted.rows.length > 0;
 
   const high = level === 'high';
   const title = high ? 'Immediate evacuation required' : 'Prepare to evacuate';
@@ -34,7 +34,7 @@ async function insertAlert(client, { eventKey, barangayName, hardwareNo, level, 
      RETURNING id`,
     [title, body, level, barangayName, eventKey],
   );
-  return { published: true, recipients: recipients.rows.length };
+  return { published, recipients: recipients.rows.length };
 }
 
 async function performSensorSync() {
@@ -81,7 +81,10 @@ async function performSensorSync() {
       } else {
         if (!eventKey) eventKey = `${sensor.id}-${Date.now()}`;
         const shouldPublish = !highestLevel || (activeLevel === 'high' && highestLevel !== 'high');
-        if (shouldPublish) {
+        // Re-run the recipient insert while the level is active. The unique
+        // event key prevents duplicates, while users who enter the affected
+        // barangay after the first transition can still receive the alert.
+        if (shouldPublish || eventKey) {
           await insertAlert(client, {
             eventKey,
             barangayName: sensor.barangayName,

@@ -24,9 +24,9 @@ const SENSOR_ASSIGNMENTS = [
 
 function distanceToWaterLevelPercentage(distanceCm: number | null) {
   if (distanceCm === null || !Number.isFinite(distanceCm)) return 0;
-  if (distanceCm <= 20) return 100;
-  if (distanceCm >= 200) return 0;
-  return ((200 - distanceCm) / 180) * 100;
+  if (distanceCm <= 2) return 100;
+  if (distanceCm >= 20) return 0;
+  return ((20 - distanceCm) / 18) * 100;
 }
 
 function readNumber(payload: unknown, ...keys: string[]) {

@@ -61,8 +61,8 @@ const FIREBASE_DATABASE_URL =
 function distanceToFillPct(distanceCm?: number | null) {
   if (typeof distanceCm !== 'number' || !Number.isFinite(distanceCm)) return 0;
 
-  const nearFullDistanceCm = 20;
-  const emptyDistanceCm = 200;
+  const nearFullDistanceCm = 2;
+  const emptyDistanceCm = 20;
   if (distanceCm <= nearFullDistanceCm) return 100;
   if (distanceCm >= emptyDistanceCm) return 0;
 

@@ -374,7 +374,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
 
     const readAt = new Date().toISOString();
     setNotifications((current) => current.map((item) => (
-      item.read_at ? item : { ...item, read_at: readAt }
+      item.read_at || item.category === 'flood_sensor' ? item : { ...item, read_at: readAt }
     )));
     await api.patch('/reports/notifications/read-all').catch(() => {});
   }

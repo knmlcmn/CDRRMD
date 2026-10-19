@@ -37,7 +37,7 @@ export default function ResidentFloodAlert({ onTestAccountRemoved, onSendRescue 
     });
     const notifications = Array.isArray(response.data) ? response.data as FloodNotification[] : [];
     const matchingUnread = notifications.filter(
-      (item) => item.category === 'flood_sensor'
+      (item) => String(item.category || '').toLowerCase() === 'flood_sensor'
         && !item.read_at
         && item.matches_current_location !== false
         && !suppressedAlertIdsRef.current.has(item.id),

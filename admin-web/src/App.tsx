@@ -89,7 +89,7 @@ function App() {
   }, [token]);
 
   useEffect(() => {
-    if (!token || role !== 'admin' || view === 'dashboard') {
+    if (!token || role !== 'admin') {
       return undefined;
     }
 
@@ -133,12 +133,21 @@ function App() {
     };
 
     checkForWaterUpdates().catch(() => {});
-    const timer = window.setInterval(() => checkForWaterUpdates().catch(() => {}), 10_000);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') checkForWaterUpdates().catch(() => {});
+    }, 10_000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') checkForWaterUpdates().catch(() => {});
+    };
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
       stopped = true;
       window.clearInterval(timer);
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
     };
-  }, [token, role, view]);
+  }, [token, role]);
 
   useEffect(() => {
     function handleUnload() {
@@ -183,7 +192,6 @@ function App() {
   }
 
   function openView(nextView: View) {
-    if (nextView === 'dashboard') setWaterUpdateNotices([]);
     setView(nextView);
   }
 
@@ -251,7 +259,7 @@ function App() {
   const activeWaterUpdateNotice = waterUpdateNotices[0];
   return (
     <>
-      {view !== 'dashboard' && activeWaterUpdateNotice ? (
+      {activeWaterUpdateNotice ? (
         <WaterLevelUpdateToast
           key={activeWaterUpdateNotice.id}
           sensors={activeWaterUpdateNotice.sensors}

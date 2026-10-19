@@ -118,7 +118,7 @@ async function listWaterLevelHistory(req, res) {
             e.water_level_percentage,
             COALESCE(
               e.distance_cm,
-              GREATEST(20, LEAST(200, 200 - (e.water_level_percentage * 1.8)))
+              GREATEST(2, LEAST(20, 20 - (e.water_level_percentage * 0.18)))
             ) AS distance_cm,
             e.created_at,
             COUNT(*) OVER() AS total_count

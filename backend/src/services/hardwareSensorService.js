@@ -30,9 +30,9 @@ function readNumber(payload, ...keys) {
 
 function distanceToWaterLevelPercentage(distanceCm) {
   if (!Number.isFinite(distanceCm)) return null;
-  if (distanceCm <= 20) return 100;
-  if (distanceCm >= 200) return 0;
-  return ((200 - distanceCm) / 180) * 100;
+  if (distanceCm <= 2) return 100;
+  if (distanceCm >= 20) return 0;
+  return ((20 - distanceCm) / 18) * 100;
 }
 
 function normalizeReading(payload) {

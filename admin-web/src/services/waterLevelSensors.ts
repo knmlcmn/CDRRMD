@@ -29,8 +29,8 @@ const SENSOR_ASSIGNMENTS = [
 
 export function distanceToWaterLevelPercentage(distanceCm: number | null) {
   if (distanceCm === null || !Number.isFinite(distanceCm)) return 0;
-  const fullDistanceCm = 20;
-  const emptyDistanceCm = 200;
+  const fullDistanceCm = 2;
+  const emptyDistanceCm = 20;
   if (distanceCm <= fullDistanceCm) return 100;
   if (distanceCm >= emptyDistanceCm) return 0;
   return ((emptyDistanceCm - distanceCm) / (emptyDistanceCm - fullDistanceCm)) * 100;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { WaterLevelSensor } from '../services/waterLevelSensors';
 
 export type WaterLevelNoticeKind = 'warning' | 'reminder';
@@ -11,17 +11,8 @@ type Props = {
 };
 
 export default function WaterLevelAlert({ alert, kind, onClose, onSeeDetails }: Props) {
-  const [isVanishing, setIsVanishing] = useState(false);
+  const [isVanishing] = useState(false);
   const reminder = kind === 'reminder';
-
-  useEffect(() => {
-    const fadeTimer = window.setTimeout(() => setIsVanishing(true), 14_200);
-    const closeTimer = window.setTimeout(onClose, 15_000);
-    return () => {
-      window.clearTimeout(fadeTimer);
-      window.clearTimeout(closeTimer);
-    };
-  }, [onClose]);
 
   return (
     <section

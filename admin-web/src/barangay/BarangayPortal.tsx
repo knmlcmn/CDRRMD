@@ -118,11 +118,19 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
 
   useEffect(() => {
     let stopped = false;
-    const normalizedBarangay = barangayName.trim().toLowerCase();
+    const normalizedBarangay = barangayName
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/^(barangay|brgy)\s+/, '')
+      .trim();
     const checkWaterLevel = async () => {
       const sensors = await loadWaterLevelSensors();
       if (stopped) return;
-      const ownSensor = sensors.find((sensor) => sensor.barangayName.toLowerCase() === normalizedBarangay);
+      const ownSensor = sensors.find((sensor) => sensor.barangayName
+        .toLowerCase()
+        .replace(/^(barangay|brgy)\s+/, '')
+        .trim() === normalizedBarangay);
       const warning = Boolean(ownSensor?.status === 'Active' && ownSensor.hasReading && ownSensor.waterLevelPercentage >= 40);
       if (!ownSensor || !warning) {
         lastWarningLevelRef.current = null;

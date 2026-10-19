@@ -56,7 +56,7 @@ export function buildHardwareFloodRuntimeScript() {
           ?? readHardwareNumber(nestedDistance, ['fillPct', 'fill_pct', 'fillPercentage', 'percentage', 'level']);
         var percentage = reportedPercentage;
         if (percentage === null && Number.isFinite(distanceCm)) {
-          percentage = distanceCm <= 20 ? 100 : distanceCm >= 200 ? 0 : ((200 - distanceCm) / 180) * 100;
+          percentage = distanceCm <= 2 ? 100 : distanceCm >= 20 ? 0 : ((20 - distanceCm) / 18) * 100;
         }
         return {
           hasReading: percentage !== null,

@@ -1313,6 +1313,7 @@ async function getMyNotifications(req, res) {
             COALESCE(u.is_test_account, FALSE) AS is_test_account,
             CASE
               WHEN COALESCE(n.category, 'report') <> 'flood_sensor' THEN TRUE
+              WHEN COALESCE($2::varchar, u.current_barangay_name, u.barangay_name, '') = '' THEN TRUE
               ELSE LOWER(COALESCE(n.barangay_name, '')) = LOWER(COALESCE(
                 $2::varchar,
                 u.current_barangay_name,
@@ -1339,7 +1340,9 @@ async function markAllNotificationsRead(req, res) {
   const result = await pool.query(
     `UPDATE user_notifications
      SET read_at = COALESCE(read_at, NOW())
-     WHERE user_id = $1 AND read_at IS NULL
+     WHERE user_id = $1
+       AND read_at IS NULL
+       AND COALESCE(category, 'report') <> 'flood_sensor'
      RETURNING id`,
     [userId],
   );

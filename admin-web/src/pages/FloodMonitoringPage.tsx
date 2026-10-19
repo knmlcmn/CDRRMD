@@ -82,8 +82,8 @@ function distanceToFillPct(distanceCm?: number | null) {
     return 0;
   }
 
-  const nearFullDistanceCm = 20;
-  const emptyDistanceCm = 200;
+  const nearFullDistanceCm = 2;
+  const emptyDistanceCm = 20;
 
   if (distanceCm <= nearFullDistanceCm) {
     return 100;
