@@ -36,6 +36,7 @@ import ResidentFloodAlert from './src/components/ResidentFloodAlert';
 import RequiredLocationModal from './src/components/RequiredLocationModal';
 import { useResponsiveLayout } from './src/utils/responsive';
 import { LiveLocation, requireLiveLocation } from './src/services/locationAccess';
+import { loadTestMode, saveTestMode } from './src/services/testMode';
 
 function isBlank(value?: string | null) {
   return !String(value ?? '').trim();
@@ -254,6 +255,8 @@ function AppContent() {
     let mounted = true;
 
     async function restoreSession() {
+      const storedTestMode = await loadTestMode();
+      if (mounted) setTestModeEnabled(storedTestMode);
       const existing = await loadSession();
       if (!existing || existing.user?.role !== 'user') {
         await clearSession();
@@ -275,7 +278,12 @@ function AppContent() {
       await saveSession(ensured.session);
       sessionRef.current = ensured.session;
 
-      await activateSession(ensured.session);
+      if (storedTestMode) {
+        setSession(ensured.session);
+        setLocationGate(null);
+      } else {
+        await activateSession(ensured.session);
+      }
 
       if (mounted) setBooting(false);
     }
@@ -301,7 +309,10 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session || testModeEnabled) {
+      if (testModeEnabled) setLocationGate(null);
+      return;
+    }
 
     let mounted = true;
 
@@ -345,7 +356,7 @@ function AppContent() {
       clearInterval(interval);
       appStateSubscription.remove();
     };
-  }, [session?.user.id]);
+  }, [session?.user.id, testModeEnabled]);
 
   async function assignLocationToSession(location: LiveLocation) {
     const currentSession = sessionRef.current;
@@ -354,7 +365,7 @@ function AppContent() {
     const response = await assignAuthBarangayFromLocation(location.latitude, location.longitude);
     const assignedUser = response.data?.user as SessionData['user'] | undefined;
     if (!assignedUser?.id || !assignedUser.barangayName) {
-      throw new Error('The nearest barangay could not be assigned.');
+      throw new Error('The current activity barangay could not be determined.');
     }
 
     const nextSession: SessionData = {
@@ -374,6 +385,11 @@ function AppContent() {
     await saveSession(ensured.session);
     sessionRef.current = ensured.session;
     setSession(ensured.session);
+    if (testModeEnabled) {
+      setLocationGate(null);
+      setLocationChecking(false);
+      return true;
+    }
     setLocationGate({
       message: 'Location access is required. Turn on your live location to continue.',
       activeSession: false,
@@ -404,7 +420,7 @@ function AppContent() {
       );
       const assignedUser = response.data?.user as SessionData['user'] | undefined;
       if (!assignedUser?.id || !assignedUser.barangayName) {
-        throw new Error('The nearest barangay could not be assigned.');
+        throw new Error('The current activity barangay could not be determined.');
       }
       const assignedSession = {
         ...ensured.session,
@@ -440,10 +456,22 @@ function AppContent() {
 
   async function handleLogout() {
     await clearSession();
-    setTestModeEnabled(false);
     setLocationGate(null);
     setSession(null);
     setAuthMode('login');
+  }
+
+  async function handleToggleTestMode() {
+    const nextEnabled = !testModeEnabled;
+    await saveTestMode(nextEnabled);
+    setTestModeEnabled(nextEnabled);
+    if (nextEnabled) {
+      setLocationGate(null);
+      return;
+    }
+    if (sessionRef.current) {
+      await handleLocationRetry();
+    }
   }
 
   function handleFloodAlertRescue(notificationId: number) {
@@ -556,10 +584,10 @@ function AppContent() {
 
       <TouchableOpacity
         accessibilityRole="button"
-        accessibilityLabel={`Temporary service-area test mode is ${testModeEnabled ? 'on' : 'off'}`}
+        accessibilityLabel={`Service-area test mode is ${testModeEnabled ? 'on' : 'off'}`}
         activeOpacity={0.85}
         hitSlop={8}
-        onPress={() => setTestModeEnabled((current) => !current)}
+        onPress={() => void handleToggleTestMode()}
         style={[styles.testModeButton, testModeEnabled && styles.testModeButtonEnabled, {
           bottom: 62 * uiScale,
           right: 8 * uiScale,
@@ -579,6 +607,8 @@ function AppContent() {
           message={locationGate.message}
           activeSession
           onEnable={handleLocationRetry}
+          testModeEnabled={testModeEnabled}
+          onToggleTestMode={() => void handleToggleTestMode()}
         />
       ) : null}
     </View>

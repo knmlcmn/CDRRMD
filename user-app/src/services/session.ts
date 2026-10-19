@@ -10,6 +10,7 @@ export type SessionUser = {
   address?: string;
   contactNumber?: string;
   barangayName?: string | null;
+  profileImage?: string | null;
   accountId?: string | null;
 };
 

@@ -71,32 +71,34 @@ export default function ReportFloodScreen() {
     }
   }
 
-  async function pickProofImage() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      showNotice('Permission denied', 'Please allow media library access to upload proof.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.6,
-      base64: true,
-    });
-
-    if (result.canceled || !result.assets?.[0]) {
-      return;
-    }
-
-    const asset = result.assets[0];
+  function applyProofImage(asset: ImagePicker.ImagePickerAsset) {
     if (!asset.base64) {
-      showNotice('Image unavailable', 'Unable to read selected image.');
+      showNotice('Image unavailable', 'Unable to read the selected image.');
       return;
     }
 
     const mimeType = asset.mimeType || 'image/jpeg';
     setImageBase64(`data:${mimeType};base64,${asset.base64}`);
     setImageUri(asset.uri || null);
+  }
+
+  async function takeProofImage() {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      showNotice('Camera needed', 'Please allow camera access to capture a photo of the current situation.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.6,
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets?.[0]) {
+      applyProofImage(result.assets[0]);
+    }
   }
 
   async function submitReport() {
@@ -186,8 +188,9 @@ export default function ReportFloodScreen() {
             {locating ? <ActivityIndicator color={editorial.accent} /> : <Text style={st.secondaryBtnText}>Use Device Location</Text>}
           </TouchableOpacity>
 
-          <TouchableOpacity style={[st.secondaryBtn, { marginTop: 8 }]} onPress={pickProofImage}>
-            <Text style={st.secondaryBtnText}>{imageUri ? 'Change Proof Image' : 'Upload Proof Image'}</Text>
+          <TouchableOpacity style={[st.secondaryBtn, { marginTop: 8 }]} onPress={takeProofImage}>
+            <MaterialCommunityIcons name="camera" size={16} color={editorial.accent} />
+            <Text style={st.secondaryBtnText}>Send Proof</Text>
           </TouchableOpacity>
           {imageUri ? <Image source={{ uri: imageUri }} style={st.previewImage} /> : null}
         </View>
@@ -284,6 +287,7 @@ const st = StyleSheet.create({
     marginRight: 4,
     borderRadius: 15,
     backgroundColor: '#f1f3f4',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },

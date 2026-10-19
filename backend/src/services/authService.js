@@ -11,7 +11,7 @@ const {
 } = require('../utils/authTokens');
 const { httpError } = require('../utils/httpError');
 const { SUPPORTED_BARANGAYS: RESIDENT_BARANGAYS, normalizeBarangayName } = require('./supportedBarangays');
-const { resolveNearbyBarangayAtLocation } = require('./barangayBoundaryService');
+const { resolveBarangayAtLocation } = require('./barangayBoundaryService');
 const emailOtpService = require('./emailOtpService');
 
 // Keeps API response shape stable even if DB column names differ.
@@ -27,6 +27,7 @@ function toUserResponse(user) {
     lastName: user.last_name,
     address: user.address,
     contactNumber: user.contact_number,
+    profileImage: user.profile_image || null,
     barangayName: user.barangay_name || null,
     accountId: accountPrefix && createdYear ? `${accountPrefix}-${createdYear}-${String(user.id).padStart(5, '0')}` : null,
   };
@@ -304,7 +305,11 @@ async function updateMe(userId, payload) {
     throw httpError(401, 'Invalid token payload.');
   }
 
-  const { firstName, lastName, email, address, contactNumber } = payload || {};
+  const { firstName, lastName, email, address, contactNumber, profileImage } = payload || {};
+  const nextProfileImage = profileImage === undefined ? undefined : String(profileImage).trim();
+  if (nextProfileImage !== undefined && (!/^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+$/i.test(nextProfileImage) || nextProfileImage.length > 4 * 1024 * 1024)) {
+    throw httpError(400, 'Please provide a valid profile image smaller than 3 MB.');
+  }
   const nextEmail = String(email || '').trim().toLowerCase() || null;
   if (nextEmail && !nextEmail.includes('@')) {
     throw httpError(400, 'Please provide a valid email address.');
@@ -327,6 +332,7 @@ async function updateMe(userId, payload) {
     email: nextEmail,
     address: String(address || '').trim() || null,
     contactNumber: String(contactNumber || '').trim() || null,
+    profileImage: nextProfileImage,
   });
 
   if (!user) {
@@ -356,29 +362,25 @@ async function assignBarangayFromLocation(userId, payload) {
     throw httpError(400, 'A valid current location is required.');
   }
 
-  const nearest = resolveNearbyBarangayAtLocation(
-    latitude,
-    longitude,
-    RESIDENT_BARANGAYS,
-    Number.POSITIVE_INFINITY,
-  );
   const barangayName = RESIDENT_BARANGAYS.find(
-    (name) => name.toLowerCase() === String(nearest?.name || '').toLowerCase(),
+    (name) => name.toLowerCase() === String(resolveBarangayAtLocation(latitude, longitude) || '').toLowerCase(),
   );
   if (!barangayName) {
-    throw httpError(400, 'Unable to determine the nearest supported barangay.');
+    throw httpError(400, 'Your current location is outside the supported barangay jurisdiction.');
   }
 
-  const user = await userModel.assignResidentBarangayFromLocation(
+  const user = await userModel.updateResidentLocation(
     userId,
-    barangayName,
     latitude,
     longitude,
+    barangayName,
   );
   if (!user) {
     throw httpError(404, 'Resident account not found.');
   }
 
+  // `user.barangayName` remains the account's registration information.
+  // `barangayName` identifies the user's current activity jurisdiction.
   return { user: toUserResponse(user), barangayName };
 }
 

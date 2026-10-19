@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AppText as Text, AppTextInput as TextInput } from '../components/Typography';
 import { DashboardHeader } from '../components/DashboardHeader';
 import { editorial } from '../components/EditorialTheme';
@@ -8,6 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { AppProfile, getAccountById, updateAccountProfile } from '../services/appAccount';
 import { putAuthMe } from '../services/api';
 import { useResponsiveLayout } from '../utils/responsive';
+import * as ImagePicker from 'expo-image-picker';
 
 type Props = {
   appUserId: string;
@@ -22,6 +23,7 @@ const EMPTY_PROFILE: AppProfile = {
     address: '',
     contactNumber: '',
     barangayName: '',
+    profileImage: '',
   };
 
 export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
@@ -30,6 +32,8 @@ export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
   const [draftProfile, setDraftProfile] = useState<AppProfile>(EMPTY_PROFILE);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [isProfileImageViewerOpen, setIsProfileImageViewerOpen] = useState(false);
 
   useEffect(() => {
     if (!barangayName) return;
@@ -95,6 +99,50 @@ export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
     setIsEditing(false);
   }
 
+  async function onChangeProfileImage() {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Photo access needed', 'Please allow photo library access to choose a profile image.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.5,
+        base64: true,
+      });
+      const asset = result.assets?.[0];
+      if (result.canceled || !asset?.base64) return;
+
+      const profileImage = `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`;
+      if (profileImage.length > 4 * 1024 * 1024) {
+        Alert.alert('Image is too large', 'Please choose a smaller image.');
+        return;
+      }
+
+      setUploadingImage(true);
+      await putAuthMe({
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        email: profile.email,
+        address: profile.address,
+        contactNumber: profile.contactNumber,
+        profileImage,
+      });
+      const nextProfile = { ...profile, profileImage };
+      setProfile(nextProfile);
+      setDraftProfile((current) => ({ ...current, profileImage }));
+      await updateAccountProfile(appUserId, nextProfile);
+    } catch {
+      Alert.alert('Could not update image', 'Please check your connection and try again.');
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
   const fullName = `${profile.firstName} ${profile.lastName}`.trim() || 'No name set';
 
   return (
@@ -110,18 +158,31 @@ export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
         {/* Profile Card */}
         <View style={st.card}>
           <View style={st.profileRow}>
-            <View style={st.avatar}>
-              <MaterialCommunityIcons name="account" size={30} color="#94a3b8" />
-            </View>
+            {profile.profileImage ? (
+              <TouchableOpacity
+                style={st.avatar}
+                onPress={() => setIsProfileImageViewerOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="View profile image"
+              >
+                <Image source={{ uri: profile.profileImage }} style={st.avatarImage} accessibilityLabel="Profile image" />
+              </TouchableOpacity>
+            ) : (
+              <View style={st.avatar}>
+                <MaterialCommunityIcons name="account" size={30} color="#94a3b8" />
+              </View>
+            )}
             <View style={{ marginLeft: 12 }}>
               <Text style={st.profileName}>{fullName}</Text>
               <Text style={st.profileHandle}>{profile.firstName || '-'}</Text>
             </View>
           </View>
-          <TouchableOpacity style={st.changeImgBtn}>
-            <MaterialCommunityIcons name="image-edit-outline" size={15} color="#64748b" />
-            <Text style={st.changeImgText}>Add / Change Profile Image</Text>
-          </TouchableOpacity>
+          {isEditing ? (
+            <TouchableOpacity style={st.changeImgBtn} onPress={() => void onChangeProfileImage()} disabled={uploadingImage} accessibilityRole="button">
+              <MaterialCommunityIcons name="image-edit-outline" size={15} color="#64748b" />
+              <Text style={st.changeImgText}>{uploadingImage ? 'Saving Profile Image...' : 'Add / Change Profile Image'}</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         {!isEditing ? (
@@ -222,6 +283,25 @@ export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={isProfileImageViewerOpen}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setIsProfileImageViewerOpen(false)}
+      >
+        <Pressable
+          style={st.profileImageViewer}
+          onPress={() => setIsProfileImageViewerOpen(false)}
+          accessibilityRole="button"
+          accessibilityLabel="Close profile image"
+        >
+          {profile.profileImage ? (
+            <Image source={{ uri: profile.profileImage }} style={st.profileImageViewerImage} resizeMode="contain" />
+          ) : null}
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -254,6 +334,9 @@ const st = StyleSheet.create({
     width: 50, height: 50, borderRadius: 25, backgroundColor: editorial.accentSoft,
     alignItems: 'center', justifyContent: 'center',
   },
+  avatarImage: { width: '100%', height: '100%', borderRadius: 25 },
+  profileImageViewer: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  profileImageViewerImage: { width: '100%', height: '100%' },
   profileName: { color: '#181818', fontSize: 16, fontWeight: '800' },
   profileHandle: { color: editorial.muted, fontSize: 13, marginTop: 1 },
 

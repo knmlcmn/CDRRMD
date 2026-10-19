@@ -381,6 +381,7 @@ export async function putAuthMe(payload: {
   address?: string;
   contactNumber?: string;
   barangayName?: string;
+  profileImage?: string;
 }) {
   const host = await getHealthyHost();
 

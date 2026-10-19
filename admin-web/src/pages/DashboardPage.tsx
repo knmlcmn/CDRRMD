@@ -88,7 +88,7 @@ function buildMapHtml(
       windOverlay: false,
     },
     'Assigned responder location',
-    { focusOnIncident: true, allowLiveRouteUpdates: true, responderKind: 'generic', showForecastTimeline },
+    { focusOnIncident: true, allowLiveRouteUpdates: true, responderKind: 'generic', largeLayerControl: true, showForecastTimeline },
   );
 }
 

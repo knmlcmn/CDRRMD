@@ -8,6 +8,7 @@ export type AppProfile = {
   address: string;
   contactNumber: string;
   barangayName: string;
+  profileImage: string;
 };
 
 export type AppAccount = {
@@ -33,6 +34,7 @@ const EMPTY_PROFILE: AppProfile = {
   address: '',
   contactNumber: '',
   barangayName: '',
+  profileImage: '',
 };
 
 function clean(value?: string | null) {
@@ -51,6 +53,7 @@ function mergeProfile(current: AppProfile, next?: PartialProfile): AppProfile {
     address: clean(next.address) || current.address,
     contactNumber: clean(next.contactNumber) || current.contactNumber,
     barangayName: clean(next.barangayName) || current.barangayName,
+    profileImage: typeof next.profileImage === 'string' ? next.profileImage : current.profileImage,
   };
 }
 
@@ -104,6 +107,7 @@ export async function ensureAccountForSession(session: SessionData) {
     address: session.user.address,
     contactNumber: session.user.contactNumber,
     barangayName: session.user.barangayName ?? undefined,
+    profileImage: session.user.profileImage ?? undefined,
   };
 
   const stableAppUserId = clean(session.user.accountId);

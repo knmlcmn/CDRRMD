@@ -76,12 +76,12 @@ type HomeScreenProps = {
 };
 
 const BARANGAY_DASHBOARD_SEALS = {
-  sampiruhan: require('../../assets/sampi-seal-dashboard.jpg'),
-  lingga: require('../../assets/lingga-seal-dashboard.jpg'),
-  looc: require('../../assets/looc-seal-dashboard.jpg'),
-  palingon: require('../../assets/palingon-seal-dashboard.jpg'),
-  parian: require('../../assets/parian-seal-dashboard-transparent.png'),
-  uwisan: require('../../assets/uwisan-seal-dashboard.jpg'),
+  sampiruhan: require('../../assets/barangay-sampiruhan-seal.png'),
+  lingga: require('../../assets/barangay-lingga-seal.png'),
+  looc: require('../../assets/barangay-looc-seal.png'),
+  palingon: require('../../assets/barangay-palingon-seal.png'),
+  parian: require('../../assets/barangay-parian-seal.png'),
+  uwisan: require('../../assets/barangay-uwisan-seal.png'),
 } as const;
 
 function relativeTime(value?: string) {

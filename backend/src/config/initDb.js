@@ -24,6 +24,7 @@ async function initDb() {
       last_name VARCHAR(120),
       address TEXT,
       contact_number VARCHAR(40),
+      profile_image TEXT,
       password_hash TEXT NOT NULL,
       role VARCHAR(20) NOT NULL DEFAULT 'admin',
       barangay_name VARCHAR(120),
@@ -276,6 +277,9 @@ async function initDb() {
 
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS contact_number VARCHAR(40);
+
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS profile_image TEXT;
 
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT FALSE;

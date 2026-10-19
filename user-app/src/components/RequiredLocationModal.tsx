@@ -7,10 +7,12 @@ type Props = {
   loading: boolean;
   message?: string | null;
   activeSession?: boolean;
+  testModeEnabled: boolean;
   onEnable: () => void;
+  onToggleTestMode: () => void;
 };
 
-export default function RequiredLocationModal({ loading, message, activeSession = false, onEnable }: Props) {
+export default function RequiredLocationModal({ loading, message, activeSession = false, testModeEnabled, onEnable, onToggleTestMode }: Props) {
   async function openSettings() {
     try {
       await Linking.openSettings();
@@ -29,8 +31,8 @@ export default function RequiredLocationModal({ loading, message, activeSession 
           <Text style={styles.title}>{activeSession ? 'Keep your location on' : 'Location access required'}</Text>
           <Text style={styles.message}>
             {activeSession
-              ? 'Your location was turned off or became unavailable. Turn it back on to safely use the app and automatically assign your barangay area.'
-              : 'Turn on location to continue. We use your live position to safely assign your account to the nearest supported barangay.'}
+              ? 'Your location was turned off or became unavailable. Turn it back on to safely use the app and determine the barangay handling your current activity.'
+              : 'Turn on location to continue. We use your live position to determine the barangay handling your current activity.'}
           </Text>
           <Text style={styles.supported}>Sampiruhan · Lingga · Palingon · Parian · Uwisan · Looc</Text>
           {message ? <Text style={styles.error}>{message}</Text> : null}
@@ -47,6 +49,13 @@ export default function RequiredLocationModal({ loading, message, activeSession 
               <Text style={styles.settingsText}>Open Location Settings</Text>
             </TouchableOpacity>
           ) : null}
+          <TouchableOpacity style={[styles.testModeButton, testModeEnabled && styles.testModeButtonEnabled]} onPress={onToggleTestMode} disabled={loading}>
+            <MaterialCommunityIcons name={testModeEnabled ? 'toggle-switch' : 'toggle-switch-off-outline'} size={24} color={testModeEnabled ? '#991b1b' : '#475569'} />
+            <View style={styles.testModeCopy}>
+              <Text style={styles.testModeTitle}>Test Mode: {testModeEnabled ? 'On' : 'Off'}</Text>
+              <Text style={styles.testModeHelp}>Allows app access outside the six barangays for testing.</Text>
+            </View>
+          </TouchableOpacity>
           <Text style={styles.requiredNote}>
             {activeSession
               ? 'App access will resume as soon as a live location is detected.'
@@ -70,5 +79,10 @@ const styles = StyleSheet.create({
   primaryText: { color: '#fff', fontSize: 14, fontWeight: '900' },
   settingsButton: { marginTop: 12, paddingVertical: 7 },
   settingsText: { color: editorial.accent, fontSize: 12, fontWeight: '800', textDecorationLine: 'underline' },
+  testModeButton: { width: '100%', flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, padding: 10, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' },
+  testModeButtonEnabled: { borderColor: '#fecaca', backgroundColor: '#fef2f2' },
+  testModeCopy: { flex: 1 },
+  testModeTitle: { color: editorial.ink, fontSize: 12, fontWeight: '800' },
+  testModeHelp: { color: '#64748b', fontSize: 10, lineHeight: 14, marginTop: 2 },
   requiredNote: { color: '#64748b', fontSize: 10, textAlign: 'center', marginTop: 14 },
 });

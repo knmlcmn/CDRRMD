@@ -56,11 +56,9 @@ function formatDay(value: string) {
 
 export default function WeatherScreen() {
   const { uiScale: scale, horizontalPadding } = useResponsiveLayout();
-  const timelineHourWidth = 30 * scale;
   const [data, setData] = useState<WeatherResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
-  const [selectedHour, setSelectedHour] = useState(0);
 
   const fetchWeather = useCallback(async () => {
     try {
@@ -111,8 +109,6 @@ export default function WeatherScreen() {
       code: daily?.weather_code?.[index],
     }));
   }, [data?.daily]);
-
-  const selectedHourRow = hourlyRows[selectedHour] ?? hourlyRows[0];
 
   if (loading) {
     return (
@@ -199,48 +195,6 @@ export default function WeatherScreen() {
 
           {hourlyRows.length > 0 ? (
             <>
-              <Text style={[st.sectionTitle, { fontSize: 10 * scale, marginTop: 9 * scale, marginBottom: 4 * scale }]}>7-Day Forecast Timeline</Text>
-              <View style={[st.timelineCard, { marginHorizontal: 8 * scale, borderRadius: 8 * scale, paddingVertical: 8 * scale }]}>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  scrollEventThrottle={64}
-                  onScroll={(event) => {
-                    const index = Math.round(event.nativeEvent.contentOffset.x / timelineHourWidth);
-                    setSelectedHour(Math.max(0, Math.min(hourlyRows.length - 1, index)));
-                  }}
-                >
-                  <View style={{ width: hourlyRows.length * timelineHourWidth }}>
-                    <View style={st.timelineDays}>
-                      {dailyRows.map((day) => (
-                        <View key={day.day} style={{ width: 24 * timelineHourWidth, alignItems: 'center' }}>
-                          <Text style={[st.timelineDay, { fontSize: 7 * scale }]}>{formatDay(day.day)}</Text>
-                        </View>
-                      ))}
-                    </View>
-                    <View style={[st.timelineTicks, { height: 17 * scale, marginTop: 6 * scale }]}>
-                      {hourlyRows.map((hour, index) => (
-                        <View key={hour.time} style={[
-                          st.timelineTick,
-                          { width: timelineHourWidth, height: (index === selectedHour ? 17 : 9) * scale },
-                          index === selectedHour && st.timelineSelectedTick,
-                        ]} />
-                      ))}
-                    </View>
-                  </View>
-                </ScrollView>
-                {selectedHourRow ? (
-                  <View style={[st.timelineReading, { paddingHorizontal: 10 * scale, paddingTop: 5 * scale }]}>
-                    <Text style={[st.timelineReadingTitle, { fontSize: 7 * scale }]}>
-                      {formatDay(selectedHourRow.time)} · {formatHour(selectedHourRow.time)}
-                    </Text>
-                    <Text style={[st.timelineReadingDetail, { fontSize: 6 * scale, marginTop: 2 * scale }]}>
-                      Wind {selectedHourRow.wind ?? '--'} km/h  ·  Rain {selectedHourRow.rain ?? '--'} mm
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-
               <Text style={[st.sectionTitle, { fontSize: 10 * scale, marginTop: 9 * scale, marginBottom: 4 * scale }]}>Hourly Wind and Rain</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 8 * scale }}>
                 {hourlyRows.map((hour) => (
@@ -320,15 +274,6 @@ const st = StyleSheet.create({
   statCard: { backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border, flex: 1, alignItems: 'center', justifyContent: 'center' },
   statLabel: { color: '#585858' },
   statValue: { color: '#181818', fontWeight: '700' },
-  timelineCard: { backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border, overflow: 'hidden' },
-  timelineDays: { flexDirection: 'row' },
-  timelineDay: { color: '#181818', fontWeight: '700' },
-  timelineTicks: { flexDirection: 'row', alignItems: 'flex-end', borderTopWidth: 1, borderTopColor: '#e5e5e5' },
-  timelineTick: { borderLeftWidth: 1, borderLeftColor: '#b9c4ca' },
-  timelineSelectedTick: { borderLeftWidth: 3, borderLeftColor: editorial.accent },
-  timelineReading: { borderTopWidth: 1, borderTopColor: '#e5e5e5' },
-  timelineReadingTitle: { color: '#181818', fontWeight: '700' },
-  timelineReadingDetail: { color: '#585858' },
   hourCard: { backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border },
   hourTime: { color: '#585858' },
   hourCondition: { flexDirection: 'row', alignItems: 'center' },

@@ -19,6 +19,7 @@ export type MapBehavior = {
   focusOnResponder?: boolean;
   allowLiveRouteUpdates?: boolean;
   responderKind?: 'barangay' | 'cddrmd' | 'generic';
+  largeLayerControl?: boolean;
   showForecastTimeline?: boolean;
   pickedUp?: boolean;
   jurisdictionBarangayName?: string;
@@ -222,6 +223,9 @@ export function buildCalambaMapHtml(
         white-space: nowrap;
       }
       .layer-ctrl-btn:hover { background: rgba(15,23,42,0.98); }
+      .layer-ctrl-btn.layer-ctrl-btn-prominent { gap: 6px; min-height: 36px; min-width: 90px; padding: 8px 12px; }
+      .layer-ctrl-btn.layer-ctrl-btn-prominent svg { height: 18px !important; width: 18px !important; }
+      .layer-ctrl-btn.layer-ctrl-btn-prominent span { font-size: 14px !important; }
       /* Expanded icon-grid panel */
       .layer-ctrl-panel {
         background: rgba(13,20,35,0.96);
@@ -2496,7 +2500,7 @@ export function buildCalambaMapHtml(
           L.DomEvent.disableScrollPropagation(container);
 
           // Collapsed toggle button — just icon + label
-          var btn = L.DomUtil.create('button', 'layer-ctrl-btn', container);
+          var btn = L.DomUtil.create('button', 'layer-ctrl-btn' + (mapBehavior.largeLayerControl ? ' layer-ctrl-btn-prominent' : ''), container);
           btn.type = 'button';
           btn.title = 'Map Layers';
           btn.innerHTML =

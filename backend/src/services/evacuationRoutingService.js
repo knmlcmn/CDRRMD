@@ -29,6 +29,8 @@ async function findNearestAvailableEvacuationArea(
     requirePreferredArea = false,
     requiredSlots = 1,
     excludeReportId = null,
+    barangayName = null,
+    allowOtherBarangaysWhenLocalFull = false,
   } = {},
 ) {
   await lockEvacuationCapacity(client);
@@ -38,6 +40,8 @@ async function findNearestAvailableEvacuationArea(
   const excludesReport = Number.isSafeInteger(excludedId) && excludedId > 0;
   const summarySql = reservationSummary(excludesReport ? '$2' : '');
   const preferredId = Number(preferredAreaId);
+  const requiredBarangay = String(barangayName || '').trim();
+  if (!requiredBarangay) return null;
 
   if (Number.isSafeInteger(preferredId) && preferredId > 0) {
     const preferred = await client.query(
@@ -46,8 +50,9 @@ async function findNearestAvailableEvacuationArea(
        FROM evacuation_areas ea
        LEFT JOIN (${summarySql}) stats ON stats.evacuation_area_id = ea.id
        WHERE ea.id = $1 AND ea.is_active = TRUE
+         AND LOWER(ea.barangay) = LOWER($${excludesReport ? 3 : 2})
        LIMIT 1`,
-      excludesReport ? [preferredId, excludedId] : [preferredId],
+      excludesReport ? [preferredId, excludedId, requiredBarangay] : [preferredId, requiredBarangay],
     );
     const area = preferred.rows[0];
     if (area && Number(area.total_evacuees) + requiredSlots <= Number(area.capacity)) {
@@ -71,13 +76,28 @@ async function findNearestAvailableEvacuationArea(
      WHERE ea.is_active = TRUE
        AND ea.latitude IS NOT NULL
        AND ea.longitude IS NOT NULL
+       AND LOWER(ea.barangay) = LOWER($${excludesReport ? 3 : 2})
        AND (ea.evacuees + COALESCE(stats.incoming_total, 0) + $1) <= ea.capacity
      ORDER BY ea.id`,
-    excludesReport ? [requiredSlots, excludedId] : [requiredSlots],
+    excludesReport ? [requiredSlots, excludedId, requiredBarangay] : [requiredSlots, requiredBarangay],
   );
+  const candidateRows = available.rows.length > 0 || !allowOtherBarangaysWhenLocalFull
+    ? available.rows
+    : (await client.query(
+      `SELECT ea.id, ea.name, ea.barangay, ea.latitude, ea.longitude, ea.capacity,
+              (ea.evacuees + COALESCE(stats.incoming_total, 0))::int AS total_evacuees
+       FROM evacuation_areas ea
+       LEFT JOIN (${availableSummarySql}) stats ON stats.evacuation_area_id = ea.id
+       WHERE ea.is_active = TRUE
+         AND ea.latitude IS NOT NULL
+         AND ea.longitude IS NOT NULL
+         AND (ea.evacuees + COALESCE(stats.incoming_total, 0) + $1) <= ea.capacity
+       ORDER BY ea.id`,
+      excludesReport ? [requiredSlots, excludedId] : [requiredSlots],
+    )).rows;
   const routed = await findShortestReachableDestination(
     { latitude, longitude },
-    available.rows.map((area) => ({
+    candidateRows.map((area) => ({
       ...area,
       latitude: Number(area.latitude),
       longitude: Number(area.longitude),
@@ -89,7 +109,7 @@ async function findNearestAvailableEvacuationArea(
 async function evacuationAreaStillHasCapacity(
   client,
   evacuationAreaId,
-  { requiredSlots = 1, excludeReportId = null } = {},
+  { requiredSlots = 1, excludeReportId = null, barangayName = null, allowOtherBarangays = false } = {},
 ) {
   const id = Number(evacuationAreaId);
   if (!Number.isSafeInteger(id) || id <= 0) return null;
@@ -99,6 +119,9 @@ async function evacuationAreaStillHasCapacity(
   const excludesReport = Number.isSafeInteger(excludedId) && excludedId > 0;
   const summarySql = reservationSummary(excludesReport ? '$2' : '');
   const slotsParameter = excludesReport ? '$3' : '$2';
+  const requiredBarangay = String(barangayName || '').trim();
+  if (!requiredBarangay) return null;
+  const barangayParameter = excludesReport ? '$4' : '$3';
 
   const result = await client.query(
     `SELECT ea.id, ea.name, ea.barangay, ea.latitude, ea.longitude, ea.capacity,
@@ -106,9 +129,12 @@ async function evacuationAreaStillHasCapacity(
      FROM evacuation_areas ea
      LEFT JOIN (${summarySql}) stats ON stats.evacuation_area_id = ea.id
      WHERE ea.id = $1 AND ea.is_active = TRUE
+       ${allowOtherBarangays ? '' : `AND LOWER(ea.barangay) = LOWER(${barangayParameter})`}
        AND (ea.evacuees + COALESCE(stats.incoming_total, 0) + ${slotsParameter}) <= ea.capacity
      LIMIT 1`,
-    excludesReport ? [id, excludedId, slots] : [id, slots],
+    allowOtherBarangays
+      ? (excludesReport ? [id, excludedId, slots] : [id, slots])
+      : (excludesReport ? [id, excludedId, slots, requiredBarangay] : [id, slots, requiredBarangay]),
   );
   return result.rows[0] || null;
 }

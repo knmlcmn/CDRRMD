@@ -30,6 +30,13 @@
     "plugins": [
       "expo-font",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow CDRRMD to access your photos so you can choose an image.",
+          "cameraPermission": "Allow CDRRMD to use your camera to capture the current situation."
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "Allow CDRRMD to use your live location for safety features and automatic barangay assignment."

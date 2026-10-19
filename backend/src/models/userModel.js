@@ -32,7 +32,7 @@ async function findStaffByAccountId(accountId, role) {
 
 async function findPublicUserById(id) {
   const result = await pool.query(
-    `SELECT id, username, email, first_name, last_name, address, contact_number, role, barangay_name,
+    `SELECT id, username, email, first_name, last_name, address, contact_number, profile_image, role, barangay_name,
             created_at
      FROM users
      WHERE id = $1
@@ -84,9 +84,10 @@ async function updateMyProfile(userId, profile) {
        email = $3,
        address = $4,
        contact_number = $5,
-       password_hash = COALESCE($6, password_hash)
-     WHERE id = $7
-     RETURNING id, username, role, email, first_name, last_name, address, contact_number, barangay_name, created_at`,
+       password_hash = COALESCE($6, password_hash),
+       profile_image = COALESCE($7, profile_image)
+     WHERE id = $8
+     RETURNING id, username, role, email, first_name, last_name, address, contact_number, profile_image, barangay_name, created_at`,
     [
       profile.firstName,
       profile.lastName,
@@ -94,6 +95,7 @@ async function updateMyProfile(userId, profile) {
       profile.address,
       profile.contactNumber,
       profile.passwordHash || null,
+      profile.profileImage || null,
       userId,
     ],
   );
@@ -101,20 +103,19 @@ async function updateMyProfile(userId, profile) {
   return result.rows[0] || null;
 }
 
-async function assignResidentBarangayFromLocation(userId, barangayName, latitude, longitude) {
+async function updateResidentLocation(userId, latitude, longitude, currentBarangayName) {
   const result = await pool.query(
     `UPDATE users
-     SET barangay_name = $2,
-         current_latitude = $3,
-         current_longitude = $4,
-         current_barangay_name = $2,
+     SET current_latitude = $2,
+         current_longitude = $3,
+         current_barangay_name = $4,
          location_updated_at = NOW()
      WHERE id = $1
        AND role = 'user'
        AND COALESCE(is_archived, FALSE) = FALSE
      RETURNING id, username, role, email, first_name, last_name, address,
                contact_number, barangay_name, created_at`,
-    [userId, barangayName, latitude, longitude],
+    [userId, latitude, longitude, currentBarangayName],
   );
 
   return result.rows[0] || null;
@@ -1036,7 +1037,7 @@ module.exports = {
   findPublicUserById,
   createUser,
   updateMyProfile,
-  assignResidentBarangayFromLocation,
+  updateResidentLocation,
   findDuplicateEmailForUser,
   updateUserPasswordById,
   listAdmins,

@@ -292,7 +292,12 @@ async function createReport(req, res) {
   const nearestTestBarangay = serviceAreaBypassEnabled
     ? resolveNearbyBarangayAtLocation(lat, lon, FLOOD_ALERT_BARANGAYS, Number.POSITIVE_INFINITY)?.name
     : null;
-  const serviceAreaBarangay = supportedLocationBarangay || nearestTestBarangay || null;
+  // Test mode uses the account's configured test barangay so that the mobile
+  // recommendation and server-side barangay-only center rule stay aligned.
+  const configuredTestBarangay = serviceAreaBypassEnabled && isSupportedBarangay(user.barangay_name)
+    ? user.barangay_name
+    : null;
+  const serviceAreaBarangay = supportedLocationBarangay || configuredTestBarangay || nearestTestBarangay || null;
   if (!serviceAreaBarangay) {
     return res.status(422).json({
       message: 'This location is outside the supported barangay jurisdiction. The report cannot be submitted.',
@@ -348,16 +353,18 @@ async function createReport(req, res) {
     let evacuationReassigned = false;
 
     if (normalizedType === 'rescue') {
-      // The client recommendation is calculated from the live road network.
-      // Revalidate its capacity under the transaction lock, then preserve it.
+      // Use the report location's barangay first. If every local center is
+      // full, the routing service expands the search to other barangays.
       const availableArea = await findNearestAvailableEvacuationArea(
         client,
         lat,
         lon,
         {
           preferredAreaId: evacuationAreaId,
-          requirePreferredArea: true,
+          requirePreferredArea: false,
           requiredSlots: rescuePartySize,
+          barangayName: assignedBarangay,
+          allowOtherBarangaysWhenLocalFull: true,
         },
       );
       if (!availableArea) {
@@ -747,7 +754,7 @@ async function updateReportStatus(req, res) {
   const declineExplanation = String(req.body?.declineExplanation || '').trim();
 
   const currentResult = await pool.query(
-    `SELECT id, status, report_code, report_type, reported_by, latitude, longitude, evacuation_area_id, evacuation_area_name, evacuees_reserved
+    `SELECT id, status, report_code, report_type, reported_by, latitude, longitude, assigned_barangay, evacuation_area_id, evacuation_area_name, evacuees_reserved
      FROM incident_reports
      WHERE id = $1
      LIMIT 1`,
@@ -848,6 +855,8 @@ async function updateReportStatus(req, res) {
           ? await evacuationAreaStillHasCapacity(client, current.evacuation_area_id, {
               requiredSlots: Math.max(1, Number(current.evacuees_reserved || 1)),
               excludeReportId: current.id,
+              barangayName: current.assigned_barangay,
+              allowOtherBarangays: true,
             })
           : null;
 
@@ -861,6 +870,8 @@ async function updateReportStatus(req, res) {
             {
               requiredSlots: Math.max(1, Number(current.evacuees_reserved || 1)),
               excludeReportId: current.id,
+              barangayName: current.assigned_barangay,
+              allowOtherBarangaysWhenLocalFull: true,
             },
           );
         }
@@ -1044,6 +1055,8 @@ async function updateReportStatus(req, res) {
           preferredAreaId: current.evacuation_area_id,
           requiredSlots: effectiveEvacueesReserved,
           excludeReportId: current.id,
+          barangayName: current.assigned_barangay,
+          allowOtherBarangaysWhenLocalFull: true,
         },
       );
 
@@ -1077,6 +1090,8 @@ async function updateReportStatus(req, res) {
             preferredAreaId: current.evacuation_area_id,
             requiredSlots: effectiveEvacueesReserved,
             excludeReportId: current.id,
+            barangayName: current.assigned_barangay,
+            allowOtherBarangaysWhenLocalFull: true,
           },
         );
 

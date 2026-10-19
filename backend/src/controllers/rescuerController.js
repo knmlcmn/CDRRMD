@@ -381,7 +381,7 @@ async function updateMyLocation(req, res) {
 
     const assignmentResult = await client.query(
       `SELECT br.id AS backup_request_id, br.report_id, br.responder_acknowledged_at, br.picked_up_at,
-              ir.status, ir.reported_by, ir.report_code, ir.evacuees_reserved,
+              ir.status, ir.reported_by, ir.report_code, ir.assigned_barangay, ir.evacuees_reserved,
               ir.evacuation_area_id, ir.evacuation_area_name,
               CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
                   AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
@@ -428,6 +428,8 @@ async function updateMyLocation(req, res) {
         {
           requiredSlots: Math.max(1, Number(assignment.evacuees_reserved || 1)),
           excludeReportId: assignment.report_id,
+          barangayName: assignment.assigned_barangay,
+          allowOtherBarangaysWhenLocalFull: true,
         },
       );
       if (!destinationArea) {
@@ -468,14 +470,14 @@ async function updateMyLocation(req, res) {
       const currentArea = await evacuationAreaStillHasCapacity(
         client,
         assignment.evacuation_area_id,
-        { requiredSlots, excludeReportId: assignment.report_id },
+        { requiredSlots, excludeReportId: assignment.report_id, barangayName: assignment.assigned_barangay, allowOtherBarangays: true },
       );
       if (!currentArea) {
         const replacementArea = await findNearestAvailableEvacuationArea(
           client,
           latitude,
           longitude,
-          { requiredSlots, excludeReportId: assignment.report_id },
+          { requiredSlots, excludeReportId: assignment.report_id, barangayName: assignment.assigned_barangay, allowOtherBarangaysWhenLocalFull: true },
         );
         if (!replacementArea) {
           throw httpError(409, 'The assigned evacuation center is full and no reachable alternative currently has enough capacity.');

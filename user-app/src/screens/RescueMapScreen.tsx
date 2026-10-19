@@ -18,7 +18,7 @@ import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import PlatformMap from '../components/PlatformMap';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
-import { api, setApiAuthorizationToken } from '../services/api';
+import { api, assignAuthBarangayFromLocation, setApiAuthorizationToken } from '../services/api';
 import { fetchBestRoadRoute, fetchRoadRoute } from '../services/routingService';
 import { loadSession } from '../services/session';
 import { MAX_MAP_CONTENT_WIDTH, useResponsiveLayout } from '../utils/responsive';
@@ -111,6 +111,10 @@ function isAreaFull(area: EvacuationArea) {
   return !hasCapacityFor(area, 1);
 }
 
+function isInBarangay(area: EvacuationArea, barangayName: string) {
+  return String(area.barangay || '').trim().toLowerCase() === String(barangayName || '').trim().toLowerCase();
+}
+
 const CALAMBA_BOUNDS = {
   latMin: 14.137703,
   latMax: 14.2662133,
@@ -157,9 +161,15 @@ function formatEtaText(etaMinutes: number) {
 async function resolveBestRoadPlan(
   userLocation: Coordinate,
   evacuationAreas: EvacuationArea[],
+  barangayName: string,
   peopleCount = 1,
 ): Promise<RescuePlan | null> {
-  const availableAreas = evacuationAreas.filter((area) => hasCapacityFor(area, peopleCount));
+  const localAvailableAreas = evacuationAreas.filter((area) =>
+    isInBarangay(area, barangayName) && hasCapacityFor(area, peopleCount));
+  // Leave the report's barangay only when every local center is full.
+  const availableAreas = localAvailableAreas.length > 0
+    ? localAvailableAreas
+    : evacuationAreas.filter((area) => hasCapacityFor(area, peopleCount));
   const bestRoute = await fetchBestRoadRoute(
     userLocation,
     availableAreas.map((area) => ({
@@ -1355,6 +1365,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
   const [floodAlertNotificationId, setFloodAlertNotificationId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationArea[]>([]);
+  const [rescueBarangay, setRescueBarangay] = useState('');
   const [mapEvacuationAreas, setMapEvacuationAreas] = useState<EvacuationArea[]>([]);
   const [recentRescueRecords, setRecentRescueRecords] = useState<RescueRecord[]>([]);
   const layerVisibilityRef = useRef<UserMapLayerVisibility>({
@@ -1446,23 +1457,43 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       userMarker: true,
       route: true,
     };
+    let reportBarangay = '';
+    try {
+      const response = await assignAuthBarangayFromLocation(userLocation.latitude, userLocation.longitude);
+      reportBarangay = String(response.data?.barangayName || '').trim();
+    } catch {
+      // Test mode can use its configured session barangay; production must use
+      // the exact barangay that contains the submitted location.
+      if (testModeEnabled) {
+        const session = await loadSession();
+        reportBarangay = String(session?.user?.barangayName || '').trim();
+      }
+    }
+    if (!reportBarangay) {
+      showNotice('Barangay unavailable', 'Your barangay could not be determined. Please refresh your location and try again.');
+      return;
+    }
+    setRescueBarangay(reportBarangay);
     const latestAreas = await loadEvacuationAreas(true);
     if (!latestAreas.some((area) => !isAreaFull(area))) {
-      showNotice('No available evacuation area', 'All evacuation areas are currently full. Please try again shortly.');
+      showNotice('No available evacuation area', 'All evacuation centers are currently full. Please try again shortly.');
       return;
     }
 
     setRoutingRecommendation(true);
     try {
-      const plan = await resolveBestRoadPlan(userLocation, latestAreas);
+      const plan = await resolveBestRoadPlan(userLocation, latestAreas, reportBarangay);
       if (!plan) {
         showNotice(
           'No reachable evacuation area',
-          'No available evacuation center could be reached through the current road network. Please try again shortly.',
+          `No available evacuation center could be reached through the current road network. Please try again shortly.`,
         );
         return;
       }
       applyRoadPlan(plan);
+      if (!isInBarangay(plan.area, reportBarangay)) {
+        showNotice('Local centers are full', `All evacuation centers in Barangay ${reportBarangay} are full. The nearest available center is ${plan.area.name} in Barangay ${plan.area.barangay}.`);
+      }
     } catch {
       showNotice(
         'Road routing unavailable',
@@ -1654,14 +1685,24 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     );
   }, [mapEvacuationAreas, apiBaseUrl, isMapFullscreen, requestStarted, routeCoordinates, selectedArea, selectedAreaId, userLocation]);
 
+  function applyProofImage(asset: ImagePicker.ImagePickerAsset) {
+    setProofImageUri(asset.uri || null);
+    if (asset.base64) {
+      const mimeType = asset.mimeType || 'image/jpeg';
+      setProofImageBase64(`data:${mimeType};base64,${asset.base64}`);
+    } else {
+      setProofImageBase64(null);
+    }
+  }
+
   async function handleUploadProof() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
-      showNotice('Permission needed', 'Please allow photo access to upload proof.');
+      showNotice('Camera needed', 'Please allow camera access to capture a photo of the current situation.');
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
+    const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
       quality: 0.8,
@@ -1669,14 +1710,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     });
 
     if (!result.canceled && result.assets.length > 0) {
-      const asset = result.assets[0];
-      setProofImageUri(asset.uri || null);
-      if (asset.base64) {
-        const mimeType = asset.mimeType || 'image/jpeg';
-        setProofImageBase64(`data:${mimeType};base64,${asset.base64}`);
-      } else {
-        setProofImageBase64(null);
-      }
+      applyProofImage(result.assets[0]);
     }
   }
 
@@ -1702,17 +1736,25 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
 
   async function handleSubmitRescue() {
     const hasVerifiedAlertProof = Number.isInteger(floodAlertNotificationId);
-    if (!userLocation || !selectedArea || (!hasVerifiedAlertProof && (!proofImageUri || !proofImageBase64)) || submitting) {
+    if (!userLocation || !selectedArea || !rescueBarangay || (!hasVerifiedAlertProof && (!proofImageUri || !proofImageBase64)) || submitting) {
       return;
     }
 
     const latestAreas = await loadEvacuationAreas(true);
     const refreshedSelected = latestAreas.find((area) => area.id === selectedArea.id) || selectedArea;
 
+    const hasLocalCapacity = latestAreas.some((area) =>
+      isInBarangay(area, rescueBarangay) && hasCapacityFor(area, peopleCount));
+    if (!isInBarangay(refreshedSelected, rescueBarangay) && hasLocalCapacity) {
+      setSelectedAreaId(null);
+      showNotice('Select a local center', `Rescue requests from Barangay ${rescueBarangay} must use an evacuation center in the same barangay.`);
+      return;
+    }
+
     if (!hasCapacityFor(refreshedSelected, peopleCount)) {
       setRoutingRecommendation(true);
       try {
-        const plan = await resolveBestRoadPlan(userLocation, latestAreas, peopleCount);
+        const plan = await resolveBestRoadPlan(userLocation, latestAreas, rescueBarangay, peopleCount);
         if (plan) {
           applyRoadPlan(plan);
           showNotice(
@@ -1773,6 +1815,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       setProofImageBase64(null);
       setRescueNotes('');
       setPeopleCount(1);
+      setRescueBarangay('');
       setFloodAlertNotificationId(null);
       setRouteCoordinates([]);
       setRouteDistanceKm(null);
@@ -1790,7 +1833,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
         setRoutingRecommendation(true);
         try {
           const refreshedAreas = await loadEvacuationAreas(true);
-          const replacementPlan = await resolveBestRoadPlan(userLocation, refreshedAreas, peopleCount);
+          const replacementPlan = await resolveBestRoadPlan(userLocation, refreshedAreas, rescueBarangay, peopleCount);
           if (replacementPlan) {
             applyRoadPlan(replacementPlan);
             showNotice(
@@ -1885,7 +1928,8 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
             ]}>
               {!isAlertVerifiedRequest ? (
                 <TouchableOpacity style={[st.uploadBtn, isSmall && st.fullWidthButton]} activeOpacity={0.88} onPress={handleUploadProof}>
-                  <Text style={st.uploadBtnText}>{proofImageUri ? '✓ Image Uploaded' : 'Upload Image'}</Text>
+                  <MaterialCommunityIcons name="camera" size={17} color="#fff" />
+                  <Text style={st.uploadBtnText}>Send Proof</Text>
                 </TouchableOpacity>
               ) : null}
               <View style={[
@@ -2211,9 +2255,10 @@ const st = StyleSheet.create({
     flex: 1,
     backgroundColor: editorial.accent,
     borderRadius: 10,
-    alignItems: 'center',
+    flexDirection: 'row', alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 12,
+    gap: 6,
   },
   uploadBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
   submitBtn: {
