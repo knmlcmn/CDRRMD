@@ -7,6 +7,11 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 
 const pool = require('./config/db');
+const { getRedisState } = require('./config/redis');
+const auth = require('./middleware/auth');
+const rateLimit = require('./middleware/rateLimit');
+const { performanceMiddleware, snapshot: performanceSnapshot } = require('./services/performanceMonitor');
+const { getCacheStats } = require('./services/cacheService');
 const authRoutes = require('./routes/authRoutes');
 const contentRoutes = require('./routes/contentRoutes');
 const weatherRoutes = require('./routes/weatherRoutes');
@@ -16,6 +21,7 @@ const reportRoutes = require('./routes/reportRoutes');
 const barangayRoutes = require('./routes/barangayRoutes');
 
 const app = express();
+app.set('trust proxy', 1);
 
 // Normalize frontend URLs for CORS.
 function normalizeOrigin(origin) {
@@ -66,6 +72,21 @@ app.use(cors({
   },
 }));
 
+app.use(performanceMiddleware);
+
+app.use('/api', rateLimit({
+  namespace: 'api',
+  limit: Number(process.env.API_RATE_LIMIT || 3_000),
+  windowMs: Number(process.env.API_RATE_WINDOW_MS || 60_000),
+  skip: (req) => req.method === 'OPTIONS' || ['/health', '/ready'].includes(req.path) || (
+    ['POST', 'PUT', 'PATCH'].includes(req.method) && (
+      req.path === '/reports' ||
+      req.path.startsWith('/backup-requests') ||
+      req.path.startsWith('/rescuers/location')
+    )
+  ),
+}));
+
 if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('dev'));
 }
@@ -76,10 +97,31 @@ app.use(express.urlencoded({
   limit: '35mb',
 }));
 
-// Health check.
-app.get('/api/health', async (req, res) => {
+// Fast liveness check. Use /api/ready for dependency readiness.
+app.get('/api/health', (req, res) => res.json({ status: 'ok', uptimeSeconds: Math.floor(process.uptime()) }));
+
+app.get('/api/ready', async (req, res) => {
   await pool.query('SELECT 1');
-  return res.json({ status: 'ok' });
+  return res.json({ status: 'ready', redis: getRedisState() });
+});
+
+app.get('/api/performance', auth, (req, res) => {
+  if (req.user?.role !== 'admin') return res.status(403).json({ message: 'Admin access required.' });
+  return res.json({
+    generatedAt: new Date().toISOString(),
+    process: {
+      uptimeSeconds: Math.floor(process.uptime()),
+      memoryMb: Object.fromEntries(Object.entries(process.memoryUsage()).map(([key, value]) => [key, Number((value / 1048576).toFixed(2))])),
+    },
+    databasePool: {
+      total: pool.totalCount,
+      idle: pool.idleCount,
+      waiting: pool.waitingCount,
+    },
+    redis: getRedisState(),
+    cache: getCacheStats(),
+    routes: performanceSnapshot(),
+  });
 });
 
 // API routes.

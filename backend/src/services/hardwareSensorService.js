@@ -1,9 +1,13 @@
 const FIREBASE_DATABASE_URL = String(
   process.env.FIREBASE_DATABASE_URL || 'https://capstone-4de76-default-rtdb.asia-southeast1.firebasedatabase.app',
 ).replace(/\/$/, '');
+const cache = require('./cacheService');
 
 const SENSOR_STATUS_PATH = 'Sensor Status Settings';
-const CACHE_TTL_MS = 10_000;
+// Keep one short-lived snapshot for every connected portal. This prevents each
+// browser from polling Firebase independently while still surfacing a hardware
+// transition in well under the old ten-second cache window.
+const CACHE_TTL_MS = 750;
 const SENSOR_ASSIGNMENTS = [
   { id: 'waterSensor1', barangayName: 'Palingon', hardwareNo: 'HW-01', latitude: 14.2156165, longitude: 121.1835861 },
   { id: 'waterSensor2', barangayName: 'Sampiruhan', hardwareNo: 'HW-02', latitude: 14.21828, longitude: 121.18029 },
@@ -69,10 +73,51 @@ function normalizeReading(payload) {
 
 async function readFirebasePath(path) {
   const response = await fetch(`${FIREBASE_DATABASE_URL}/${encodeURIComponent(path)}.json`, {
-    signal: AbortSignal.timeout(8_000),
+    signal: AbortSignal.timeout(3_000),
   });
   if (!response.ok) throw new Error(`Firebase ${path} request returned ${response.status}.`);
   return response.json();
+}
+
+async function fetchHardwareSensorSnapshot() {
+  const [statuses, ...payloads] = await Promise.all([
+    readFirebasePath(SENSOR_STATUS_PATH).catch(() => ({})),
+    ...SENSOR_ASSIGNMENTS.map((sensor) => readFirebasePath(sensor.id).catch(() => null)),
+  ]);
+  const sensors = SENSOR_ASSIGNMENTS.map((assignment, index) => {
+    const payload = payloads[index];
+    const statusRecord = statuses?.[assignment.id];
+    const status = statusRecord && typeof statusRecord === 'object' ? statusRecord.status : statusRecord;
+    const reading = normalizeReading(payload);
+    return {
+      ...assignment,
+      latitude: Number.isFinite(reading.latitude) ? reading.latitude : assignment.latitude,
+      longitude: Number.isFinite(reading.longitude) ? reading.longitude : assignment.longitude,
+      active: String(status || 'Active') !== 'Unavailable',
+      readable: payload !== null,
+      distanceCm: reading.distanceCm ?? null,
+      waterLevelPercentage: reading.waterLevelPercentage ?? null,
+      temperatureCelsius: reading.temperatureCelsius ?? null,
+      humidityPercentage: reading.humidityPercentage === null
+        ? null
+        : Math.max(0, Math.min(100, reading.humidityPercentage)),
+      updatedAt: reading.updatedAt,
+    };
+  });
+  const activeSensors = sensors.filter((sensor) => sensor.active && sensor.readable);
+  const temperatures = activeSensors.map((sensor) => sensor.temperatureCelsius).filter(Number.isFinite);
+  const humidities = activeSensors.map((sensor) => sensor.humidityPercentage).filter(Number.isFinite);
+  return {
+    source: 'firebase-hardware',
+    updatedAt: new Date().toISOString(),
+    sensors,
+    averageTemperatureCelsius: temperatures.length
+      ? temperatures.reduce((sum, value) => sum + value, 0) / temperatures.length
+      : null,
+    averageHumidityPercentage: humidities.length
+      ? humidities.reduce((sum, value) => sum + value, 0) / humidities.length
+      : null,
+  };
 }
 
 async function loadHardwareSensorSnapshot() {
@@ -80,48 +125,16 @@ async function loadHardwareSensorSnapshot() {
   if (cachedSnapshot && now - cachedAt < CACHE_TTL_MS) return cachedSnapshot;
   if (loadPromise) return loadPromise;
 
-  loadPromise = (async () => {
-    const [statuses, ...payloads] = await Promise.all([
-      readFirebasePath(SENSOR_STATUS_PATH).catch(() => ({})),
-      ...SENSOR_ASSIGNMENTS.map((sensor) => readFirebasePath(sensor.id).catch(() => null)),
-    ]);
-    const sensors = SENSOR_ASSIGNMENTS.map((assignment, index) => {
-      const payload = payloads[index];
-      const statusRecord = statuses?.[assignment.id];
-      const status = statusRecord && typeof statusRecord === 'object' ? statusRecord.status : statusRecord;
-      const reading = normalizeReading(payload);
-      return {
-        ...assignment,
-        latitude: Number.isFinite(reading.latitude) ? reading.latitude : assignment.latitude,
-        longitude: Number.isFinite(reading.longitude) ? reading.longitude : assignment.longitude,
-        active: String(status || 'Active') !== 'Unavailable',
-        readable: payload !== null,
-        distanceCm: reading.distanceCm ?? null,
-        waterLevelPercentage: reading.waterLevelPercentage ?? null,
-        temperatureCelsius: reading.temperatureCelsius ?? null,
-        humidityPercentage: reading.humidityPercentage === null
-          ? null
-          : Math.max(0, Math.min(100, reading.humidityPercentage)),
-        updatedAt: reading.updatedAt,
-      };
-    });
-    const activeSensors = sensors.filter((sensor) => sensor.active && sensor.readable);
-    const temperatures = activeSensors.map((sensor) => sensor.temperatureCelsius).filter(Number.isFinite);
-    const humidities = activeSensors.map((sensor) => sensor.humidityPercentage).filter(Number.isFinite);
-    cachedSnapshot = {
-      source: 'firebase-hardware',
-      updatedAt: new Date().toISOString(),
-      sensors,
-      averageTemperatureCelsius: temperatures.length
-        ? temperatures.reduce((sum, value) => sum + value, 0) / temperatures.length
-        : null,
-      averageHumidityPercentage: humidities.length
-        ? humidities.reduce((sum, value) => sum + value, 0) / humidities.length
-        : null,
-    };
-    cachedAt = Date.now();
+  loadPromise = cache.getOrLoad(
+    'iot:hardware-snapshot',
+    { ttlMs: 500 },
+    fetchHardwareSensorSnapshot,
+  ).then(({ value }) => {
+    cachedSnapshot = value;
+    const sourceTime = Date.parse(String(value?.updatedAt || ''));
+    cachedAt = Number.isFinite(sourceTime) ? sourceTime : Date.now();
     return cachedSnapshot;
-  })().finally(() => {
+  }).finally(() => {
     loadPromise = null;
   });
 

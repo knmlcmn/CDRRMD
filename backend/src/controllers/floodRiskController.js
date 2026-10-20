@@ -1134,6 +1134,17 @@ async function getCalambaRainImpact(req, res) {
   }
 }
 
+async function getHardwareSensorSnapshot(req, res) {
+  try {
+    const snapshot = await loadHardwareSensorSnapshot();
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    return res.json(snapshot);
+  } catch (error) {
+    console.error('Failed to load live hardware sensor data:', error.message);
+    return res.status(503).json({ message: 'Live hardware sensor data is temporarily unavailable.' });
+  }
+}
+
 module.exports = {
   getCalambaFloodRisk,
   getCalambaFloodZones,
@@ -1141,4 +1152,5 @@ module.exports = {
   getCalambaBarangayBoundaries,
   getCalambaBarangayPolygons,
   getCalambaRainImpact,
+  getHardwareSensorSnapshot,
 };

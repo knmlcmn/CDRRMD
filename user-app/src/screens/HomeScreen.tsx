@@ -198,7 +198,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
 
   useEffect(() => {
     load().catch(() => {});
-    const timer = setInterval(() => loadNotifications().catch(() => {}), 8_000);
+    const timer = setInterval(() => loadNotifications().catch(() => {}), 2_000);
     const weatherTimer = setInterval(() => {
       const browserVisible = typeof document === 'undefined' || document.visibilityState === 'visible';
       if (AppState.currentState === 'active' && browserVisible) refreshWeather().catch(() => {});

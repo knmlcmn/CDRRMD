@@ -12,7 +12,7 @@ import RescueImagePreview from './components/RescueImagePreview';
 import AssignedRescuerField from '../components/AssignedRescuerField';
 import { API_BASE_URL, api, setAuthToken } from '../services/apiClient';
 import { useRescuerAssignmentPreview } from '../services/rescuerAssignmentPreview';
-import { loadWaterLevelSensors, type WaterLevelSensor } from './services/waterLevelSensors';
+import { loadWaterLevelSensors, WATER_LEVEL_POLL_INTERVAL_MS, type WaterLevelSensor } from './services/waterLevelSensors';
 import { liveAlertKey, removeAlertKeysForId } from '../utils/liveAlertKey';
 
 type View = 'dashboard' | 'monitoring' | 'flood-monitoring' | 'evacuation-center' | 'account' | 'history';
@@ -144,7 +144,7 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
       }
     };
     void checkWaterLevel();
-    const timer = window.setInterval(() => void checkWaterLevel(), 10_000);
+    const timer = window.setInterval(() => void checkWaterLevel(), WATER_LEVEL_POLL_INTERVAL_MS);
     return () => {
       stopped = true;
       window.clearInterval(timer);

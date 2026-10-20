@@ -265,7 +265,7 @@ function buildLeafletHtml(
       .map-legend .updated{color:#64748b;font-size:10px;margin-top:5px}
       .legend-section-label{align-items:center;border-top:1px solid #e2e8f0;color:#1e40af;display:flex;flex-direction:row;font-size:10px;font-weight:800;justify-content:flex-start;gap:4px;margin-top:7px;padding-top:5px;text-transform:uppercase;letter-spacing:0.04em}
       .legend-section-dot{border-radius:999px;display:inline-block;flex-shrink:0;height:8px;width:8px}
-      .layer-control{font-family:Arial,sans-serif;height:32px;max-width:calc(100vw - 20px);position:relative;width:190px}.layer-control-button{background:rgba(15,23,42,.9);border:1px solid rgba(148,163,184,.45);border-radius:8px;color:#fff;cursor:pointer;font:700 11px/1 Arial,sans-serif;height:32px;min-width:88px;padding:0 10px;position:absolute;right:0;top:0;white-space:nowrap}.layer-control-panel{background:rgba(13,20,35,.96);border:1px solid rgba(148,163,184,.25);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.6);display:none;max-height:calc(100vh - 66px);max-height:calc(100dvh - 66px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;padding:10px 10px 8px;position:absolute;right:0;scrollbar-width:thin;top:38px;width:min(190px,calc(100vw - 20px))}.layer-control-panel.open{display:block}.layer-control-panel.scrollable{max-height:min(178px,calc(100vh - 66px));max-height:min(178px,calc(100dvh - 66px))}.layer-control-title{border-bottom:1px solid rgba(148,163,184,.2);color:#94a3b8;font-size:9px;font-weight:700;letter-spacing:.1em;margin-bottom:7px;padding-bottom:5px;text-align:center;text-transform:uppercase}.layer-control-row{align-items:center;color:#e2e8f0;display:flex;font-size:10px;font-weight:700;gap:8px;justify-content:space-between;padding:5px 0}.layer-control-row input{accent-color:#38bdf8;flex-shrink:0}
+      .layer-control{font-family:Arial,sans-serif;height:34px;max-width:calc(100vw - 16px);position:relative;width:220px}.layer-control-button{background:rgba(15,23,42,.94);border:1px solid rgba(148,163,184,.6);border-radius:8px;color:#fff;cursor:pointer;font:700 12px/1 Arial,sans-serif;height:34px;min-width:96px;padding:0 11px;position:absolute;right:0;top:0;white-space:nowrap}.layer-control-panel{background:rgba(13,20,35,.98);border:1px solid rgba(148,163,184,.4);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.6);box-sizing:border-box;display:none;max-height:calc(100vh - 66px);max-height:calc(100dvh - 66px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;padding:10px 11px 8px;position:absolute;right:0;scrollbar-width:thin;top:40px;width:min(220px,calc(100vw - 16px))}.layer-control-panel.open{display:block}.layer-control-panel.scrollable{max-height:min(230px,calc(100vh - 66px));max-height:min(230px,calc(100dvh - 66px))}.layer-control-title{border-bottom:1px solid rgba(148,163,184,.3);color:#cbd5e1;font-size:10px;font-weight:800;letter-spacing:.1em;margin-bottom:7px;padding-bottom:6px;text-align:center;text-transform:uppercase}.layer-control-row{align-items:center;color:#f1f5f9;display:flex;font-size:11px;font-weight:700;gap:8px;justify-content:space-between;min-height:22px;padding:5px 0}.layer-control-row input{accent-color:#38bdf8;flex-shrink:0;height:16px;width:16px}
       .flood-info{font:13px/1.35 Arial,sans-serif;min-width:220px}
       .flood-info .head{background:#0891b2;color:#fff;font-weight:800;margin:-10px -12px 10px;padding:10px 12px}
       .flood-info table{border-collapse:collapse;width:100%}
@@ -284,7 +284,7 @@ function buildLeafletHtml(
       .evac-status.available{background:#dcfce7;color:#166534}
       .evac-status.full{background:#fee2e2;color:#991b1b}
       .map-rain-canvas{left:0;opacity:.5;pointer-events:none;position:absolute;top:0;z-index:429}.map-wind-canvas{left:0;opacity:.5;pointer-events:none;position:absolute;top:0;z-index:430}.forecast-timebar{backdrop-filter:blur(9px);background:rgba(7,17,24,.94);border:1px solid rgba(148,163,184,.35);border-radius:18px;bottom:10px;box-shadow:0 5px 18px rgba(0,0,0,.38);color:#fff;display:none;left:50%;max-width:calc(100% - 16px);padding:8px 10px 7px;pointer-events:auto;position:absolute;transform:translateX(-50%);width:calc(100% - 16px);z-index:700}.forecast-time-track{position:relative}.forecast-time-labels{display:flex;justify-content:space-between;margin:0 5px 3px}.forecast-time-label{color:#f8fafc;font:700 10px/1.1 Arial,sans-serif;text-align:center}.forecast-time-date{color:#cbd5e1;display:block;font:8px/1 Arial,sans-serif}.forecast-time-range{appearance:none;background:repeating-linear-gradient(90deg,rgba(203,213,225,.7) 0 1px,transparent 1px 9px);border:0;display:block;height:26px;margin:0;outline:none;width:100%}.forecast-time-range::-webkit-slider-thumb{appearance:none;background:#f97316;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px rgba(249,115,22,.3);cursor:grab;height:17px;width:5px}.forecast-time-range::-moz-range-thumb{background:#f97316;border:2px solid #fff;border-radius:50%;cursor:grab;height:17px;width:5px}.forecast-time-summary{color:#dbeafe;font:700 9px/1.3 Arial,sans-serif;overflow:hidden;text-align:center;text-overflow:ellipsis;white-space:nowrap}
-      @media (max-width:420px){.forecast-timebar{bottom:6px;padding:6px 7px}.forecast-time-label{font-size:9px}.forecast-time-date{font-size:7px}.leaflet-control-zoom a{height:28px!important;line-height:28px!important;width:28px!important}.layer-control{width:166px}.layer-control-button{font-size:10px;height:29px;min-width:80px;padding:0 8px}.layer-control-panel{border-radius:10px;padding:7px 8px 6px;top:34px;width:min(166px,calc(100vw - 18px))}.layer-control-title{font-size:8px;margin-bottom:4px;padding-bottom:4px}.layer-control-row{font-size:9px;padding:4px 0}}
+      @media (max-width:420px){.forecast-timebar{bottom:6px;padding:6px 7px}.forecast-time-label{font-size:9px}.forecast-time-date{font-size:7px}.leaflet-control-zoom a{height:28px!important;line-height:28px!important;width:28px!important}.layer-control{width:200px}.layer-control-button{font-size:11px;height:32px;min-width:88px;padding:0 9px}.layer-control-panel{border-radius:10px;padding:8px 9px 7px;top:37px;width:min(200px,calc(100vw - 14px))}.layer-control-title{font-size:9px;margin-bottom:5px;padding-bottom:5px}.layer-control-row{font-size:10px;min-height:21px;padding:4px 0}}
     </style>
   </head>
   <body>
@@ -1188,13 +1188,13 @@ function buildLeafletHtml(
           var rows = [
             ['boundary', 'Calamba Boundary'],
             ['evacuationAreas', 'Evacuation Areas'],
-            ['userMarker', 'Your Location'],
+            ['userMarker', 'Rescuer Location'],
             ['route', 'Responder Route'],
             ['floodHazard', 'Flood Hazard'],
             ['rainOverlay', 'Rain Accumulation'],
             ['temperatureOverlay', 'Temperature'],
             ['humidityOverlay', 'Relative Humidity'],
-            ['windOverlay', 'Wind Layer'],
+            ['windOverlay', 'Wind Forecast'],
           ];
           rows.forEach(function(row) {
             var line = L.DomUtil.create('label', 'layer-control-row', panel);
@@ -1320,7 +1320,7 @@ function buildLeafletHtml(
       if (Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
       setInterval(function() {
         if (document.visibilityState === 'visible' && Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
-      }, 10000);
+      }, 2000);
       loadOsmWaterways();
       loadWeatherTimeline();
       loadRainImpact();

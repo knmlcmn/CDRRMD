@@ -2,6 +2,9 @@
 
 Monorepo structure:
 
+Responder operations now run in `user-app/`; `admin-web/` remains dedicated to
+Admin and Barangay management workflows.
+
 - `admin-web/` — unified React + Tailwind staff portal for Admin, Barangay, and CDRRMD Rescuer access
 - `user-app/` — Expo React Native mobile app (UI based on your screenshot)
 - `backend/` — Node.js/Express API with JWT auth + PostgreSQL
@@ -14,8 +17,9 @@ Monorepo structure:
    - `npm run dev:backend`
 3. Start admin web:
    - `npm run dev:admin`
-4. Start mobile user app:
+4. Start the mobile app:
    - `npm run dev:user`
+   - For the browser build at `http://localhost:8081`, run `npm run web`.
 
 ## PostgreSQL Auto-Connection
 
@@ -34,6 +38,8 @@ On backend start, tables are auto-created. Default staff accounts are seeded onl
 
 Admin and barangay web portals accept only their generated account ID and password.
 Usernames and email addresses cannot be used to sign in to either staff portal.
+CDRRMD and Barangay Rescuers use their `RSC-` or `BRS-` Account ID in the
+Rescuer login mode of `user-app`. Residents continue to use their email address.
 
 Default evacuation centers are inserted only once for a new, empty database.
 Centers deleted by an administrator remain deleted after backend restarts.
@@ -110,5 +116,7 @@ also be exported as a browser build. For Vercel, create a project with Root
 Directory `user-app`, build command `npm run web:build`, and output directory
 `dist`. Set `EXPO_PUBLIC_API_URL` to the deployed API without the `/api` suffix.
 
-The Android/iOS app continues to use Expo/EAS; Vercel only hosts its web build.
+Run `eas build --platform android --profile preview` from `user-app/` to create
+an installable APK. Set `EXPO_PUBLIC_API_URL` to the deployed backend URL;
+Vercel only hosts the web build.
 See `VERCEL_DEPLOYMENT.md` for the complete deployment sequence.

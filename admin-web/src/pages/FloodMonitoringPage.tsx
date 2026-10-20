@@ -488,7 +488,7 @@ export default function FloodMonitoringPage({
 
     const refreshTimer = setInterval(() => {
       loadData(false).catch(() => {});
-    }, 10000);
+    }, 2_000);
 
     return () => clearInterval(refreshTimer);
   }, [loadData]);

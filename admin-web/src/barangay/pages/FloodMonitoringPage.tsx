@@ -267,7 +267,7 @@ export default function FloodMonitoringPage({
 
   useEffect(() => {
     loadData(true).catch(() => {});
-    const refreshTimer = setInterval(() => loadData(false).catch(() => {}), 10_000);
+    const refreshTimer = setInterval(() => loadData(false).catch(() => {}), 2_000);
     return () => clearInterval(refreshTimer);
   }, [loadData]);
 

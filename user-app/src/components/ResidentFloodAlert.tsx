@@ -85,7 +85,7 @@ export default function ResidentFloodAlert({ onTestAccountRemoved, onSendRescue 
     }
 
     startLocationAlerts().catch(() => {});
-    const timer = setInterval(() => checkAlerts().catch(() => {}), 8_000);
+    const timer = setInterval(() => checkAlerts().catch(() => {}), 1_500);
     const appStateSubscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') checkAlerts().catch(() => {});
     });

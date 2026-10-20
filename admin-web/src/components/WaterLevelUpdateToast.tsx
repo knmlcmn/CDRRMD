@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { WaterLevelSensor } from '../services/waterLevelSensors';
 
 export type WaterLevelUpdateNoticeKind = 'update' | 'post-updates';
@@ -30,7 +31,7 @@ export default function WaterLevelUpdateToast({ sensors, kind, onDone, onSeeDeta
   ));
   const sensorSummary = sensors.length === 1 ? '1 hardware sensor has' : `${sensors.length} hardware sensors have`;
 
-  return (
+  return createPortal(
     <section
       className={`hardware-water-notice hardware-water-update-notice ${postUpdates ? 'hardware-water-notice-reminder' : 'hardware-water-notice-update'} ${isFading ? 'hardware-water-notice-vanishing' : ''}`}
       role="alert"
@@ -48,6 +49,7 @@ export default function WaterLevelUpdateToast({ sensors, kind, onDone, onSeeDeta
         {onSeeDetails ? <button className="hardware-water-see-details" type="button" onClick={onSeeDetails}>See details</button> : null}
       </div>
       <button className="hardware-water-notice-close" type="button" onClick={onDone} aria-label="Close water-level notification">×</button>
-    </section>
+    </section>,
+    document.body,
   );
 }

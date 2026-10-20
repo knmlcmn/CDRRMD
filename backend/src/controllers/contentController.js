@@ -5,6 +5,7 @@ const {
 } = require('../services/barangayBoundaryService');
 const { syncFloodSensorAlerts } = require('../services/floodSensorAlertService');
 const { lockEvacuationCapacity } = require('../services/evacuationRoutingService');
+const cache = require('../services/cacheService');
 
 const ALERT_CATEGORIES = new Set(['typhoon', 'flood']);
 const FLOOD_LEVELS = new Set(['low', 'medium', 'high']);
@@ -83,6 +84,8 @@ async function createAlert(req, res) {
     [title, body, normalizedCategory, normalizedSeverity, req.user.userId],
   );
 
+  await cache.remove('http:content:alerts');
+
   return res.status(201).json(result.rows[0]);
 }
 
@@ -116,6 +119,8 @@ async function createAnnouncement(req, res) {
      RETURNING id, title, body, created_at`,
     [title, body, req.user.userId],
   );
+
+  await cache.remove('http:content:announcements');
 
   return res.status(201).json(result.rows[0]);
 }
@@ -208,6 +213,8 @@ async function createEvacuationArea(req, res) {
     ],
   );
 
+  await cache.remove('http:content:evacuation-areas', 'http:content:dashboard-summary');
+
   return res.status(201).json(result.rows[0]);
 }
 
@@ -266,6 +273,7 @@ async function updateEvacuationArea(req, res) {
       return res.status(404).json({ message: 'Evacuation area not found.' });
     }
     await client.query('COMMIT');
+    await cache.remove('http:content:evacuation-areas', 'http:content:dashboard-summary');
     return res.json(updated);
   } catch (error) {
     await client.query('ROLLBACK');
@@ -285,6 +293,8 @@ async function deleteEvacuationArea(req, res) {
   if (result.rows.length === 0) {
     return res.status(404).json({ message: 'Evacuation area not found.' });
   }
+
+  await cache.remove('http:content:evacuation-areas', 'http:content:dashboard-summary');
 
   return res.status(204).send();
 }

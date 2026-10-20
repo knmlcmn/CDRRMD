@@ -21,6 +21,9 @@ export type MapBehavior = {
   responderKind?: 'barangay' | 'cddrmd' | 'generic';
   largeLayerControl?: boolean;
   showForecastTimeline?: boolean;
+  showForecastLayers?: boolean;
+  forecastTimelinePosition?: 'center' | 'bottom-right';
+  showRecenterControl?: boolean;
   pickedUp?: boolean;
   jurisdictionBarangayName?: string;
   headingUpOnRecenter?: boolean;
@@ -191,10 +194,11 @@ export function buildCalambaMapHtml(
         position: absolute;
         z-index: 3;
       }
-      .wind-live-hud { backdrop-filter: blur(7px); background: rgba(61,61,61,.9); border: 1px solid rgba(255,255,255,.28); border-radius: 18px; color: #fff; display: none; font: 700 11px/1.35 Arial,sans-serif; left: 50%; padding: 7px 13px; pointer-events: none; position: absolute; top: 10px; transform: translateX(-50%); z-index: 700; white-space: nowrap; box-shadow: 0 3px 12px rgba(0,0,0,.34); }
+      .wind-live-hud { backdrop-filter: blur(7px); background: rgba(61,61,61,.9); border: 1px solid rgba(255,255,255,.28); border-radius: 18px; color: #fff; display: none; font: 700 11px/1.35 Arial,sans-serif; left: 50% !important; max-width: calc(100% - 32px); overflow: hidden; padding: 7px 13px; pointer-events: none; position: fixed !important; text-overflow: ellipsis; top: 72px !important; transform: translateX(-50%) !important; z-index: 1000; white-space: nowrap; box-shadow: 0 3px 12px rgba(0,0,0,.34); }
       .wind-live-hud .wind-source { color: #facc15; }
       .wind-live-hud.wind-error { background: rgba(127,29,29,.94); border-color: rgba(254,202,202,.55); max-width: min(520px,calc(100vw - 28px)); white-space: normal; text-align: center; }
       .forecast-timebar { backdrop-filter: blur(9px); background: rgba(7,17,24,.94); border: 1px solid rgba(148,163,184,.35); border-radius: 18px; bottom: 12px; box-shadow: 0 5px 18px rgba(0,0,0,.38); color: #fff; display: none; left: 50%; max-width: min(94vw, 1340px); padding: 8px 14px 7px; pointer-events: auto; position: absolute; transform: translateX(-50%); width: calc(100% - 28px); z-index: 700; }
+      .forecast-timebar.forecast-timebar-bottom-right { box-sizing: border-box; left: auto; max-width: 760px; overflow: hidden; right: 12px; transform: none; width: min(760px, calc(100% - 48px)); }
       .forecast-time-track { position: relative; }
       .forecast-time-labels { display: flex; justify-content: space-between; margin: 0 8px 3px; }
       .forecast-time-label { color: #f8fafc; font: 700 14px/1.1 Arial,sans-serif; text-align: center; }
@@ -234,16 +238,13 @@ export function buildCalambaMapHtml(
         box-shadow: 0 8px 28px rgba(0,0,0,0.6);
         display: none;
         margin-top: 6px;
-        max-height: calc(100vh - 76px);
-        max-height: calc(100dvh - 76px);
-        overflow-x: hidden;
-        overflow-y: auto;
-        overscroll-behavior: contain;
-        padding: 10px 8px 8px;
+        overflow: hidden;
+        box-sizing: border-box;
+        padding: 10px 9px 9px;
         position: absolute;
         right: 0;
         top: 100%;
-        width: min(192px, calc(100vw - 20px));
+        width: min(240px, calc(100vw - 16px));
         z-index: 900;
       }
       .layer-ctrl-panel-open { display: block; }
@@ -272,6 +273,8 @@ export function buildCalambaMapHtml(
         display: flex;
         flex-direction: column;
         gap: 4px;
+        min-height: 60px;
+        min-width: 0;
         padding: 6px 4px 5px;
         transition: background 0.12s, border-color 0.12s;
         user-select: none;
@@ -289,12 +292,16 @@ export function buildCalambaMapHtml(
       }
       .layer-icon-label {
         color: #cbd5e1;
-        font-size: 9px;
+        font-size: 10px;
         font-weight: 700;
-        line-height: 1.15;
+        line-height: 1.2;
+        hyphens: none;
+        overflow-wrap: normal;
         text-align: center;
+        word-break: normal;
       }
       .layer-icon-item.layer-icon-on .layer-icon-label { color: #38bdf8; }
+      .forecast-controls-visible.forecast-overlay-active .leaflet-bottom.leaflet-left { bottom: 96px; }
       @media (max-width: 768px) {
         .legend-toggle { font: 700 10px/1 Arial, sans-serif; padding: 6px 8px; }
         .map-legend { width: min(162px, calc(100vw - 20px)); font-size: 10px; }
@@ -306,26 +313,33 @@ export function buildCalambaMapHtml(
           min-width: min(176px, calc(100vw - 24px));
         }
         .forecast-timebar { bottom: 8px; max-width: calc(100vw - 18px); }
+        .forecast-timebar.forecast-timebar-bottom-right { max-width: 760px; right: 12px; width: min(760px, calc(100% - 48px)); }
+        .forecast-timebar-bottom-right .forecast-time-label { font-size: 9px; }
+        .forecast-timebar-bottom-right .forecast-time-date { font-size: 8px; }
         .forecast-time-button { padding: 6px 7px; }
         .forecast-time-summary { overflow: hidden; text-overflow: ellipsis; }
         .layer-ctrl-btn { gap: 4px; padding: 6px 8px; }
         .layer-ctrl-panel {
           border-radius: 10px;
           margin-top: 4px;
-          max-height: calc(100vh - 66px);
-          max-height: calc(100dvh - 66px);
-          padding: 7px 6px 6px;
-          width: min(176px, calc(100vw - 20px));
+          padding: 8px 7px 7px;
+          width: min(228px, calc(100vw - 16px));
         }
         .layer-ctrl-title { font-size: 8px; margin-bottom: 5px; padding-bottom: 4px; }
         .layer-icon-grid { gap: 4px; }
-        .layer-icon-item { border-radius: 8px; gap: 2px; min-width: 0; padding: 4px 2px; }
-        .layer-icon-svg { height: 21px; width: 21px; }
-        .layer-icon-label { font-size: 7.5px; line-height: 1.08; overflow-wrap: anywhere; }
+        .layer-icon-item { border-radius: 8px; gap: 3px; min-height: 54px; min-width: 0; padding: 5px 2px; }
+        .layer-icon-svg { height: 23px; width: 23px; }
+        .layer-icon-label { font-size: 9px; line-height: 1.12; overflow-wrap: normal; word-break: normal; }
+      }
+      @media (max-width: 360px) {
+        .layer-ctrl-panel { right: -2px; width: min(216px, calc(100vw - 12px)); }
+        .layer-icon-grid { gap: 3px; }
+        .layer-icon-item { min-height: 52px; padding-inline: 1px; }
+        .layer-icon-label { font-size: 8.5px; }
       }
     </style>
   </head>
-  <body>
+  <body class="${mapBehavior.showForecastTimeline ? 'forecast-controls-visible' : ''}">
     <div id="map"></div>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     ${navigationRotationEnabled ? '<script src="https://unpkg.com/@tomickigrzegorz/leaflet-rotate@0.3.0/dist/leaflet-rotate.umd.min.js" crossorigin=""></script>' : ''}
@@ -515,6 +529,7 @@ export function buildCalambaMapHtml(
       var focusedBarangayKey = jurisdictionBarangayKey || null;
       var focusModeActive = false;
       var pendingFocusFit = Boolean(jurisdictionBarangayKey);
+      var lastRecenterRequestId = 0;
       var barangayLayerByKey = {};
       var shorelinePolyline = [
         [14.254, 121.217],
@@ -690,6 +705,12 @@ export function buildCalambaMapHtml(
           && (Boolean(visibility.weatherOverlay) || Boolean(visibility.windOverlay))
           && !focusModeActive;
         forecastTimebar.style.display = visible ? 'block' : 'none';
+        document.body.classList.toggle('forecast-overlay-active', visible);
+        if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'forecast-overlay-visibility', visible: visible }));
+        } else if (window.parent && window.parent !== window) {
+          window.parent.postMessage(JSON.stringify({ type: 'forecast-overlay-visibility', visible: visible }), '*');
+        }
         if (!visible) return;
         var range = forecastTimebar.querySelector('.forecast-time-range');
         if (range) range.value = String(Number(String(weatherTimeframe).slice(5)) || 0);
@@ -738,7 +759,7 @@ export function buildCalambaMapHtml(
       function ensureForecastTimebar() {
         if (forecastTimebar) return;
         forecastTimebar = document.createElement('div');
-        forecastTimebar.className = 'forecast-timebar';
+        forecastTimebar.className = 'forecast-timebar' + (mapBehavior.forecastTimelinePosition === 'bottom-right' ? ' forecast-timebar-bottom-right' : '');
         var track = document.createElement('div');
         track.className = 'forecast-time-track';
         var labels = document.createElement('div');
@@ -2476,16 +2497,39 @@ export function buildCalambaMapHtml(
       };
 
       var LAYER_DEFS = [
-        { key: 'boundary',        label: 'Boundary' },
+        { key: 'boundary',        label: 'Calamba Boundary' },
         { key: 'floodHazard',     label: 'Flood Hazard' },
-        { key: 'evacuationAreas', label: 'Evacuation' },
-        { key: 'incidentMarkers', label: 'Incidents' },
-        { key: 'responderRoute',  label: 'Route' },
-        { key: 'weatherOverlay',  label: 'Rain accumulation' },
+        { key: 'evacuationAreas', label: 'Evacuation Areas' },
+        { key: 'incidentMarkers', label: 'Incident Reports' },
+        { key: 'responderRoute',  label: 'Responder Route' },
+        { key: 'weatherOverlay',  label: 'Rain Accumulation' },
         { key: 'temperatureOverlay', label: 'Temperature' },
-        { key: 'humidityOverlay', label: 'Relative humidity' },
-        { key: 'windOverlay',     label: 'Wind' },
+        { key: 'humidityOverlay', label: 'Relative Humidity' },
+        { key: 'windOverlay',     label: 'Wind Forecast' },
       ];
+      if (mapBehavior.showForecastLayers === false) {
+        LAYER_DEFS = LAYER_DEFS.filter(function(def) {
+          return def.key !== 'weatherOverlay' && def.key !== 'windOverlay';
+        });
+      }
+
+      function renderRecenterControl() {
+        if (!mapBehavior.showRecenterControl) return;
+        var recenterControl = L.control({ position: 'bottomleft' });
+        recenterControl.onAdd = function() {
+          var button = L.DomUtil.create('button', 'legend-toggle');
+          button.type = 'button';
+          button.textContent = 'Re-center';
+          button.title = 'Center the map on your current responder location';
+          L.DomEvent.disableClickPropagation(button);
+          L.DomEvent.on(button, 'click', function(event) {
+            L.DomEvent.stopPropagation(event);
+            focusActiveRescue();
+          });
+          return button;
+        };
+        recenterControl.addTo(map);
+      }
 
       function renderLayerPanelControl() {
         if (layerPanelControl) {
@@ -2612,7 +2656,7 @@ export function buildCalambaMapHtml(
         if (document.visibilityState === 'visible' && Boolean(visibility.floodHazard)) {
           refreshHardwareFloodLevels();
         }
-      }, 10000);
+      }, 2000);
       setInterval(function() {
         if (document.visibilityState === 'visible' && (Boolean(visibility.weatherOverlay) || Boolean(visibility.windOverlay))) {
           windLoadState = 'idle';
@@ -2627,6 +2671,7 @@ export function buildCalambaMapHtml(
       if (Boolean(visibility.floodHazard)) {
         refreshHardwareFloodLevels();
       }
+      renderRecenterControl();
       renderLegendControl();
       renderLayerPanelControl();
       map.on('resize', function() {
@@ -2675,7 +2720,11 @@ export function buildCalambaMapHtml(
           renderResponderFleet(false);
           renderResponderRoute(false);
           applyLayerVisibility();
-          if (data.recenter === true) focusActiveRescue();
+          var recenterRequestId = Number(data.recenterRequestId) || 0;
+          if (data.recenter === true || (recenterRequestId && recenterRequestId !== lastRecenterRequestId)) {
+            lastRecenterRequestId = recenterRequestId;
+            focusActiveRescue();
+          }
           return;
         }
         if (!data || data.type !== 'dashboard-focus-barangay') {

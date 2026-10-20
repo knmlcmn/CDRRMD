@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { WaterLevelSensor } from '../services/waterLevelSensors';
 
 export type WaterLevelNoticeKind = 'warning' | 'reminder';
@@ -14,7 +15,7 @@ export default function WaterLevelAlert({ alert, kind, onClose, onSeeDetails }: 
   const [isVanishing] = useState(false);
   const reminder = kind === 'reminder';
 
-  return (
+  return createPortal(
     <section
       className={`hardware-water-notice barangay-water-level-alert ${reminder ? 'hardware-water-notice-reminder' : 'hardware-water-notice-warning'} ${isVanishing ? 'hardware-water-notice-vanishing' : ''}`}
       role="alert"
@@ -29,6 +30,7 @@ export default function WaterLevelAlert({ alert, kind, onClose, onSeeDetails }: 
         {onSeeDetails ? <button className="hardware-water-see-details" type="button" onClick={onSeeDetails}>See details</button> : null}
       </div>
       <button className="hardware-water-notice-close" type="button" onClick={onClose} aria-label="Close water-level notification">×</button>
-    </section>
+    </section>,
+    document.body,
   );
 }

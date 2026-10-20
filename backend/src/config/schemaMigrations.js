@@ -296,6 +296,40 @@ const MIGRATIONS = [
         FOREIGN KEY (posted_by) REFERENCES users(id) ON DELETE SET NULL;
     `,
   },
+  {
+    version: 8,
+    name: 'optimize_emergency_and_notification_queries',
+    sql: `
+      CREATE INDEX IF NOT EXISTS incident_reports_active_type_created_idx
+        ON incident_reports (report_type, status, created_at DESC)
+        WHERE status IN ('pending', 'accepted', 'in_progress');
+
+      CREATE INDEX IF NOT EXISTS incident_reports_assigned_active_created_idx
+        ON incident_reports (assigned_barangay_id, status, created_at DESC)
+        WHERE assigned_barangay_id IS NOT NULL
+          AND status IN ('pending', 'accepted', 'in_progress');
+
+      CREATE INDEX IF NOT EXISTS incident_reports_incoming_evacuees_idx
+        ON incident_reports (evacuation_area_id, status)
+        INCLUDE (evacuees_reserved)
+        WHERE report_type = 'rescue'
+          AND evacuation_area_id IS NOT NULL
+          AND evacuation_arrived_at IS NULL
+          AND status IN ('accepted', 'in_progress');
+
+      CREATE INDEX IF NOT EXISTS user_notifications_unread_created_idx
+        ON user_notifications (user_id, created_at DESC)
+        WHERE read_at IS NULL;
+
+      CREATE INDEX IF NOT EXISTS users_active_role_barangay_idx
+        ON users (role, barangay_id, id)
+        WHERE is_archived = FALSE;
+
+      CREATE INDEX IF NOT EXISTS evacuation_areas_active_name_idx
+        ON evacuation_areas (name)
+        WHERE is_active = TRUE;
+    `,
+  },
 ];
 
 async function runSchemaMigrations(pool) {

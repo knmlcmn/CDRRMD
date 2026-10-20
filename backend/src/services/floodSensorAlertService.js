@@ -1,7 +1,8 @@
 const pool = require('../config/db');
 const { loadHardwareSensorSnapshot } = require('./hardwareSensorService');
 const MODERATE_THRESHOLD = 40;
-const HIGH_THRESHOLD = 61;
+const HIGH_THRESHOLD = 70;
+const SYNC_THROTTLE_MS = 750;
 
 let lastSyncAt = 0;
 let syncPromise = null;
@@ -117,7 +118,7 @@ async function performSensorSync() {
 }
 
 async function syncFloodSensorAlerts() {
-  if (Date.now() - lastSyncAt < 5_000) return;
+  if (Date.now() - lastSyncAt < SYNC_THROTTLE_MS) return;
   if (!syncPromise) {
     syncPromise = performSensorSync()
       .then(() => { lastSyncAt = Date.now(); })
@@ -126,4 +127,21 @@ async function syncFloodSensorAlerts() {
   return syncPromise;
 }
 
-module.exports = { syncFloodSensorAlerts };
+function startFloodSensorMonitor() {
+  let stopped = false;
+  const run = () => {
+    if (stopped) return;
+    syncFloodSensorAlerts().catch((error) => {
+      console.error('Unable to synchronize live flood sensor alerts.', error);
+    });
+  };
+  run();
+  const timer = setInterval(run, 1_000);
+  timer.unref?.();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+module.exports = { startFloodSensorMonitor, syncFloodSensorAlerts };

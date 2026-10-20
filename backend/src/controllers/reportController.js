@@ -137,43 +137,6 @@ async function resolveNearestRescueTeam(client, latitude, longitude) {
   return `${area.name} Response Team (${area.barangay})`;
 }
 
-async function ensureReportWorkflowColumns(client) {
-  await client.query(`
-    ALTER TABLE incident_reports
-    ADD COLUMN IF NOT EXISTS assigned_team VARCHAR(200);
-
-    ALTER TABLE incident_reports
-    ADD COLUMN IF NOT EXISTS admin_notes TEXT;
-
-    ALTER TABLE incident_reports
-    ADD COLUMN IF NOT EXISTS decline_reason VARCHAR(120);
-
-    ALTER TABLE incident_reports
-    ADD COLUMN IF NOT EXISTS decline_explanation TEXT;
-
-    ALTER TABLE incident_reports
-    ADD COLUMN IF NOT EXISTS dispatched_at TIMESTAMP;
-
-    ALTER TABLE incident_reports
-    ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMP;
-
-    ALTER TABLE incident_reports
-    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();
-
-    ALTER TABLE incident_reports
-    ADD COLUMN IF NOT EXISTS updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL;
-
-    ALTER TABLE incident_reports
-    ADD COLUMN IF NOT EXISTS evacuation_area_id INTEGER REFERENCES evacuation_areas(id) ON DELETE SET NULL;
-
-    ALTER TABLE incident_reports
-    ADD COLUMN IF NOT EXISTS evacuation_area_name VARCHAR(180);
-
-    ALTER TABLE incident_reports
-    ADD COLUMN IF NOT EXISTS evacuees_reserved INTEGER NOT NULL DEFAULT 1;
-  `);
-}
-
 async function createReport(req, res) {
   const userId = req.user?.userId;
   if (!userId) {

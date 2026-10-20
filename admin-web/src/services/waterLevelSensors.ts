@@ -1,3 +1,5 @@
+import { api } from './apiClient';
+
 export type WaterLevelSensorStatus = 'Active' | 'Unavailable';
 
 export type WaterLevelSensor = {
@@ -11,63 +13,29 @@ export type WaterLevelSensor = {
   humidityPercentage: number | null;
 };
 
-const DATABASE_URL = 'https://capstone-4de76-default-rtdb.asia-southeast1.firebasedatabase.app';
-const SENSOR_STATUS_PATH = 'Sensor Status Settings';
-const SNAPSHOT_DEDUPE_WINDOW_MS = 2_000;
+type HardwareSnapshotPayload = {
+  sensors?: Array<{
+    id: string;
+    barangayName: string;
+    active: boolean;
+    readable: boolean;
+    distanceCm: number | null;
+    waterLevelPercentage: number | null;
+    temperatureCelsius: number | null;
+    humidityPercentage: number | null;
+  }>;
+};
+
+const SNAPSHOT_DEDUPE_WINDOW_MS = 400;
+export const WATER_LEVEL_POLL_INTERVAL_MS = 1_500;
 let sensorSnapshotPromise: Promise<WaterLevelSensor[]> | null = null;
 let sensorSnapshot: WaterLevelSensor[] | null = null;
 let sensorSnapshotAt = 0;
 
-const SENSOR_ASSIGNMENTS = [
-  { id: 'waterSensor1', barangayName: 'Palingon' },
-  { id: 'waterSensor2', barangayName: 'Sampiruhan' },
-  { id: 'waterSensor3', barangayName: 'Lingga' },
-  { id: 'waterSensor4', barangayName: 'Parian' },
-  { id: 'waterSensor5', barangayName: 'Looc' },
-  { id: 'waterSensor6', barangayName: 'Uwisan' },
-] as const;
-
-export function distanceToWaterLevelPercentage(distanceCm: number | null) {
-  if (distanceCm === null || !Number.isFinite(distanceCm)) return 0;
-  const fullDistanceCm = 2;
-  const emptyDistanceCm = 20;
-  if (distanceCm <= fullDistanceCm) return 100;
-  if (distanceCm >= emptyDistanceCm) return 0;
-  return ((emptyDistanceCm - distanceCm) / (emptyDistanceCm - fullDistanceCm)) * 100;
-}
-
-function readNumber(payload: unknown, ...keys: string[]) {
-  if (!payload || typeof payload !== 'object') return null;
-  const source = payload as Record<string, unknown>;
-  for (const key of keys) {
-    const value = Number(source[key]);
-    if (source[key] !== '' && source[key] !== null && source[key] !== undefined && Number.isFinite(value)) {
-      return value;
-    }
-  }
-  return null;
-}
-
-async function loadSensorStatuses(): Promise<Record<string, WaterLevelSensorStatus>> {
-  try {
-    const response = await fetch(`${DATABASE_URL}/${encodeURIComponent(SENSOR_STATUS_PATH)}.json`);
-    if (!response.ok) return {};
-    const payload = await response.json() as unknown;
-    if (!payload || typeof payload !== 'object') return {};
-
-    return Object.entries(payload as Record<string, unknown>).reduce<Record<string, WaterLevelSensorStatus>>(
-      (statuses, [sensorId, value]) => {
-        const storedStatus = value && typeof value === 'object'
-          ? String((value as Record<string, unknown>).status || '')
-          : String(value || '');
-        statuses[sensorId] = storedStatus === 'Unavailable' ? 'Unavailable' : 'Active';
-        return statuses;
-      },
-      {},
-    );
-  } catch {
-    return {};
-  }
+function finiteNumberOrNull(value: number | null) {
+  if (value === null || value === undefined) return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
 export async function loadWaterLevelSensors(): Promise<WaterLevelSensor[]> {
@@ -75,47 +43,29 @@ export async function loadWaterLevelSensors(): Promise<WaterLevelSensor[]> {
   if (sensorSnapshot && now - sensorSnapshotAt < SNAPSHOT_DEDUPE_WINDOW_MS) return sensorSnapshot;
   if (sensorSnapshotPromise) return sensorSnapshotPromise;
 
-  sensorSnapshotPromise = (async () => {
-    const sensorStatuses = await loadSensorStatuses();
-    const sensors = await Promise.all(SENSOR_ASSIGNMENTS.map(async (assignment) => {
-    const status = sensorStatuses[assignment.id] || 'Active';
-    try {
-      const response = await fetch(`${DATABASE_URL}/${assignment.id}.json`);
-      if (!response.ok) throw new Error('Sensor request failed');
-      const payload = await response.json() as unknown;
-      const source = payload && typeof payload === 'object' ? payload as Record<string, unknown> : null;
-      const distancePayload = source?.distance;
-      const distanceCm = typeof distancePayload === 'number' && Number.isFinite(distancePayload)
-        ? distancePayload
-        : readNumber(distancePayload, 'distanceCm', 'distance_cm', 'distance')
-          ?? readNumber(payload, 'distanceCm', 'distance_cm');
-      const reportedPercentage = readNumber(payload, 'fillPct', 'fill_pct', 'fillPercentage', 'percentage', 'level')
-        ?? readNumber(distancePayload, 'fillPct', 'fill_pct', 'fillPercentage', 'percentage', 'level');
-      const temperatureCelsius = readNumber(payload, 'temperatureCelsius', 'temperature_celsius', 'temperature', 'tempC', 'temp')
-        ?? readNumber(distancePayload, 'temperatureCelsius', 'temperature_celsius', 'temperature', 'tempC', 'temp');
-      const humidityReading = readNumber(payload, 'humidityPercentage', 'humidity_percentage', 'relativeHumidity', 'relative_humidity', 'humidity', 'humidityPct')
-        ?? readNumber(distancePayload, 'humidityPercentage', 'humidity_percentage', 'relativeHumidity', 'relative_humidity', 'humidity', 'humidityPct');
-      const waterLevelPercentage = reportedPercentage === null
-        ? distanceToWaterLevelPercentage(distanceCm)
-        : Math.max(0, Math.min(100, reportedPercentage));
-
+  sensorSnapshotPromise = api.get<HardwareSnapshotPayload>('/flood-risk/hardware-sensors').then(({ data }) => {
+    const sensors: WaterLevelSensor[] = (Array.isArray(data?.sensors) ? data.sensors : []).map((sensor) => {
+      const percentage = finiteNumberOrNull(sensor.waterLevelPercentage);
+      const distanceCm = finiteNumberOrNull(sensor.distanceCm);
+      const temperatureCelsius = finiteNumberOrNull(sensor.temperatureCelsius);
+      const humidityPercentage = finiteNumberOrNull(sensor.humidityPercentage);
       return {
-        ...assignment,
-        status,
+        id: sensor.id,
+        barangayName: sensor.barangayName,
+        status: sensor.active ? 'Active' : 'Unavailable',
         distanceCm,
-        waterLevelPercentage,
-        hasReading: distanceCm !== null || reportedPercentage !== null,
+        waterLevelPercentage: percentage === null ? 0 : Math.max(0, Math.min(100, percentage)),
+        hasReading: sensor.readable && percentage !== null,
         temperatureCelsius,
-        humidityPercentage: humidityReading === null ? null : Math.max(0, Math.min(100, humidityReading)),
+        humidityPercentage: humidityPercentage !== null
+          ? Math.max(0, Math.min(100, humidityPercentage))
+          : null,
       };
-    } catch {
-      return { ...assignment, status, distanceCm: null, waterLevelPercentage: 0, hasReading: false, temperatureCelsius: null, humidityPercentage: null };
-    }
-    }));
+    });
     sensorSnapshot = sensors;
     sensorSnapshotAt = Date.now();
     return sensors;
-  })().finally(() => { sensorSnapshotPromise = null; });
+  }).finally(() => { sensorSnapshotPromise = null; });
 
   return sensorSnapshotPromise;
 }

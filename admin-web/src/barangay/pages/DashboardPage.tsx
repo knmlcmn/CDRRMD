@@ -6,7 +6,7 @@ import { formatIncidentStatus } from '../../utils/incidentStatus';
 import { isInCurrentManilaWeek } from '../../utils/currentWeek';
 import { d } from '../../adminDesign';
 import BarangayShell from '../components/BarangayShell';
-import { loadWaterLevelSensors, type WaterLevelSensor } from '../services/waterLevelSensors';
+import { loadWaterLevelSensors, WATER_LEVEL_POLL_INTERVAL_MS, type WaterLevelSensor } from '../services/waterLevelSensors';
 
 type Props = {
   barangayName: string;
@@ -115,7 +115,7 @@ export default function DashboardPage({ barangayName, onLogout, onAuthError, onO
     const centerTimer = window.setInterval(() => {
       if (document.visibilityState === 'visible') void loadCenters();
     }, 60_000);
-    const sensorTimer = window.setInterval(() => void loadSensor(), 10_000);
+    const sensorTimer = window.setInterval(() => void loadSensor(), WATER_LEVEL_POLL_INTERVAL_MS);
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') void loadCenters();
     };

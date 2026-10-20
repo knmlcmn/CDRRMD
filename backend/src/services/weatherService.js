@@ -1,43 +1,27 @@
 const { httpError } = require('../utils/httpError');
 const { loadHardwareSensorSnapshot, nearestHardwareClimate } = require('./hardwareSensorService');
+const cache = require('./cacheService');
 
 const FORECAST_CACHE_TTL_MS = 12 * 60 * 1000;
-const FORECAST_CACHE_MAX_ENTRIES = 50;
-const forecastCache = new Map();
-const forecastRequests = new Map();
+const FORECAST_STALE_TTL_MS = 60 * 60 * 1000;
 
 function forecastKey(latitude, longitude, forecastDays) {
   return `${latitude.toFixed(3)}:${longitude.toFixed(3)}:${forecastDays}`;
 }
 
-function pruneForecastCache(now) {
-  for (const [key, entry] of forecastCache) {
-    if (now - entry.cachedAt >= FORECAST_CACHE_TTL_MS) forecastCache.delete(key);
-  }
-  while (forecastCache.size > FORECAST_CACHE_MAX_ENTRIES) {
-    forecastCache.delete(forecastCache.keys().next().value);
-  }
-}
-
 async function loadOpenMeteoForecast(latitude, longitude, forecastDays) {
   const key = forecastKey(latitude, longitude, forecastDays);
-  const now = Date.now();
-  const cached = forecastCache.get(key);
-  if (cached && now - cached.cachedAt < FORECAST_CACHE_TTL_MS) return cached.data;
-  if (forecastRequests.has(key)) return forecastRequests.get(key);
-
-  const request = (async () => {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=wind_speed_10m,weather_code,precipitation&hourly=wind_speed_10m,weather_code,precipitation,precipitation_probability&daily=weather_code,wind_speed_10m_max,precipitation_sum,precipitation_probability_max&forecast_days=${forecastDays}&timezone=auto`;
-    const response = await fetch(url, { signal: AbortSignal.timeout(12_000) });
-    if (!response.ok) throw httpError(502, 'Failed to fetch weather from Open-Meteo.');
-    const data = await response.json();
-    forecastCache.set(key, { data, cachedAt: Date.now() });
-    pruneForecastCache(Date.now());
-    return data;
-  })().finally(() => forecastRequests.delete(key));
-
-  forecastRequests.set(key, request);
-  return request;
+  const { value } = await cache.getOrLoad(
+    `weather:forecast:${key}`,
+    { ttlMs: FORECAST_CACHE_TTL_MS, staleMs: FORECAST_STALE_TTL_MS },
+    async () => {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=wind_speed_10m,weather_code,precipitation&hourly=wind_speed_10m,weather_code,precipitation,precipitation_probability&daily=weather_code,wind_speed_10m_max,precipitation_sum,precipitation_probability_max&forecast_days=${forecastDays}&timezone=auto`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+      if (!response.ok) throw httpError(502, 'Failed to fetch weather from Open-Meteo.');
+      return response.json();
+    },
+  );
+  return value;
 }
 
 async function getWeatherForecast(query) {

@@ -12,7 +12,7 @@ import { AppText as Text, AppTextInput as TextInput } from '../components/Typogr
 import { DashboardHeader } from '../components/DashboardHeader';
 import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { postAuth } from '../services/api';
+import { loginRescuer, postAuth } from '../services/api';
 import { SessionData } from '../services/session';
 
 type Props = {
@@ -23,6 +23,7 @@ type Props = {
 
 export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPassword }: Props) {
   const [identifier, setIdentifier] = useState('');
+  const [loginType, setLoginType] = useState<'resident' | 'rescuer'>('resident');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
@@ -31,17 +32,22 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPa
 
   async function onLogin() {
     if (!identifier.trim() || !password) {
-      setError('Please enter your username/email and password.');
+      setError(`Please enter your ${loginType === 'resident' ? 'email address' : 'Account ID'} and password.`);
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      const res = await postAuth('/auth/login', { email: identifier.trim(), password });
+      const res = loginType === 'resident'
+        ? await postAuth('/auth/login', { email: identifier.trim().toLowerCase(), password })
+        : await loginRescuer(identifier, password);
       const nextSession = res.data as SessionData;
-      if (!nextSession?.user || nextSession.user.role !== 'user') {
-        setError('This app is for user accounts only.');
+      const allowedRole = loginType === 'resident'
+        ? nextSession?.user?.role === 'user'
+        : ['rescuer', 'barangay_rescuer'].includes(nextSession?.user?.role || '');
+      if (!nextSession?.user || !allowedRole) {
+        setError(`This account cannot use ${loginType === 'resident' ? 'Resident' : 'Rescuer'} login.`);
         return;
       }
       await onLoginSuccess(nextSession);
@@ -49,7 +55,7 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPa
       if (err?.code === 'ECONNABORTED' || err?.message?.toLowerCase?.().includes('network')) {
         setError('Cannot reach the server. Check your connection and try again.');
       } else {
-        setError(err?.response?.data?.message || 'Invalid username/email or password.');
+        setError(err?.response?.data?.message || err?.message || `Invalid ${loginType === 'resident' ? 'email address' : 'Account ID'} or password.`);
       }
     } finally {
       setLoading(false);
@@ -65,16 +71,32 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPa
             <Text style={styles.title}>Welcome back!</Text>
             <Text style={styles.sectionLabel}>Login</Text>
 
+            <View style={styles.loginTypeRow}>
+              {(['resident', 'rescuer'] as const).map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  accessibilityRole="button"
+                  onPress={() => { setLoginType(type); setIdentifier(''); setError(null); }}
+                  style={[styles.loginTypeButton, loginType === type && styles.loginTypeButtonActive]}
+                >
+                  <Text style={[styles.loginTypeText, loginType === type && styles.loginTypeTextActive]}>
+                    {type === 'resident' ? 'Resident' : 'Rescuer'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             <View style={styles.inputWrap}>
               <MaterialCommunityIcons name="account-outline" size={17} color={editorial.accent} />
               <TextInput
                 value={identifier}
                 onChangeText={setIdentifier}
-                placeholder="Username or Email"
+                placeholder={loginType === 'resident' ? 'Email Address' : 'Account ID (RSC- or BRS-)'}
                 placeholderTextColor="#526170"
                 style={styles.input}
                 autoCapitalize="none"
                 autoCorrect={false}
+                keyboardType={loginType === 'resident' ? 'email-address' : 'default'}
                 returnKeyType="next"
               />
             </View>
@@ -100,9 +122,11 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPa
               <Text style={styles.rememberText}>Remember me</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.forgotButton} onPress={onForgotPassword}>
-              <Text style={styles.forgotText}>Forgot password?</Text>
-            </TouchableOpacity>
+            {loginType === 'resident' ? (
+              <TouchableOpacity style={styles.forgotButton} onPress={onForgotPassword}>
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </TouchableOpacity>
+            ) : null}
 
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -110,12 +134,12 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPa
               {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Login</Text>}
             </TouchableOpacity>
 
-            <View style={styles.footerRow}>
+            {loginType === 'resident' ? <View style={styles.footerRow}>
               <Text style={styles.footerText}>No account yet? </Text>
               <TouchableOpacity onPress={onShowRegister}>
                 <Text style={styles.footerLink}>Create Account</Text>
               </TouchableOpacity>
-            </View>
+            </View> : null}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -130,6 +154,11 @@ const styles = StyleSheet.create({
   form: { width: '100%', maxWidth: 390, padding: 22, borderRadius: 14, backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border },
   title: { color: editorial.ink, fontSize: 26, textAlign: 'left', marginBottom: 20, lineHeight: 31 },
   sectionLabel: { color: editorial.ink, fontSize: 14, fontWeight: '400', marginLeft: 8, marginBottom: 8 },
+  loginTypeRow: { flexDirection: 'row', padding: 3, marginBottom: 14, borderRadius: 10, backgroundColor: '#e8eef3' },
+  loginTypeButton: { flex: 1, paddingVertical: 9, borderRadius: 8, alignItems: 'center' },
+  loginTypeButtonActive: { backgroundColor: editorial.accent },
+  loginTypeText: { color: '#526170', fontSize: 12, fontWeight: '800' },
+  loginTypeTextActive: { color: '#ffffff' },
   inputWrap: {
     height: 45, borderWidth: 1, borderColor: editorial.border, borderRadius: 10, paddingHorizontal: 14,
     flexDirection: 'row', alignItems: 'center', marginBottom: 10, backgroundColor: '#fff',

@@ -1,25 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { API_BASE_URL, setAuthToken, api } from './services/apiClient';
-import BackupNotifications from './components/BackupNotifications';
-import DashboardPage from './pages/DashboardPage';
-import EvacuationAreasPage from './pages/EvacuationAreasPage';
 import LoginPage from './pages/LoginPage';
-import FloodMonitoringPage from './pages/FloodMonitoringPage';
-import MonitoringPage from './pages/MonitoringPage';
-import AdminPage from './pages/AdminPage';
-import UsersPage from './pages/UsersPage';
-import PostUpdatesPage from './pages/PostUpdatesPage';
-import HistoryPage from './pages/HistoryPage';
-import BarangayAccountsPage from './pages/BarangayAccountsPage';
-import RescuerAccountsPage from './pages/RescuerAccountsPage';
-import RescuerDashboardPage from './pages/RescuerDashboardPage';
-import RescuerHistoryPage from './pages/RescuerHistoryPage';
-import RescuerAssignmentModal from './components/RescuerAssignmentModal';
-import RescuerFloodMonitoringPage from './pages/RescuerFloodMonitoringPage';
-import RescuerAccountPage from './pages/RescuerAccountPage';
 import type { StaffPortal } from './services/authService';
 import WaterLevelUpdateToast, { type WaterLevelUpdateNoticeKind } from './components/WaterLevelUpdateToast';
-import { loadWaterLevelSensors, type WaterLevelSensor } from './services/waterLevelSensors';
+import { loadWaterLevelSensors, WATER_LEVEL_POLL_INTERVAL_MS, type WaterLevelSensor } from './services/waterLevelSensors';
 import { isCalambaCurrentlyRainy } from './services/weatherAlerts';
 
 type View =
@@ -34,9 +18,18 @@ type View =
   | 'post-updates'
   | 'history';
 
-type RescuerView = 'incidents' | 'history' | 'flood-monitoring' | 'account';
-
 const BarangayPortal = lazy(() => import('./barangay/BarangayPortal'));
+const BackupNotifications = lazy(() => import('./components/BackupNotifications'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const EvacuationAreasPage = lazy(() => import('./pages/EvacuationAreasPage'));
+const FloodMonitoringPage = lazy(() => import('./pages/FloodMonitoringPage'));
+const MonitoringPage = lazy(() => import('./pages/MonitoringPage'));
+const AdminPage = lazy(() => import('./pages/AdminPage'));
+const UsersPage = lazy(() => import('./pages/UsersPage'));
+const PostUpdatesPage = lazy(() => import('./pages/PostUpdatesPage'));
+const HistoryPage = lazy(() => import('./pages/HistoryPage'));
+const BarangayAccountsPage = lazy(() => import('./pages/BarangayAccountsPage'));
+const RescuerAccountsPage = lazy(() => import('./pages/RescuerAccountsPage'));
 
 type WaterUpdateNotice = {
   id: number;
@@ -49,7 +42,7 @@ function roleFromToken(token: string | null): StaffPortal | null {
     if (!token) return null;
     const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
     const role = JSON.parse(atob(payload)).role;
-    return role === 'admin' || role === 'barangay' || role === 'rescuer' || role === 'barangay_rescuer' ? role : null;
+    return role === 'admin' || role === 'barangay' ? role : null;
   } catch {
     return null;
   }
@@ -63,7 +56,6 @@ function App() {
     localStorage.getItem('admin_token') || sessionStorage.getItem('admin_token'),
   ));
   const [view, setView] = useState<View>('dashboard');
-  const [rescuerView, setRescuerView] = useState<RescuerView>('incidents');
   const [backupReportId, setBackupReportId] = useState<number | null>(null);
   const [backupNoticeReportId, setBackupNoticeReportId] = useState<number | null>(null);
   const [waterUpdateNotices, setWaterUpdateNotices] = useState<WaterUpdateNotice[]>([]);
@@ -135,7 +127,7 @@ function App() {
     checkForWaterUpdates().catch(() => {});
     const timer = window.setInterval(() => {
       if (document.visibilityState === 'visible') checkForWaterUpdates().catch(() => {});
-    }, 10_000);
+    }, WATER_LEVEL_POLL_INTERVAL_MS);
     const refreshWhenVisible = () => {
       if (document.visibilityState === 'visible') checkForWaterUpdates().catch(() => {});
     };
@@ -188,40 +180,14 @@ function App() {
     setToken(null);
     setRole(null);
     setView('dashboard');
-    setRescuerView('incidents');
   }
 
   function openView(nextView: View) {
     setView(nextView);
   }
 
-  if (!token) {
+  if (!token || !role) {
     return <LoginPage onLoggedIn={onLoggedIn} />;
-  }
-
-  if (role === 'rescuer' || role === 'barangay_rescuer') {
-    const rescuerProps = {
-      responderRole: role,
-      onLogout,
-      onAuthError: onLogout,
-      onOpenIncidents: () => setRescuerView('incidents'),
-      onOpenHistory: () => setRescuerView('history'),
-      onOpenFloodMonitoring: () => setRescuerView('flood-monitoring'),
-      onOpenAccount: () => setRescuerView('account'),
-    };
-    const rescuerPage = rescuerView === 'flood-monitoring'
-      ? <RescuerFloodMonitoringPage {...rescuerProps} />
-      : rescuerView === 'history'
-        ? <RescuerHistoryPage {...rescuerProps} />
-        : rescuerView === 'account'
-          ? <RescuerAccountPage {...rescuerProps} />
-          : <RescuerDashboardPage {...rescuerProps} />;
-    return (
-      <>
-        <RescuerAssignmentModal responderRole={role} onAuthError={onLogout} onOpenIncidents={() => setRescuerView('incidents')} />
-        {rescuerPage}
-      </>
-    );
   }
 
   if (role === 'barangay') {
@@ -271,16 +237,18 @@ function App() {
           }}
         />
       ) : null}
-      {currentPage}
-      <BackupNotifications
-        reopenReportId={backupNoticeReportId}
-        onStandby={() => setBackupNoticeReportId(null)}
-        onConfirm={(reportId) => {
-          setBackupNoticeReportId(null);
-          setBackupReportId(reportId);
-          openView('monitoring');
-        }}
-      />
+      <Suspense fallback={<p className="p-6 text-sm text-slate-600">Loading portal...</p>}>
+        {currentPage}
+        <BackupNotifications
+          reopenReportId={backupNoticeReportId}
+          onStandby={() => setBackupNoticeReportId(null)}
+          onConfirm={(reportId) => {
+            setBackupNoticeReportId(null);
+            setBackupReportId(reportId);
+            openView('monitoring');
+          }}
+        />
+      </Suspense>
     </>
   );
 }

@@ -201,7 +201,7 @@ async function login(payload) {
   }
 
   if (['admin', 'barangay', 'rescuer', 'barangay_rescuer'].includes(user.role)) {
-    throw httpError(401, 'Staff accounts must log in with their account ID through the correct web portal.');
+    throw httpError(401, 'Staff accounts must log in with their account ID through the correct portal or app.');
   }
 
   const validPassword = await bcrypt.compare(password, user.password_hash);

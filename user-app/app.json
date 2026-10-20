@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "user-app",
+    "name": "CDRRMD",
     "slug": "user-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -15,6 +15,7 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "ph.gov.calambacity.cdrrmd",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

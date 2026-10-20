@@ -13,16 +13,19 @@ const {
 } = require('../controllers/authController');
 const auth = require('../middleware/auth');
 const authFlexible = require('../middleware/authFlexible');
+const rateLimit = require('../middleware/rateLimit');
 
 const router = express.Router();
+const authRateLimit = rateLimit({ namespace: 'auth', limit: 30, windowMs: 10 * 60_000 });
+const otpRateLimit = rateLimit({ namespace: 'otp', limit: 5, windowMs: 10 * 60_000 });
 
 // Public auth actions.
-router.post('/register', register);
-router.post('/registration-otp', requestRegistrationOtp);
-router.post('/password-reset-otp', requestPasswordResetOtp);
-router.post('/password-reset', resetPassword);
-router.post('/login', login);
-router.post('/refresh', refresh);
+router.post('/register', authRateLimit, register);
+router.post('/registration-otp', otpRateLimit, requestRegistrationOtp);
+router.post('/password-reset-otp', otpRateLimit, requestPasswordResetOtp);
+router.post('/password-reset', authRateLimit, resetPassword);
+router.post('/login', authRateLimit, login);
+router.post('/refresh', authRateLimit, refresh);
 
 // Logout — uses authFlexible so it works via normal header AND via sendBeacon (tab-close) which passes token in body.
 router.post('/logout', authFlexible, logout);

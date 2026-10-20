@@ -1,7 +1,9 @@
 const { httpError } = require('../utils/httpError');
+const cache = require('./cacheService');
 
 const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const CACHE_TTL_MS = 10 * 60 * 1000;
+const STALE_TTL_MS = 60 * 60 * 1000;
 const CALAMBA_BOUNDS = {
   latMin: 14.137703,
   latMax: 14.2662133,
@@ -10,10 +12,6 @@ const CALAMBA_BOUNDS = {
 };
 const GRID_ROWS = 4;
 const GRID_COLS = 5;
-
-let cachedWindField = null;
-let cachedWindFieldAt = 0;
-let windFieldPromise = null;
 
 function gridCoordinates() {
   const points = [];
@@ -171,49 +169,36 @@ async function fetchOpenMeteoGrid(points) {
 }
 
 async function getCalambaWindField() {
-  const now = Date.now();
-  if (cachedWindField && now - cachedWindFieldAt < CACHE_TTL_MS) {
-    return cachedWindField;
+  try {
+    const { value, cache: cacheState } = await cache.getOrLoad(
+      'weather:calamba-wind-field',
+      { ttlMs: CACHE_TTL_MS, staleMs: STALE_TTL_MS },
+      async () => {
+        const frames = await fetchOpenMeteoGrid(gridCoordinates());
+        const currentFrame = frames.hour_0;
+        return {
+          source: 'Open-Meteo',
+          sourceUrl: 'https://open-meteo.com/',
+          model: 'best_match',
+          level: '10 m above ground',
+          units: { vector: 'm/s', speed: 'km/h', direction: 'degrees' },
+          updatedAt: new Date().toISOString(),
+          forecastAt: currentFrame.forecastAt,
+          averageSpeedKph: currentFrame.averageSpeedKph,
+          maximumGustKph: currentFrame.maximumGustKph,
+          averageRainAmountMm: currentFrame.averageRainAmountMm,
+          rows: GRID_ROWS,
+          cols: GRID_COLS,
+          bounds: CALAMBA_BOUNDS,
+          points: currentFrame.points,
+          frames,
+        };
+      },
+    );
+    return cacheState === 'STALE' ? { ...value, stale: true } : value;
+  } catch (error) {
+    throw httpError(502, `Unable to load weather data from Open-Meteo: ${error.message}`, 'OPEN_METEO_UNAVAILABLE');
   }
-
-  if (windFieldPromise) {
-    return windFieldPromise;
-  }
-
-  windFieldPromise = (async () => {
-    try {
-      const frames = await fetchOpenMeteoGrid(gridCoordinates());
-      const currentFrame = frames.hour_0;
-      cachedWindField = {
-        source: 'Open-Meteo',
-        sourceUrl: 'https://open-meteo.com/',
-        model: 'best_match',
-        level: '10 m above ground',
-        units: { vector: 'm/s', speed: 'km/h', direction: 'degrees' },
-        updatedAt: new Date().toISOString(),
-        forecastAt: currentFrame.forecastAt,
-        averageSpeedKph: currentFrame.averageSpeedKph,
-        maximumGustKph: currentFrame.maximumGustKph,
-        averageRainAmountMm: currentFrame.averageRainAmountMm,
-        rows: GRID_ROWS,
-        cols: GRID_COLS,
-        bounds: CALAMBA_BOUNDS,
-        points: currentFrame.points,
-        frames,
-      };
-      cachedWindFieldAt = Date.now();
-      return cachedWindField;
-    } catch (error) {
-      if (cachedWindField) {
-        return { ...cachedWindField, stale: true };
-      }
-      throw httpError(502, `Unable to load weather data from Open-Meteo: ${error.message}`, 'OPEN_METEO_UNAVAILABLE');
-    } finally {
-      windFieldPromise = null;
-    }
-  })();
-
-  return windFieldPromise;
 }
 
 module.exports = { getCalambaWindField };

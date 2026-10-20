@@ -12,10 +12,8 @@ import type {
   RescuerAccount,
 } from '../types';
 import { buildCalambaMapHtml } from '../utils/calambaMapHtml';
-import { loadWaterLevelSensors, type WaterLevelSensor } from '../services/waterLevelSensors';
-import WaterLevelAlert, { type WaterLevelNoticeKind } from '../components/WaterLevelAlert';
+import { loadWaterLevelSensors, WATER_LEVEL_POLL_INTERVAL_MS, type WaterLevelSensor } from '../services/waterLevelSensors';
 import { formatIncidentStatus } from '../utils/incidentStatus';
-import { isCalambaCurrentlyRainy } from '../services/weatherAlerts';
 import { isInCurrentManilaWeek } from '../utils/currentWeek';
 
 type Coordinate = { latitude: number; longitude: number };
@@ -101,11 +99,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
   const [mapFocusedReportId, setMapFocusedReportId] = useState<number | null>(null);
   const [routeCoordinates, setRouteCoordinates] = useState<Coordinate[]>([]);
   const [waterLevelSensors, setWaterLevelSensors] = useState<WaterLevelSensor[]>([]);
-  const [waterLevelAlerts, setWaterLevelAlerts] = useState<WaterLevelSensor[]>([]);
-  const [showWaterLevelAlert, setShowWaterLevelAlert] = useState(false);
-  const [waterLevelNoticeKind, setWaterLevelNoticeKind] = useState<WaterLevelNoticeKind>('warning');
-  const notifiedWaterLevelsRef = useRef<Record<string, number>>({});
-  const postUpdateTimerRef = useRef<number | null>(null);
   const routineLoadInFlightRef = useRef(false);
   const criticalLoadInFlightRef = useRef(false);
   const [cards, setCards] = useState<DashboardSummary['cards']>({
@@ -195,60 +188,10 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     setWaterLevelSensors(await loadWaterLevelSensors());
   }
 
-  async function checkWaterLevelAlerts() {
-    const sensors = await loadWaterLevelSensors();
-    setWaterLevelSensors(sensors);
-    const availableSensorIds = new Set(
-      sensors.filter((sensor) => sensor.status === 'Active').map((sensor) => sensor.id),
-    );
-    setWaterLevelAlerts((currentAlerts) => currentAlerts.filter((sensor) => availableSensorIds.has(sensor.id)));
-    const notifiedLevels = notifiedWaterLevelsRef.current;
-
-    const nextAlerts: WaterLevelSensor[] = [];
-    sensors.forEach((sensor) => {
-      if (sensor.status === 'Unavailable' || !sensor.hasReading || sensor.waterLevelPercentage < 40) {
-        delete notifiedLevels[sensor.id];
-        return;
-      }
-
-      const lastNotifiedPercentage = notifiedLevels[sensor.id];
-      if (!Number.isFinite(lastNotifiedPercentage) || sensor.waterLevelPercentage >= lastNotifiedPercentage + 10) {
-        nextAlerts.push(sensor);
-        notifiedLevels[sensor.id] = sensor.waterLevelPercentage;
-      }
-
-    });
-
-    notifiedWaterLevelsRef.current = { ...notifiedLevels };
-
-    if (nextAlerts.length > 0) {
-      setWaterLevelAlerts(nextAlerts);
-      setWaterLevelNoticeKind('warning');
-      setShowWaterLevelAlert(true);
-      if (postUpdateTimerRef.current !== null) window.clearTimeout(postUpdateTimerRef.current);
-      postUpdateTimerRef.current = window.setTimeout(() => {
-        Promise.all([loadWaterLevelSensors(), isCalambaCurrentlyRainy()]).then(([currentSensors, isRainy]) => {
-          if (!isRainy) return;
-          const currentAvailableIds = new Set(
-            currentSensors
-              .filter((sensor) => sensor.status === 'Active' && sensor.hasReading && sensor.waterLevelPercentage >= 40)
-              .map((sensor) => sensor.id),
-          );
-          const reminderAlerts = nextAlerts.filter((sensor) => currentAvailableIds.has(sensor.id));
-          if (reminderAlerts.length > 0) {
-            setWaterLevelAlerts(reminderAlerts);
-            setWaterLevelNoticeKind('reminder');
-            setShowWaterLevelAlert(true);
-          }
-        }).catch(() => {});
-      }, 8_500);
-    }
-  }
-
   useEffect(() => {
     loadFeed(true);
     loadCriticalFeed().catch(() => {});
-    checkWaterLevelAlerts().catch(() => {});
+    loadWaterLevels().catch(() => {});
 
     const refreshTimer = setInterval(() => {
       if (document.visibilityState === 'visible') loadFeed(false);
@@ -259,8 +202,8 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     }, 5_000);
 
     const waterLevelTimer = setInterval(() => {
-      checkWaterLevelAlerts().catch(() => {});
-    }, 10000);
+      loadWaterLevels().catch(() => {});
+    }, WATER_LEVEL_POLL_INTERVAL_MS);
 
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
@@ -276,7 +219,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       clearInterval(refreshTimer);
       clearInterval(criticalTimer);
       clearInterval(waterLevelTimer);
-      if (postUpdateTimerRef.current !== null) window.clearTimeout(postUpdateTimerRef.current);
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [loadCriticalFeed, loadFeed]);
@@ -519,18 +461,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
         </>
       }
     >
-      {showWaterLevelAlert ? (
-        <WaterLevelAlert
-          alerts={waterLevelAlerts}
-          kind={waterLevelNoticeKind}
-          onClose={() => setShowWaterLevelAlert(false)}
-          onSeeDetails={() => {
-            setShowWaterLevelAlert(false);
-            if (waterLevelNoticeKind === 'reminder') onOpenPostUpdates();
-            else onOpenFloodMonitoring();
-          }}
-        />
-      ) : null}
       <div className={d.dashboard.root}>
           {error ? <div className={d.page.error}>{error}</div> : null}
 

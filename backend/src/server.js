@@ -4,6 +4,7 @@ const pool = require('./config/db');
 const ensureDatabaseExists = require('./config/ensureDatabase');
 const initializeDatabase = require('./config/initializeDatabase');
 const app = require('./app');
+const { startFloodSensorMonitor } = require('./services/floodSensorAlertService');
 
 const port = Number(process.env.PORT || 4000);
 
@@ -21,6 +22,7 @@ prepareLocalDatabase
     app.listen(port, () => {
       console.log(`Backend running on http://localhost:${port}`);
       console.log(`Seeded admin account => ID: ${adminResult.rows[0]?.account_id || 'see Admin Accounts'} | password: Admin@123`);
+      startFloodSensorMonitor();
     });
   })
   .catch((error) => {

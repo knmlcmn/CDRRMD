@@ -3,6 +3,7 @@ import { createNavigationContainerRef, NavigationContainer } from '@react-naviga
 import { BottomTabBarProps, createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ActivityIndicator, Animated, AppState, Pressable, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppText as Text, TypographyProvider } from './src/components/Typography';
 import {
   NavigationIcon,
@@ -37,6 +38,8 @@ import RequiredLocationModal from './src/components/RequiredLocationModal';
 import { useResponsiveLayout } from './src/utils/responsive';
 import { LiveLocation, requireLiveLocation } from './src/services/locationAccess';
 import { loadTestMode, saveTestMode } from './src/services/testMode';
+import RescuerPortal from './src/rescuer/RescuerPortal';
+import type { ResponderRole } from './src/rescuer/types';
 
 function isBlank(value?: string | null) {
   return !String(value ?? '').trim();
@@ -217,9 +220,11 @@ function UserTabBar({ state, navigation }: BottomTabBarProps) {
 
 export default function App() {
   return (
-    <TypographyProvider>
-      <AppContent />
-    </TypographyProvider>
+    <SafeAreaProvider>
+      <TypographyProvider>
+        <AppContent />
+      </TypographyProvider>
+    </SafeAreaProvider>
   );
 }
 
@@ -258,7 +263,8 @@ function AppContent() {
       const storedTestMode = await loadTestMode();
       if (mounted) setTestModeEnabled(storedTestMode);
       const existing = await loadSession();
-      if (!existing || existing.user?.role !== 'user') {
+      const supportedRole = existing && ['user', 'rescuer', 'barangay_rescuer'].includes(existing.user?.role || '');
+      if (!existing || !supportedRole) {
         await clearSession();
         if (mounted) setBooting(false);
         return;
@@ -272,6 +278,14 @@ function AppContent() {
         }
       } catch {
         nextSession = existing;
+      }
+
+      if (nextSession.user.role !== 'user') {
+        await saveSession(nextSession);
+        sessionRef.current = nextSession;
+        setSession(nextSession);
+        if (mounted) setBooting(false);
+        return;
       }
 
       const ensured = await ensureAccountForSession(nextSession);
@@ -309,7 +323,7 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (!session || testModeEnabled) {
+    if (!session || session.user.role !== 'user' || testModeEnabled) {
       if (testModeEnabled) setLocationGate(null);
       return;
     }
@@ -445,6 +459,13 @@ function AppContent() {
   }
 
   async function handleAuthenticated(nextSession: SessionData, registrationProfile?: AppProfile) {
+    if (nextSession.user.role === 'rescuer' || nextSession.user.role === 'barangay_rescuer') {
+      await saveSession(nextSession);
+      sessionRef.current = nextSession;
+      setLocationGate(null);
+      setSession(nextSession);
+      return;
+    }
     if (nextSession.user.role !== 'user') {
       await clearSession();
       return;
@@ -541,6 +562,14 @@ function AppContent() {
           onShowRegister={() => setAuthMode('register')}
           onForgotPassword={() => setAuthMode('forgot-password')}
         />
+      </View>
+    );
+  }
+
+  if (session.user.role === 'rescuer' || session.user.role === 'barangay_rescuer') {
+    return (
+      <View style={styles.appRoot}>
+        <RescuerPortal role={session.user.role as ResponderRole} onLogout={handleLogout} />
       </View>
     );
   }

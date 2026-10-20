@@ -33,13 +33,16 @@ const pool = new Pool({
 
   ...(ssl === undefined ? {} : { ssl }),
 
-  // Limit connections for serverless environments.
+  // Keep a modest pool for concurrent emergency reads without exhausting a
+  // hosted PostgreSQL plan. Every value remains deployment-configurable.
   max: Number(
-    process.env.DB_POOL_MAX || (process.env.VERCEL ? 1 : 5)
+    process.env.DB_POOL_MAX || (process.env.VERCEL ? 2 : 10)
   ),
 
-  idleTimeoutMillis: 10000,
-  connectionTimeoutMillis: 10000,
+  idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
+  connectionTimeoutMillis: Number(process.env.DB_CONNECT_TIMEOUT_MS || 5000),
+  keepAlive: true,
+  application_name: 'cdrrmd-backend',
 });
 
 pool.on('error', (error) => {
