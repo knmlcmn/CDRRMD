@@ -30,15 +30,19 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPa
 
   async function onLogin() {
     if (!identifier.trim() || !password) {
-      setError('Please enter your Account ID and password.');
+      setError('Please enter your email or responder Account ID and password.');
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
+      const normalizedIdentifier = identifier.trim();
+      const isEmail = normalizedIdentifier.includes('@');
+      const loginIdentifier = isEmail ? normalizedIdentifier.toLowerCase() : normalizedIdentifier.toUpperCase();
       const res = await postAuth('/auth/login', {
-        accountId: identifier.trim().toUpperCase(),
+        identifier: loginIdentifier,
+        ...(isEmail ? { email: loginIdentifier } : { accountId: loginIdentifier }),
         password,
       });
       const nextSession = res.data as SessionData;
@@ -52,7 +56,7 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPa
       if (err?.code === 'ECONNABORTED' || err?.message?.toLowerCase?.().includes('network')) {
         setError('Cannot reach the server. Check your connection and try again.');
       } else {
-        setError(err?.response?.data?.message || err?.message || 'Invalid account ID or password.');
+        setError(err?.response?.data?.message || err?.message || 'Invalid email, Account ID, or password.');
       }
     } finally {
       setLoading(false);
@@ -73,12 +77,12 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPa
               <TextInput
                 value={identifier}
                 onChangeText={setIdentifier}
-                placeholder="Account ID (USR-, RSC-, or BRS-)"
+                placeholder="Resident email or responder Account ID"
                 placeholderTextColor="#526170"
                 style={styles.input}
                 autoCapitalize="none"
                 autoCorrect={false}
-                keyboardType="default"
+                keyboardType="email-address"
                 returnKeyType="next"
               />
             </View>

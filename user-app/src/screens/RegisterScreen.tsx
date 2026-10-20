@@ -153,8 +153,8 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
       Alert.alert(
         'Account created',
         credentialEmailSent
-          ? `Your login credentials and Account ID (${accountId}) were sent to ${email.trim()}.`
-          : `Your account was created as ${accountId}, but the credentials email could not be delivered. Keep this Account ID for login.`,
+          ? `Your login details and Account ID (${accountId}) were sent to ${email.trim()}. Use your email address to sign in.`
+          : `Your account was created as ${accountId}, but the credentials email could not be delivered. Use ${email.trim()} to sign in.`,
       );
       await onRegisterSuccess(nextSession);
     } catch (err: any) {
@@ -215,7 +215,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
               trailing={<TouchableOpacity onPress={() => setShowConfirmPassword((value) => !value)}><MaterialCommunityIcons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={16} color="#526170" /></TouchableOpacity>}
             />
 
-            <Text style={styles.locationHint}>After email verification, your Account ID and login credentials will be sent to this email address.</Text>
+            <Text style={styles.locationHint}>After verification, your Account ID and login details will be sent to this address. Residents sign in using their email.</Text>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <TouchableOpacity style={styles.primaryButton} onPress={onRegister} disabled={loading || otpSending} activeOpacity={0.85}>

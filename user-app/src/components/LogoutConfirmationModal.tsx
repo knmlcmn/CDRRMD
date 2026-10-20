@@ -33,7 +33,7 @@ export default function LogoutConfirmationModal({ visible, responder = false, lo
             <MaterialCommunityIcons name="logout-variant" size={29} color={accent} />
           </View>
           <Text style={styles.title}>Log out of CDRRMD?</Text>
-          <Text style={styles.message}>Are you sure you want to log out? If you forget your Account ID or password, check the email sent when your account was created.</Text>
+          <Text style={styles.message}>Are you sure you want to log out? If you forget your login details, check the email sent when your account was created.</Text>
           <View style={styles.actions}>
             <TouchableOpacity
               accessibilityRole="button"

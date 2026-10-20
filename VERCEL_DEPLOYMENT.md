@@ -11,8 +11,13 @@ Create a Vercel project with **Root Directory = `backend`**.
 Set these environment variables in Vercel:
 
 - `DATABASE_URL` — hosted PostgreSQL connection string (Neon, Supabase, etc.)
-- `JWT_SECRET`
-- `JWT_REFRESH_SECRET`
+- `JWT_SECRET` — long random access-token signing secret
+- `JWT_REFRESH_SECRET` — a different long random refresh-token signing secret
+- `OTP_SECRET` — a different long random OTP signing secret
+- Email delivery using either:
+  - `SMTP_URL`, or
+  - `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and
+    optionally `SMTP_FROM`
 - `CORS_ORIGINS` — comma-separated URLs for the deployed staff and user-web apps
 - `NODE_ENV=production`
 - `SEED_DEFAULT_ACCOUNTS` should remain unset/false in production
@@ -22,10 +27,25 @@ Set these environment variables in Vercel:
 
 Do not use the local `backend/.env` in production.
 
+Vercel does not upload `backend/.env`. Add these values in the **backend
+project's** Settings → Environment Variables for Production (and Preview if
+preview deployments must send email). After adding or changing a variable,
+redeploy the backend; existing deployments do not receive new values.
+
+For Gmail SMTP, use `smtp.gmail.com`, port `465`, `SMTP_SECURE=true`, the Gmail
+address as `SMTP_USER`, and a Google App Password as `SMTP_PASS`. Never use the
+normal Gmail password or expose any SMTP/JWT/OTP secret to the `user-app`
+project as an `EXPO_PUBLIC_*` variable.
+
 The backend's `vercel-build` script applies idempotent schema updates on every
 deployment. A migration failure stops the deployment instead of publishing API
 code that is incompatible with the current database. Normal API cold starts do
 not run migrations, so request latency remains low.
+
+The same build validates the production database, authentication, OTP, email,
+and CORS configuration before migration. After deployment, open
+`https://YOUR-BACKEND.vercel.app/api/ready`; every item under `configuration`
+must be `true` before testing registration.
 
 ## 2. Deploy `admin-web`
 Create another Vercel project with **Root Directory = `admin-web`**.

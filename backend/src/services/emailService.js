@@ -1,13 +1,9 @@
 const nodemailer = require('nodemailer');
 
+const { hasEmailDeliveryConfig, isPlaceholder } = require('../config/runtimeConfig');
 const { httpError } = require('../utils/httpError');
 
 let transporter;
-
-function isPlaceholder(value) {
-  const normalized = String(value || '').trim();
-  return /your-sender|your-16-character|replace-with|paste-|app-password|generated-by-google|example\.com/i.test(normalized);
-}
 
 function getTransporter() {
   if (transporter) return transporter;
@@ -17,10 +13,10 @@ function getTransporter() {
   const user = String(process.env.SMTP_USER || '').trim();
   const rawPass = String(process.env.SMTP_PASS || '').trim();
   const pass = host === 'smtp.gmail.com' ? rawPass.replace(/\s/g, '') : rawPass;
-  if (!smtpUrl && (!host || !user || !pass || isPlaceholder(user) || isPlaceholder(pass))) {
+  if (!hasEmailDeliveryConfig()) {
     throw httpError(
       503,
-      'Email delivery is not configured. Set a real SMTP_USER and Google App Password in backend/.env, then restart the backend.',
+      'Email verification is temporarily unavailable. Please contact CDRRMD support.',
     );
   }
 
@@ -80,8 +76,8 @@ async function sendAccountCredentialsEmail({ email, accountId, password, firstNa
     from: fromAddress(),
     to: email,
     subject: 'Your CDRRMD account ID',
-    text: `${greeting}\n\nYour CDRRMD account was created successfully.\n\nAccount ID: ${accountId}\nPassword: ${password}\n\nUse this account ID and password to sign in to the CDRRMD app platform. Keep this email private.`,
-    html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#173750"><h2 style="margin-bottom:8px">Your CDRRMD account</h2><p>${escapeHtml(greeting)}</p><p>Your account was created successfully. Use these credentials to sign in to the CDRRMD app or web platform:</p><div style="padding:16px;border-radius:8px;background:#f1f5f9"><p><strong>Account ID:</strong> ${escapeHtml(accountId)}</p><p><strong>Password:</strong> ${escapeHtml(password)}</p></div><p style="color:#64748b;font-size:13px">Keep this email private and do not share your password.</p></div>`,
+    text: `${greeting}\n\nYour CDRRMD account was created successfully.\n\nLogin email: ${email}\nAccount ID: ${accountId}\nPassword: ${password}\n\nResidents sign in with their email address and password. Keep this email private.`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#173750"><h2 style="margin-bottom:8px">Your CDRRMD account</h2><p>${escapeHtml(greeting)}</p><p>Your account was created successfully. Residents sign in to the CDRRMD app or web platform with their email address and password:</p><div style="padding:16px;border-radius:8px;background:#f1f5f9"><p><strong>Login email:</strong> ${escapeHtml(email)}</p><p><strong>Account ID:</strong> ${escapeHtml(accountId)}</p><p><strong>Password:</strong> ${escapeHtml(password)}</p></div><p style="color:#64748b;font-size:13px">Keep this email private and do not share your password.</p></div>`,
   });
 }
 

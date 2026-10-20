@@ -8,6 +8,7 @@ const morgan = require('morgan');
 
 const pool = require('./config/db');
 const { getRedisState } = require('./config/redis');
+const { getRuntimeConfigStatus } = require('./config/runtimeConfig');
 const auth = require('./middleware/auth');
 const rateLimit = require('./middleware/rateLimit');
 const { performanceMiddleware, snapshot: performanceSnapshot } = require('./services/performanceMonitor');
@@ -102,7 +103,13 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok', uptimeSeconds: Mat
 
 app.get('/api/ready', async (req, res) => {
   await pool.query('SELECT 1');
-  return res.json({ status: 'ready', redis: getRedisState() });
+  const configuration = getRuntimeConfigStatus();
+  const ready = Object.values(configuration).every(Boolean);
+  return res.status(ready ? 200 : 503).json({
+    status: ready ? 'ready' : 'configuration_required',
+    configuration,
+    redis: getRedisState(),
+  });
 });
 
 app.get('/api/performance', auth, (req, res) => {

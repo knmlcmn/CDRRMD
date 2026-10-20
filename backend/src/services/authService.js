@@ -169,22 +169,36 @@ async function resetPassword(payload) {
 }
 
 async function login(payload) {
-  const { accountId, portal, password } = payload || {};
-  const normalizedAccountId = String(accountId || '').trim().toUpperCase();
-  const match = normalizedAccountId.match(/^([A-Z]{3})-\d{4}-\d{5}$/);
-  const role = match ? ACCOUNT_ROLES[match[1]] : null;
+  const { accountId, email, identifier, portal, password } = payload || {};
+  const rawIdentifier = String(identifier || accountId || email || '').trim();
   const portalRole = ['admin', 'barangay', 'rescuer', 'barangay_rescuer'].includes(portal)
     ? portal
     : null;
-  const isUnifiedAppRole = ['user', 'rescuer', 'barangay_rescuer'].includes(role);
+
+  if (rawIdentifier.includes('@')) {
+    if (!password || portalRole) {
+      throw httpError(401, 'Invalid email or password.');
+    }
+
+    const resident = await userModel.findUserByEmail(rawIdentifier.toLowerCase());
+    if (!resident || resident.role !== 'user' || !resident.password_hash || !(await bcrypt.compare(password, resident.password_hash))) {
+      throw httpError(401, 'Invalid email or password.');
+    }
+    return completeLogin(resident);
+  }
+
+  const normalizedAccountId = rawIdentifier.toUpperCase();
+  const match = normalizedAccountId.match(/^([A-Z]{3})-\d{4}-\d{5}$/);
+  const role = match ? ACCOUNT_ROLES[match[1]] : null;
+  const isUnifiedAppRole = ['rescuer', 'barangay_rescuer'].includes(role);
 
   if (!role || !password || (portalRole ? role !== portalRole : !isUnifiedAppRole)) {
-    throw httpError(401, 'Invalid account ID or password.');
+    throw httpError(401, 'Invalid responder Account ID or password.');
   }
 
   const user = await userModel.findUserByAccountId(normalizedAccountId, role);
   if (!user || !user.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
-    throw httpError(401, 'Invalid account ID or password.');
+    throw httpError(401, 'Invalid responder Account ID or password.');
   }
   return completeLogin(user);
 }

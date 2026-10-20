@@ -1,0 +1,22 @@
+# Android APK files
+*.apk
+*.aab
+artifacts/
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+.expo/
+.gradle/
+android/.gradle/
+android/app/build/
+dist/
+build/
+
+# Git and local files
+.git/
+.env
+.env.local
+.env.*

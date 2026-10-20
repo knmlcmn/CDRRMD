@@ -58,6 +58,12 @@ function buildCandidateHosts() {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   const envBase = normalizeBaseHost(envUrl);
 
+  // A configured API URL is authoritative for deployed web/native builds.
+  // Development host discovery is only needed when no environment URL exists.
+  if (envBase) {
+    return [envBase];
+  }
+
   const expoHostUri =
     (Constants.expoConfig as { hostUri?: string } | null)?.hostUri ||
     (Constants as unknown as { manifest?: { debuggerHost?: string } }).manifest?.debuggerHost ||
@@ -79,7 +85,7 @@ function buildCandidateHosts() {
   ]);
 
   const discovered = hosts.map((host) => `http://${host}:4000`);
-  return unique([envBase, ...discovered]);
+  return unique(discovered);
 }
 
 const candidateHosts = buildCandidateHosts();
