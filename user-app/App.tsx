@@ -35,6 +35,7 @@ import {
 } from './src/services/api';
 import ResidentFloodAlert from './src/components/ResidentFloodAlert';
 import RequiredLocationModal from './src/components/RequiredLocationModal';
+import LogoutConfirmationModal from './src/components/LogoutConfirmationModal';
 import { useResponsiveLayout } from './src/utils/responsive';
 import { LiveLocation, requireLiveLocation } from './src/services/locationAccess';
 import { loadTestMode, saveTestMode } from './src/services/testMode';
@@ -238,6 +239,8 @@ function AppContent() {
   const [floodAlertRescueRequest, setFloodAlertRescueRequest] = useState<{ notificationId: number; requestedAt: number } | null>(null);
   const [locationChecking, setLocationChecking] = useState(false);
   const [locationGate, setLocationGate] = useState<{ message: string; activeSession: boolean } | null>(null);
+  const [logoutConfirmationVisible, setLogoutConfirmationVisible] = useState(false);
+  const [logoutBusy, setLogoutBusy] = useState(false);
   const sessionRef = useRef<SessionData | null>(null);
   const locationGateRef = useRef(locationGate);
   const lastLocationRef = useRef<{ location: LiveLocation; checkedAt: number } | null>(null);
@@ -475,11 +478,22 @@ function AppContent() {
     await activateSession(ensured.session, registrationProfile);
   }
 
-  async function handleLogout() {
-    await clearSession();
-    setLocationGate(null);
-    setSession(null);
-    setAuthMode('login');
+  async function performLogout() {
+    setLogoutBusy(true);
+    try {
+      await clearSession();
+      sessionRef.current = null;
+      setLocationGate(null);
+      setSession(null);
+      setAuthMode('login');
+    } finally {
+      setLogoutBusy(false);
+      setLogoutConfirmationVisible(false);
+    }
+  }
+
+  function requestLogout() {
+    setLogoutConfirmationVisible(true);
   }
 
   async function handleToggleTestMode() {
@@ -569,7 +583,14 @@ function AppContent() {
   if (session.user.role === 'rescuer' || session.user.role === 'barangay_rescuer') {
     return (
       <View style={styles.appRoot}>
-        <RescuerPortal role={session.user.role as ResponderRole} onLogout={handleLogout} />
+        <RescuerPortal role={session.user.role as ResponderRole} onLogout={requestLogout} onAuthError={() => void performLogout()} />
+        <LogoutConfirmationModal
+          visible={logoutConfirmationVisible}
+          responder
+          loading={logoutBusy}
+          onCancel={() => setLogoutConfirmationVisible(false)}
+          onConfirm={() => void performLogout()}
+        />
       </View>
     );
   }
@@ -577,7 +598,7 @@ function AppContent() {
   return (
     <View style={styles.appRoot}>
       <NavigationContainer ref={navigationRef}>
-        <ResidentFloodAlert onTestAccountRemoved={handleLogout} onSendRescue={handleFloodAlertRescue} />
+        <ResidentFloodAlert onTestAccountRemoved={() => void performLogout()} onSendRescue={handleFloodAlertRescue} />
         <Tab.Navigator
         id="MainTabs"
         tabBar={(props) => <UserTabBar {...props} />}
@@ -596,7 +617,7 @@ function AppContent() {
           {() => <FamilyScreen />}
         </Tab.Screen>
         <Tab.Screen name="Me">
-          {() => <MeScreen appUserId={session.appUserId ?? ''} barangayName={session.user.barangayName} onLogout={handleLogout} />}
+          {() => <MeScreen appUserId={session.appUserId ?? ''} barangayName={session.user.barangayName} onLogout={requestLogout} />}
         </Tab.Screen>
         <Tab.Screen
           name="Rescue Status"
@@ -640,6 +661,12 @@ function AppContent() {
           onToggleTestMode={() => void handleToggleTestMode()}
         />
       ) : null}
+      <LogoutConfirmationModal
+        visible={logoutConfirmationVisible}
+        loading={logoutBusy}
+        onCancel={() => setLogoutConfirmationVisible(false)}
+        onConfirm={() => void performLogout()}
+      />
     </View>
   );
 }

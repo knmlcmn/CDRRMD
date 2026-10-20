@@ -309,85 +309,30 @@ type PublicAuthPath =
 
 export async function postAuth(path: PublicAuthPath, payload: unknown) {
   const host = await getHealthyHost();
+  const timeout = path === '/auth/register' ? 30000 : 15000;
 
   try {
-    const response = await axios.post(`${host}/api${path}`, payload, { timeout: 15000 });
+    const response = await axios.post(`${host}/api${path}`, payload, { timeout });
     setApiHost(host);
-
-    // Resident authentication must never accept a staff account.
-    if (path === '/auth/login') {
-      const role = response.data?.user?.role || '';
-      if (role !== 'user') {
-        throw Object.assign(new Error('Staff accounts must use Rescuer login.'), { isRoleError: true });
-      }
-    }
 
     if (response.data?.token) {
       setApiAuthorizationToken(response.data.token);
     }
     return response;
   } catch (error) {
-    if ((error as any).isRoleError) throw error;
     if (!isConnectivityError(error)) {
       throw error;
     }
 
     const nextHost = await resolveHealthyHost();
-    const response = await axios.post(`${nextHost}/api${path}`, payload, { timeout: 15000 });
+    const response = await axios.post(`${nextHost}/api${path}`, payload, { timeout });
     setApiHost(nextHost);
-
-    if (path === '/auth/login') {
-      const role = response.data?.user?.role || '';
-      if (role !== 'user') {
-        throw Object.assign(new Error('Staff accounts must use Rescuer login.'), { isRoleError: true });
-      }
-    }
 
     if (response.data?.token) {
       setApiAuthorizationToken(response.data.token);
     }
     return response;
   }
-}
-
-export type RescuerRole = 'rescuer' | 'barangay_rescuer';
-
-function rescuerPortalFromAccountId(accountId: string): RescuerRole | null {
-  const prefix = accountId.trim().toUpperCase().split('-')[0];
-  if (prefix === 'RSC') return 'rescuer';
-  if (prefix === 'BRS') return 'barangay_rescuer';
-  return null;
-}
-
-export async function loginRescuer(accountId: string, password: string) {
-  const normalizedAccountId = accountId.trim().toUpperCase();
-  const portal = rescuerPortalFromAccountId(normalizedAccountId);
-  if (!portal) {
-    throw new Error('Use a valid RSC-YYYY-00000 or BRS-YYYY-00000 Account ID.');
-  }
-
-  const host = await getHealthyHost();
-  const request = (baseHost: string) => axios.post(
-    `${baseHost}/api/auth/login`,
-    { accountId: normalizedAccountId, password, portal },
-    { timeout: 15000 },
-  );
-
-  let response;
-  try {
-    response = await request(host);
-  } catch (error) {
-    if (!isConnectivityError(error)) throw error;
-    const nextHost = await resolveHealthyHost();
-    response = await request(nextHost);
-    setApiHost(nextHost);
-  }
-
-  if (response.data?.user?.role !== portal) {
-    throw new Error('This Account ID does not have Rescuer App access.');
-  }
-  if (response.data?.token) setApiAuthorizationToken(response.data.token);
-  return response;
 }
 
 export async function getAuthMe() {

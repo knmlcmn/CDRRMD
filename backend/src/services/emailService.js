@@ -38,21 +38,35 @@ function getTransporter() {
   return transporter;
 }
 
+function fromAddress() {
+  const configuredFrom = String(process.env.SMTP_FROM || '').trim();
+  const smtpUser = String(process.env.SMTP_USER || '').trim();
+  const from = configuredFrom && !isPlaceholder(configuredFrom)
+    ? configuredFrom
+    : smtpUser && !isPlaceholder(smtpUser)
+      ? `CDRRMD <${smtpUser}>`
+      : '';
+  if (!from) {
+    throw httpError(503, 'Email delivery is not configured. Please contact CDRRMD support.');
+  }
+  return from;
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function sendOtpEmail({ email, code, purpose, expiresInMinutes }) {
   const isRegistration = purpose === 'registration';
   const action = isRegistration ? 'complete your CDRRMD account registration' : 'reset your CDRRMD account password';
   const subject = isRegistration ? 'CDRRMD registration verification code' : 'CDRRMD password reset code';
-  const configuredFrom = String(process.env.SMTP_FROM || '').trim();
-  const smtpUser = String(process.env.SMTP_USER || '').trim();
-  const from = !configuredFrom || isPlaceholder(configuredFrom)
-    ? `CDRRMD <${smtpUser}>`
-    : configuredFrom;
-  if (!from) {
-    throw httpError(503, 'Email delivery is not configured. Please contact CDRRMD support.');
-  }
-
   await getTransporter().sendMail({
-    from,
+    from: fromAddress(),
     to: email,
     subject,
     text: `Your CDRRMD verification code is ${code}. It expires in ${expiresInMinutes} minutes. Use it to ${action}. If you did not request this code, you can ignore this email.`,
@@ -60,4 +74,15 @@ async function sendOtpEmail({ email, code, purpose, expiresInMinutes }) {
   });
 }
 
-module.exports = { sendOtpEmail };
+async function sendAccountCredentialsEmail({ email, accountId, password, firstName }) {
+  const greeting = firstName ? `Hello ${firstName},` : 'Hello,';
+  await getTransporter().sendMail({
+    from: fromAddress(),
+    to: email,
+    subject: 'Your CDRRMD account ID',
+    text: `${greeting}\n\nYour CDRRMD account was created successfully.\n\nAccount ID: ${accountId}\nPassword: ${password}\n\nUse this account ID and password to sign in to the CDRRMD app platform. Keep this email private.`,
+    html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#173750"><h2 style="margin-bottom:8px">Your CDRRMD account</h2><p>${escapeHtml(greeting)}</p><p>Your account was created successfully. Use these credentials to sign in to the CDRRMD app or web platform:</p><div style="padding:16px;border-radius:8px;background:#f1f5f9"><p><strong>Account ID:</strong> ${escapeHtml(accountId)}</p><p><strong>Password:</strong> ${escapeHtml(password)}</p></div><p style="color:#64748b;font-size:13px">Keep this email private and do not share your password.</p></div>`,
+  });
+}
+
+module.exports = { sendAccountCredentialsEmail, sendOtpEmail };

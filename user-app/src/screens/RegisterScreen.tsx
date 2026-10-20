@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -147,6 +148,14 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
         setVerificationError('Registration failed for user account.');
         return;
       }
+      const accountId = nextSession.user.accountId || 'your new Account ID';
+      const credentialEmailSent = res.data?.credentialEmailSent !== false;
+      Alert.alert(
+        'Account created',
+        credentialEmailSent
+          ? `Your login credentials and Account ID (${accountId}) were sent to ${email.trim()}.`
+          : `Your account was created as ${accountId}, but the credentials email could not be delivered. Keep this Account ID for login.`,
+      );
       await onRegisterSuccess(nextSession);
     } catch (err: any) {
       if (err?.code === 'ECONNABORTED' || err?.message?.toLowerCase?.().includes('network')) {
@@ -206,7 +215,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
               trailing={<TouchableOpacity onPress={() => setShowConfirmPassword((value) => !value)}><MaterialCommunityIcons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={16} color="#526170" /></TouchableOpacity>}
             />
 
-            <Text style={styles.locationHint}>Press Create Account to receive your email verification code.</Text>
+            <Text style={styles.locationHint}>After email verification, your Account ID and login credentials will be sent to this email address.</Text>
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <TouchableOpacity style={styles.primaryButton} onPress={onRegister} disabled={loading || otpSending} activeOpacity={0.85}>

@@ -13,6 +13,15 @@ const { httpError } = require('../utils/httpError');
 const { SUPPORTED_BARANGAYS: RESIDENT_BARANGAYS, normalizeBarangayName } = require('./supportedBarangays');
 const { resolveBarangayAtLocation } = require('./barangayBoundaryService');
 const emailOtpService = require('./emailOtpService');
+const { sendAccountCredentialsEmail } = require('./emailService');
+
+const ACCOUNT_ROLES = Object.freeze({
+  ADM: 'admin',
+  BRG: 'barangay',
+  RSC: 'rescuer',
+  BRS: 'barangay_rescuer',
+  USR: 'user',
+});
 
 // Keeps API response shape stable even if DB column names differ.
 function toUserResponse(user) {
@@ -95,13 +104,27 @@ async function register(payload) {
     barangayName: selectedBarangay,
   });
 
+  const userResponse = toUserResponse(user);
   const { token, refreshToken } = issueTokens(user);
   await refreshTokenModel.withTransaction(async (client) => {
     await refreshTokenModel.revokeActiveByUser(client, user.id);
     await persistRefreshToken(client, user.id, refreshToken);
   });
 
-  return { token, refreshToken, user: toUserResponse(user) };
+  let credentialEmailSent = true;
+  try {
+    await sendAccountCredentialsEmail({
+      email: trimmedEmail,
+      accountId: userResponse.accountId,
+      password: String(password),
+      firstName: userResponse.firstName,
+    });
+  } catch (error) {
+    credentialEmailSent = false;
+    console.error('Account credential email delivery failed:', error.message);
+  }
+
+  return { token, refreshToken, user: userResponse, credentialEmailSent };
 }
 
 async function requestRegistrationOtp(payload) {
@@ -146,69 +169,23 @@ async function resetPassword(payload) {
 }
 
 async function login(payload) {
-  const { email, username, accountId, portal, password } = payload || {};
-  const staffRole = portal === 'admin'
-    ? 'admin'
-    : portal === 'barangay'
-      ? 'barangay'
-      : portal === 'rescuer'
-        ? 'rescuer'
-        : portal === 'barangay_rescuer'
-          ? 'barangay_rescuer'
-        : null;
+  const { accountId, portal, password } = payload || {};
+  const normalizedAccountId = String(accountId || '').trim().toUpperCase();
+  const match = normalizedAccountId.match(/^([A-Z]{3})-\d{4}-\d{5}$/);
+  const role = match ? ACCOUNT_ROLES[match[1]] : null;
+  const portalRole = ['admin', 'barangay', 'rescuer', 'barangay_rescuer'].includes(portal)
+    ? portal
+    : null;
+  const isUnifiedAppRole = ['user', 'rescuer', 'barangay_rescuer'].includes(role);
 
-  if (staffRole) {
-    const normalizedAccountId = String(accountId || '').trim().toUpperCase();
-    const expectedPattern = staffRole === 'admin'
-      ? /^ADM-\d{4}-\d{5}$/
-      : staffRole === 'barangay'
-        ? /^BRG-\d{4}-\d{5}$/
-        : staffRole === 'rescuer'
-          ? /^RSC-\d{4}-\d{5}$/
-          : /^BRS-\d{4}-\d{5}$/;
-    if (!expectedPattern.test(normalizedAccountId) || !password) {
-      throw httpError(401, 'Invalid account ID or password.');
-    }
-    const staffUser = await userModel.findStaffByAccountId(normalizedAccountId, staffRole);
-    if (!staffUser || !staffUser.password_hash || !(await bcrypt.compare(password, staffUser.password_hash))) {
-      throw httpError(401, 'Invalid account ID or password.');
-    }
-    return completeLogin(staffUser);
+  if (!role || !password || (portalRole ? role !== portalRole : !isUnifiedAppRole)) {
+    throw httpError(401, 'Invalid account ID or password.');
   }
 
-  const identifier = email || username;
-
-  if (!identifier || !password) {
-    throw httpError(400, 'Username/email and password are required.');
+  const user = await userModel.findUserByAccountId(normalizedAccountId, role);
+  if (!user || !user.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
+    throw httpError(401, 'Invalid account ID or password.');
   }
-
-  const normalizedIdentifier = String(identifier).trim();
-  if (!normalizedIdentifier) {
-    throw httpError(400, 'Username/email and password are required.');
-  }
-
-  const lookupIdentifier = normalizedIdentifier.includes('@')
-    ? normalizedIdentifier.toLowerCase()
-    : normalizedIdentifier;
-
-  let user = await userModel.findUserByEmail(lookupIdentifier);
-  if (!user) {
-    user = await userModel.findUserByUsername(lookupIdentifier);
-  }
-
-  if (!user || !user.password_hash || typeof user.password_hash !== 'string') {
-    throw httpError(401, 'Invalid email or password.');
-  }
-
-  if (['admin', 'barangay', 'rescuer', 'barangay_rescuer'].includes(user.role)) {
-    throw httpError(401, 'Staff accounts must log in with their account ID through the correct portal or app.');
-  }
-
-  const validPassword = await bcrypt.compare(password, user.password_hash);
-  if (!validPassword) {
-    throw httpError(401, 'Invalid email or password.');
-  }
-
   return completeLogin(user);
 }
 

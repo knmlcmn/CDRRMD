@@ -38,8 +38,11 @@ On backend start, tables are auto-created. Default staff accounts are seeded onl
 
 Admin and barangay web portals accept only their generated account ID and password.
 Usernames and email addresses cannot be used to sign in to either staff portal.
-CDRRMD and Barangay Rescuers use their `RSC-` or `BRS-` Account ID in the
-Rescuer login mode of `user-app`. Residents continue to use their email address.
+Residents and rescuers share one login form in `user-app`. Residents use their
+generated `USR-` Account ID, CDRRMD Rescuers use `RSC-`, and Barangay Rescuers
+use `BRS-`; all roles sign in with their Account ID and password. After a
+resident completes OTP registration, their generated Account ID and submitted
+password are sent to the verified email address.
 
 Default evacuation centers are inserted only once for a new, empty database.
 Centers deleted by an administrator remain deleted after backend restarts.

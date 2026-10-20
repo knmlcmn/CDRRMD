@@ -18,17 +18,17 @@ const tabs: Array<{ key: Tab; label: string; icon: keyof typeof MaterialCommunit
   { key: 'account', label: 'Account', icon: 'account-outline' },
 ];
 
-export default function RescuerPortal({ role, onLogout }: { role: ResponderRole; onLogout: () => void }) {
+export default function RescuerPortal({ role, onLogout, onAuthError }: { role: ResponderRole; onLogout: () => void; onAuthError: () => void }) {
   const { width } = useWindowDimensions();
   const desktop = width >= 820;
   const [tab, setTab] = useState<Tab>('assignments');
   const content = tab === 'history'
-    ? <HistoryScreen role={role} onAuthError={onLogout} />
+    ? <HistoryScreen role={role} onAuthError={onAuthError} />
     : tab === 'flood'
-      ? <FloodMonitoringScreen onAuthError={onLogout} />
+      ? <FloodMonitoringScreen onAuthError={onAuthError} />
       : tab === 'account'
-        ? <AccountScreen role={role} onAuthError={onLogout} />
-        : <AssignmentsScreen role={role} onAuthError={onLogout} />;
+        ? <AccountScreen role={role} onAuthError={onAuthError} />
+        : <AssignmentsScreen role={role} onAuthError={onAuthError} />;
 
   return (
     <TypographyFamily family="Manrope">

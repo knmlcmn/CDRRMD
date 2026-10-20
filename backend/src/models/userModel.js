@@ -8,24 +8,19 @@ async function findUserByEmail(email) {
   return result.rows[0] || null;
 }
 
-async function findUserByUsername(username) {
-  const result = await pool.query(
-    'SELECT * FROM users WHERE LOWER(username) = LOWER($1) AND COALESCE(is_archived, FALSE) = FALSE',
-    [username],
-  );
-  return result.rows[0] || null;
-}
-
-async function findStaffByAccountId(accountId, role) {
-  const prefix = role === 'admin' ? 'ADM' : role === 'barangay' ? 'BRG' : role === 'rescuer' ? 'RSC' : role === 'barangay_rescuer' ? 'BRS' : null;
-  if (!prefix) return null;
+async function findUserByAccountId(accountId, role) {
+  const match = String(accountId || '').match(/^[A-Z]{3}-(\d{4})-(\d{5})$/);
+  if (!match) return null;
+  const createdYear = Number(match[1]);
+  const userId = Number(match[2]);
   const result = await pool.query(
     `SELECT * FROM users
-     WHERE role = $1
+     WHERE id = $1
+       AND role = $2
        AND COALESCE(is_archived, FALSE) = FALSE
-       AND UPPER($2::text) = CONCAT($3::text, '-', EXTRACT(YEAR FROM created_at)::text, '-', LPAD(id::text, 5, '0'))
+       AND EXTRACT(YEAR FROM created_at)::integer = $3
      LIMIT 1`,
-    [role, accountId, prefix],
+    [userId, role, createdYear],
   );
   return result.rows[0] || null;
 }
@@ -1032,8 +1027,7 @@ async function listReportsByLocationText(barangayName) {
 
 module.exports = {
   findUserByEmail,
-  findUserByUsername,
-  findStaffByAccountId,
+  findUserByAccountId,
   findPublicUserById,
   createUser,
   updateMyProfile,
