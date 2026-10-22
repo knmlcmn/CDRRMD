@@ -1,7 +1,9 @@
 const pool = require('../config/db');
 const { loadHardwareSensorSnapshot } = require('./hardwareSensorService');
 const MODERATE_THRESHOLD = 40;
-const HIGH_THRESHOLD = 70;
+// Keep alert severity aligned with the resident/rescuer map legend:
+// Moderate is 40-60%, and High begins at 61%.
+const HIGH_THRESHOLD = 61;
 const SYNC_THROTTLE_MS = 750;
 
 let lastSyncAt = 0;

@@ -11,6 +11,8 @@
     "preandroid": "npm run clear:port",
     "android": "expo start --android --port 8081",
     "ios": "expo start --ios",
+    "ota:production": "npx eas-cli update --channel production --platform android --environment production",
+    "build:production:android": "npx eas-cli build --platform android --profile production",
     "preweb": "npm run clear:port",
     "web": "expo start --web --port 8081",
     "web:build": "expo export --platform web"
@@ -30,6 +32,7 @@
     "expo-image-picker": "~55.0.24",
     "expo-location": "~55.1.14",
     "expo-status-bar": "~55.0.6",
+    "expo-updates": "~55.0.33",
     "nativewind": "^4.2.2",
     "react": "19.2.0",
     "react-dom": "19.2.0",

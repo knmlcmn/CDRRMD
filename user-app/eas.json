@@ -5,20 +5,17 @@
   },
   "build": {
     "preview": {
+      "channel": "preview",
+      "environment": "preview",
       "distribution": "internal",
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://cdrrmd-backend.vercel.app"
-      },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
+      "channel": "production",
       "environment": "production",
       "distribution": "internal",
-      "env": {
-        "EXPO_PUBLIC_API_URL": "https://cdrrmd-backend.vercel.app"
-      },
       "android": {
         "buildType": "apk"
       }

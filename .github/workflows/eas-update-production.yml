@@ -1,0 +1,62 @@
+name: Publish Android production OTA update
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "user-app/**"
+      - "package-lock.json"
+      - ".github/workflows/eas-update-production.yml"
+concurrency:
+  group: user-app-production-ota
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure Expo and EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Validate user-app
+        run: npx tsc --noEmit -p user-app/tsconfig.json
+
+      - name: Check OTA compatibility
+        id: ota
+        shell: bash
+        run: |
+          changed_files="$(git diff --name-only "${{ github.event.before }}" "$GITHUB_SHA")"
+          printf '%s\n' "$changed_files"
+
+          if grep -Eq '^(package-lock\.json|user-app/(app\.json|eas\.json|package\.json))$' <<< "$changed_files"; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "Native dependency or build configuration changed; test and distribute a new APK instead."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish production OTA update
+        if: steps.ota.outputs.publish == 'true'
+        working-directory: user-app
+        run: npx eas-cli update --channel production --platform android --environment production --message "main ${GITHUB_SHA::7}" --non-interactive
