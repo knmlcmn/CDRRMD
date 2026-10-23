@@ -26,6 +26,7 @@
     "android": {
       "package": "ph.gov.calambacity.cdrrmd",
       "versionCode": 7,
+      "googleServicesFile": "./google-services.json",
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
       ],
@@ -47,6 +48,13 @@
     },
     "plugins": [
       "expo-font",
+      [
+        "expo-notifications",
+        {
+          "color": "#ef2b20",
+          "defaultChannel": "flood-emergency-v1"
+        }
+      ],
       [
         "expo-image-picker",
         {

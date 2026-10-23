@@ -76,11 +76,11 @@ function buildMapHtml(
     windDataUrl,
     {
       boundary: true,
-      floodHazard: false,
+      floodHazard: true,
       evacuationAreas: true,
       incidentMarkers: true,
       responderRoute: true,
-      weatherOverlay: true,
+      weatherOverlay: false,
       temperatureOverlay: false,
       humidityOverlay: false,
       windOverlay: false,

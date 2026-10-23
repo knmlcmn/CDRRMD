@@ -139,11 +139,11 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   const [mapReady, setMapReady] = useState(false);
   const [layerVisibility] = useState<MonitoringLayerVisibility>({
     boundary: true,
-    floodHazard: false,
+    floodHazard: true,
     evacuationAreas: true,
     incidentMarkers: true,
     responderRoute: true,
-    weatherOverlay: true,
+    weatherOverlay: false,
     temperatureOverlay: false,
     humidityOverlay: false,
     windOverlay: false,

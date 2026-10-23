@@ -5,6 +5,7 @@ const {
   getAlerts,
   createAlert,
   publishFloodSensorAlert,
+  triggerFloodSensorSync,
   getAnnouncements,
   createAnnouncement,
   getEvacuationAreas,
@@ -20,6 +21,7 @@ const router = express.Router();
 router.get('/alerts', cacheResponse({ key: 'http:content:alerts', ttlMs: 2_000 }), getAlerts);
 router.post('/alerts', auth, createAlert);
 router.post('/flood-sensor-alerts', auth, publishFloodSensorAlert);
+router.post('/flood-sensor-sync', triggerFloodSensorSync);
 
 router.get('/announcements', cacheResponse({ key: 'http:content:announcements', ttlMs: 2_000 }), getAnnouncements);
 router.post('/announcements', auth, createAnnouncement);

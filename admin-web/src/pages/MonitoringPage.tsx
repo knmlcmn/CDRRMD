@@ -136,11 +136,11 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   const [declineExplanation, setDeclineExplanation] = useState('');
   const [layerVisibility] = useState<MonitoringLayerVisibility>({
     boundary: true,
-    floodHazard: false,
+    floodHazard: true,
     evacuationAreas: true,
     incidentMarkers: true,
     responderRoute: true,
-    weatherOverlay: true,
+    weatherOverlay: false,
     temperatureOverlay: false,
     humidityOverlay: false,
     windOverlay: false,

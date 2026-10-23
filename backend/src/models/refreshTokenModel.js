@@ -24,6 +24,15 @@ async function revokeActiveByUser(client, userId) {
 }
 
 async function insertRefreshToken(client, userId, tokenHash, expiresAt) {
+  // Invalid refresh tokens are never used again. Removing them during normal
+  // authentication traffic keeps this high-churn table from growing forever
+  // without affecting any active session.
+  await client.query(
+    `DELETE FROM user_refresh_tokens
+     WHERE user_id = $1
+       AND (revoked_at IS NOT NULL OR expires_at <= NOW())`,
+    [userId],
+  );
   await client.query(
     `INSERT INTO user_refresh_tokens (user_id, token_hash, expires_at)
      VALUES ($1, $2, $3)`,

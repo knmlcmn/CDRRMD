@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, AppState, Easing, Modal, Platform, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Animated, AppState, Easing, Modal, Platform, StyleSheet, TouchableOpacity, useWindowDimensions, Vibration, View } from 'react-native';
 import { AppText as Text } from './Typography';
 import { editorial } from './EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -190,9 +190,11 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
 
   useEffect(() => {
     if (!alert) {
+      if (Platform.OS !== 'web') Vibration.cancel();
       warningPulse.setValue(0);
       return undefined;
     }
+    if (Platform.OS !== 'web') Vibration.vibrate([0, 600, 250, 600, 250, 1000]);
     const animation = Animated.loop(Animated.sequence([
       Animated.timing(warningPulse, {
         toValue: 1,
@@ -208,7 +210,10 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
       }),
     ]));
     animation.start();
-    return () => animation.stop();
+    return () => {
+      animation.stop();
+      if (Platform.OS !== 'web') Vibration.cancel();
+    };
   }, [alert, warningPulse]);
 
   async function dismiss() {

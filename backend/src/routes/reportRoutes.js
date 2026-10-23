@@ -11,6 +11,8 @@ const {
 	getMyNotifications,
 	markAllNotificationsRead,
 	markNotificationRead,
+	registerPushToken,
+	unregisterPushToken,
 } = require('../controllers/reportController');
 
 const router = express.Router();
@@ -21,6 +23,8 @@ router.get('/mine', auth, getMyReports);
 router.get('/notifications/mine', auth, getMyNotifications);
 router.patch('/notifications/read-all', auth, markAllNotificationsRead);
 router.patch('/notifications/:id/read', auth, markNotificationRead);
+router.post('/notifications/push-token', auth, registerPushToken);
+router.delete('/notifications/push-token', auth, unregisterPushToken);
 router.get('/history', auth, getReportHistory);
 router.get('/', auth, getReports);
 router.get('/:id/image', auth, getReportImage);

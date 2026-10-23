@@ -15,6 +15,7 @@ const {
   findNearestAvailableEvacuationArea,
 } = require('../services/evacuationRoutingService');
 const { syncFloodSensorAlerts } = require('../services/floodSensorAlertService');
+const { isExpoPushToken, sendPendingFloodPushNotifications } = require('../services/expoPushService');
 
 function buildReportCode(id, createdAt) {
   const year = new Date(createdAt || Date.now()).getFullYear();
@@ -1379,6 +1380,49 @@ async function markNotificationRead(req, res) {
   }
 }
 
+async function registerPushToken(req, res) {
+  const userId = req.user?.userId;
+  if (!userId || req.user?.role !== 'user') {
+    return res.status(403).json({ message: 'Resident access required.' });
+  }
+  const expoPushToken = String(req.body?.expoPushToken || '').trim();
+  const platform = String(req.body?.platform || '').trim().toLowerCase();
+  if (!isExpoPushToken(expoPushToken) || !['android', 'ios'].includes(platform)) {
+    return res.status(400).json({ message: 'A valid mobile push token is required.' });
+  }
+  await pool.query(
+    `INSERT INTO user_device_push_tokens
+       (user_id, expo_push_token, platform, is_active, last_registered_at, updated_at)
+     VALUES ($1, $2, $3, TRUE, NOW(), NOW())
+     ON CONFLICT (expo_push_token) DO UPDATE
+       SET user_id = EXCLUDED.user_id,
+           platform = EXCLUDED.platform,
+           is_active = TRUE,
+           last_registered_at = NOW(),
+           updated_at = NOW()`,
+    [userId, expoPushToken, platform],
+  );
+  sendPendingFloodPushNotifications({ userId }).catch((error) => {
+    console.error('Unable to deliver pending flood push notification after device registration.', error);
+  });
+  return res.json({ registered: true });
+}
+
+async function unregisterPushToken(req, res) {
+  const userId = req.user?.userId;
+  const expoPushToken = String(req.body?.expoPushToken || '').trim();
+  if (!userId || !isExpoPushToken(expoPushToken)) {
+    return res.status(400).json({ message: 'A valid mobile push token is required.' });
+  }
+  await pool.query(
+    `UPDATE user_device_push_tokens
+     SET is_active = FALSE, updated_at = NOW()
+     WHERE user_id = $1 AND expo_push_token = $2`,
+    [userId, expoPushToken],
+  );
+  return res.json({ registered: false });
+}
+
 module.exports = {
   createReport,
   getMyReports,
@@ -1390,4 +1434,6 @@ module.exports = {
   getMyNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  registerPushToken,
+  unregisterPushToken,
 };

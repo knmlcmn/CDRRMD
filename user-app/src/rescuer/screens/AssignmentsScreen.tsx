@@ -191,11 +191,11 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/weather/wind-field`,
     {
       boundary: true,
-      floodHazard: !fullscreen,
+      floodHazard: true,
       evacuationAreas: true,
       incidentMarkers: true,
       responderRoute: true,
-      weatherOverlay: fullscreen,
+      weatherOverlay: false,
       temperatureOverlay: false,
       humidityOverlay: false,
       windOverlay: false,

@@ -18,7 +18,11 @@ async function replaceActive(email, purpose, codeHash, expiresAt) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query("DELETE FROM email_otp_codes WHERE expires_at < NOW() - INTERVAL '1 day'");
+    await client.query(
+      `DELETE FROM email_otp_codes
+       WHERE expires_at < NOW() - INTERVAL '1 day'
+          OR consumed_at < NOW() - INTERVAL '1 day'`,
+    );
     await client.query(
       `UPDATE email_otp_codes
        SET consumed_at = NOW()

@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const crypto = require('crypto');
 const {
   normalizeBarangayName,
   resolveBarangayAtLocation,
@@ -96,6 +97,27 @@ async function publishFloodSensorAlert(req, res) {
 
   // Kept as a compatibility trigger for older cached admin bundles. Sensor
   // values and event identity are owned by the backend to prevent duplicates.
+  await syncFloodSensorAlerts();
+  return res.json({ synchronized: true });
+}
+
+function secretsMatch(provided, expected) {
+  const providedBuffer = Buffer.from(String(provided || ''));
+  const expectedBuffer = Buffer.from(String(expected || ''));
+  return expectedBuffer.length > 0
+    && providedBuffer.length === expectedBuffer.length
+    && crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+}
+
+async function triggerFloodSensorSync(req, res) {
+  const expectedSecret = process.env.FLOOD_SENSOR_WEBHOOK_SECRET;
+  const authorization = String(req.headers.authorization || '');
+  const providedSecret = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  if (!secretsMatch(providedSecret, expectedSecret)) {
+    return res.status(expectedSecret ? 401 : 503).json({
+      message: expectedSecret ? 'Unauthorized sensor trigger.' : 'Sensor trigger is not configured.',
+    });
+  }
   await syncFloodSensorAlerts();
   return res.json({ synchronized: true });
 }
@@ -378,6 +400,7 @@ module.exports = {
   getAlerts,
   createAlert,
   publishFloodSensorAlert,
+  triggerFloodSensorSync,
   getAnnouncements,
   createAnnouncement,
   getEvacuationAreas,

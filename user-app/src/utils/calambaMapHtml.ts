@@ -204,7 +204,7 @@ export function buildCalambaMapHtml(
         evacuationAreas: true,
         incidentMarkers: true,
         responderRoute: true,
-        weatherOverlay: true
+        weatherOverlay: false
       }, payload.layerVisibility || {});
       visibility.floodHazard = !Boolean(visibility.weatherOverlay);
       var calambaCenter = [14.206021, 121.1556496];

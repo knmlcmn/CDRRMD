@@ -41,6 +41,11 @@ import { LiveLocation, requireLiveLocation } from './src/services/locationAccess
 import { loadTestMode, saveTestMode } from './src/services/testMode';
 import RescuerPortal from './src/rescuer/RescuerPortal';
 import type { ResponderRole } from './src/rescuer/types';
+import {
+  registerResidentPushNotifications,
+  subscribeToPushTokenChanges,
+  unregisterResidentPushNotifications,
+} from './src/services/pushNotifications';
 
 function isBlank(value?: string | null) {
   return !String(value ?? '').trim();
@@ -258,6 +263,13 @@ function AppContent() {
   useEffect(() => {
     registerSessionAuthorizationSetter(setApiAuthorizationToken);
   }, []);
+
+  useEffect(() => {
+    if (session?.user.role !== 'user') return undefined;
+    registerResidentPushNotifications().catch(() => {});
+    const tokenSubscription = subscribeToPushTokenChanges();
+    return () => tokenSubscription?.remove();
+  }, [session?.user.id, session?.user.role]);
 
   useEffect(() => {
     let mounted = true;
@@ -481,6 +493,9 @@ function AppContent() {
   async function performLogout() {
     setLogoutBusy(true);
     try {
+      if (sessionRef.current?.user.role === 'user') {
+        await unregisterResidentPushNotifications().catch(() => {});
+      }
       await clearSession();
       sessionRef.current = null;
       setLocationGate(null);

@@ -1,5 +1,6 @@
 const pool = require('../config/db');
 const { loadHardwareSensorSnapshot } = require('./hardwareSensorService');
+const { sendPendingFloodPushNotifications } = require('./expoPushService');
 const MODERATE_THRESHOLD = 40;
 // Keep alert severity aligned with the resident/rescuer map legend:
 // Moderate is 40-60%, and High begins at 61%.
@@ -117,6 +118,9 @@ async function performSensorSync() {
   } finally {
     client.release();
   }
+  await sendPendingFloodPushNotifications().catch((error) => {
+    console.error('Unable to deliver flood push notifications.', error);
+  });
 }
 
 async function syncFloodSensorAlerts() {

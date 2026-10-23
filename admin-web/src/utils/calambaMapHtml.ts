@@ -353,7 +353,7 @@ export function buildCalambaMapHtml(
         evacuationAreas: true,
         incidentMarkers: true,
         responderRoute: true,
-        weatherOverlay: true,
+        weatherOverlay: false,
         temperatureOverlay: false,
         humidityOverlay: false,
         windOverlay: false

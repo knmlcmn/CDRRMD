@@ -330,6 +330,32 @@ const MIGRATIONS = [
         WHERE is_active = TRUE;
     `,
   },
+  {
+    version: 9,
+    name: 'add_resident_push_notification_delivery',
+    sql: `
+      CREATE TABLE IF NOT EXISTS user_device_push_tokens (
+        id BIGSERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expo_push_token VARCHAR(255) NOT NULL UNIQUE,
+        platform VARCHAR(20) NOT NULL CHECK (platform IN ('android', 'ios')),
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        last_registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      ALTER TABLE user_notifications ADD COLUMN IF NOT EXISTS push_attempted_at TIMESTAMPTZ;
+      ALTER TABLE user_notifications ADD COLUMN IF NOT EXISTS push_sent_at TIMESTAMPTZ;
+      ALTER TABLE user_notifications ADD COLUMN IF NOT EXISTS push_error TEXT;
+
+      CREATE INDEX IF NOT EXISTS user_device_push_tokens_user_active_idx
+        ON user_device_push_tokens (user_id, is_active);
+      CREATE INDEX IF NOT EXISTS user_notifications_pending_flood_push_idx
+        ON user_notifications (created_at)
+        WHERE category = 'flood_sensor' AND push_sent_at IS NULL;
+    `,
+  },
 ];
 
 async function runSchemaMigrations(pool) {

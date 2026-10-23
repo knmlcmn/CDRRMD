@@ -167,6 +167,17 @@ async function initDb() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS user_device_push_tokens (
+      id BIGSERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expo_push_token VARCHAR(255) NOT NULL UNIQUE,
+      platform VARCHAR(20) NOT NULL CHECK (platform IN ('android', 'ios')),
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      last_registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
     CREATE TABLE IF NOT EXISTS flood_sensor_alert_events (
       id SERIAL PRIMARY KEY,
       event_key VARCHAR(160) NOT NULL,
@@ -301,6 +312,15 @@ async function initDb() {
 
     ALTER TABLE user_notifications
     ADD COLUMN IF NOT EXISTS source_event_key VARCHAR(160);
+
+    ALTER TABLE user_notifications
+    ADD COLUMN IF NOT EXISTS push_attempted_at TIMESTAMPTZ;
+
+    ALTER TABLE user_notifications
+    ADD COLUMN IF NOT EXISTS push_sent_at TIMESTAMPTZ;
+
+    ALTER TABLE user_notifications
+    ADD COLUMN IF NOT EXISTS push_error TEXT;
 
     ALTER TABLE flood_sensor_alert_events
     ADD COLUMN IF NOT EXISTS distance_cm DOUBLE PRECISION;
@@ -476,6 +496,9 @@ async function initDb() {
     CREATE UNIQUE INDEX IF NOT EXISTS user_notifications_flood_event_unique_idx
     ON user_notifications (user_id, source_event_key, severity)
     WHERE category = 'flood_sensor' AND source_event_key IS NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS user_device_push_tokens_user_active_idx
+    ON user_device_push_tokens (user_id, is_active);
 
     CREATE UNIQUE INDEX IF NOT EXISTS user_refresh_tokens_hash_unique_idx
     ON user_refresh_tokens (token_hash);
