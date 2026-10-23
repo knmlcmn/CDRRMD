@@ -4,6 +4,7 @@ import { AppText as Text } from '../../components/Typography';
 import { Card, EmptyState, ErrorMessage, RescuerScreen, rescuerColors } from '../components/RescuerScreen';
 import { loadFloodReports, loadWaterLevelSensors } from '../services/rescuerService';
 import type { FloodReport, WaterLevelSensor } from '../types';
+import { HIGH_WATER_LEVEL_THRESHOLD, MODERATE_WATER_LEVEL_THRESHOLD } from '../../utils/waterLevelHazard';
 
 function statusLabel(value: string) {
   return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -27,96 +28,81 @@ function AnimatedWaterGauge({ unavailable, percentage, levelColor }: {
   levelColor: string;
 }) {
   const fillProgress = useRef(new Animated.Value(0)).current;
-  const pulseProgress = useRef(new Animated.Value(0)).current;
-  const surfaceProgress = useRef(new Animated.Value(0)).current;
-  const bubbleProgress = useRef([
-    new Animated.Value(0),
-    new Animated.Value(0),
-    new Animated.Value(0),
-    new Animated.Value(0),
-  ]).current;
+  const waveProgress = useRef(new Animated.Value(0)).current;
+  const bubbleProgress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.timing(fillProgress, {
-      duration: 900,
-      easing: Easing.out(Easing.cubic),
+    // Sensor polling can update every two seconds. Keep one short JS-driven
+    // height transition and stop the previous transition before starting the
+    // next one so Android never accumulates native animation/SVG work.
+    fillProgress.stopAnimation();
+    const animation = Animated.timing(fillProgress, {
+      duration: 450,
       toValue: unavailable ? 0 : percentage,
       useNativeDriver: false,
-    }).start();
+    });
+    animation.start();
+    return () => animation.stop();
   }, [fillProgress, percentage, unavailable]);
 
   useEffect(() => {
     if (unavailable) {
-      pulseProgress.setValue(0);
-      surfaceProgress.setValue(0);
-      bubbleProgress.forEach((value) => value.setValue(0));
+      waveProgress.setValue(0);
+      bubbleProgress.setValue(0);
       return undefined;
     }
 
-    const pulseDuration = percentage >= 70 ? 1050 : percentage >= 40 ? 2250 : 3800;
-    const surfaceDuration = percentage >= 70 ? 1150 : percentage >= 40 ? 2100 : 3500;
-    const animations = [
-      Animated.loop(Animated.sequence([
-        Animated.timing(pulseProgress, { duration: pulseDuration / 2, easing: Easing.inOut(Easing.sin), toValue: 1, useNativeDriver: true }),
-        Animated.timing(pulseProgress, { duration: pulseDuration / 2, easing: Easing.inOut(Easing.sin), toValue: 0, useNativeDriver: true }),
-      ])),
-      Animated.loop(Animated.sequence([
-        Animated.timing(surfaceProgress, { duration: surfaceDuration / 2, easing: Easing.inOut(Easing.sin), toValue: 1, useNativeDriver: true }),
-        Animated.timing(surfaceProgress, { duration: surfaceDuration / 2, easing: Easing.inOut(Easing.sin), toValue: 0, useNativeDriver: true }),
-      ])),
-      ...bubbleProgress.map((value, index) => Animated.loop(Animated.sequence([
-        Animated.delay(index * 260),
-        Animated.timing(value, {
-          duration: Math.max(1200, 3000 - (percentage * 14)) + (index * 180),
-          easing: Easing.linear,
-          toValue: 1,
-          useNativeDriver: true,
-        }),
-        Animated.timing(value, { duration: 0, toValue: 0, useNativeDriver: true }),
-      ]))),
-    ];
+    // These loops are intentionally independent of percentage. Live sensor
+    // updates only animate the fill height and never restart the moving water,
+    // preventing the Android blank-screen failure caused by accumulating loops.
+    const waveAnimation = Animated.loop(Animated.sequence([
+      Animated.timing(waveProgress, { duration: 1_300, easing: Easing.inOut(Easing.sin), toValue: 1, useNativeDriver: true }),
+      Animated.timing(waveProgress, { duration: 1_300, easing: Easing.inOut(Easing.sin), toValue: 0, useNativeDriver: true }),
+    ]));
+    const bubbleAnimation = Animated.loop(Animated.sequence([
+      Animated.timing(bubbleProgress, { duration: 2_600, easing: Easing.linear, toValue: 1, useNativeDriver: true }),
+      Animated.timing(bubbleProgress, { duration: 0, toValue: 0, useNativeDriver: true }),
+    ]));
 
-    animations.forEach((animation) => animation.start());
-    return () => animations.forEach((animation) => animation.stop());
-  }, [bubbleProgress, percentage, pulseProgress, surfaceProgress, unavailable]);
-
-  const gaugeTransform = [
-    { translateY: pulseProgress.interpolate({ inputRange: [0, 1], outputRange: [0, -3] }) },
-    { scale: pulseProgress.interpolate({ inputRange: [0, 1], outputRange: [1, percentage >= 70 ? 1.025 : 1] }) },
-  ];
+    waveAnimation.start();
+    bubbleAnimation.start();
+    return () => {
+      waveAnimation.stop();
+      bubbleAnimation.stop();
+    };
+  }, [bubbleProgress, unavailable, waveProgress]);
 
   return (
-    <Animated.View style={[styles.gauge, unavailable && styles.unavailableGauge, { transform: gaugeTransform }]}>
-      {!unavailable ? (
-        <Animated.View style={[
-          styles.gaugeFill,
-          {
-            height: fillProgress.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }),
-            backgroundColor: levelColor,
-          },
-        ]}>
-          {percentage > 0 ? (
-            <Animated.View style={[
+    <View style={[styles.gauge, unavailable && styles.unavailableGauge]}>
+      <View style={styles.gaugeViewport}>
+        {!unavailable ? (
+          <Animated.View style={[
+            styles.gaugeFill,
+            {
+              height: fillProgress.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }),
+              backgroundColor: levelColor,
+            },
+          ]}>
+            {percentage > 0 ? <Animated.View style={[
               styles.waterSurface,
-              { transform: [{ translateX: surfaceProgress.interpolate({ inputRange: [0, 1], outputRange: [-10, 10] }) }] },
-            ]} />
-          ) : null}
-          {percentage > 0 ? bubbleProgress.map((value, index) => (
-            <Animated.View
-              key={index}
-              style={[
-                styles.bubble,
-                [styles.bubbleOne, styles.bubbleTwo, styles.bubbleThree, styles.bubbleFour][index],
-                {
-                  opacity: value.interpolate({ inputRange: [0, 0.15, 0.8, 1], outputRange: [0, 0.55, 0.3, 0] }),
-                  transform: [{ translateY: value.interpolate({ inputRange: [0, 1], outputRange: [48, -112] }) }],
-                },
-              ]}
-            />
-          )) : null}
-        </Animated.View>
-      ) : null}
-    </Animated.View>
+              { transform: [{ translateX: waveProgress.interpolate({ inputRange: [0, 1], outputRange: [-9, 9] }) }] },
+            ]} /> : null}
+            {percentage > 0 ? <Animated.View pointerEvents="none" style={[
+              styles.bubbleLayer,
+              {
+                opacity: bubbleProgress.interpolate({ inputRange: [0, 0.15, 0.82, 1], outputRange: [0.08, 0.55, 0.32, 0.08] }),
+                transform: [{ translateY: bubbleProgress.interpolate({ inputRange: [0, 1], outputRange: [22, -22] }) }],
+              },
+            ]}>
+              <View style={[styles.bubble, styles.bubbleOne]} />
+              <View style={[styles.bubble, styles.bubbleTwo]} />
+              <View style={[styles.bubble, styles.bubbleThree]} />
+              <View style={[styles.bubble, styles.bubbleFour]} />
+            </Animated.View> : null}
+          </Animated.View>
+        ) : null}
+      </View>
+    </View>
   );
 }
 
@@ -150,7 +136,7 @@ export default function FloodMonitoringScreen({ onAuthError }: { onAuthError: ()
     return () => clearInterval(timer);
   }, [refresh]);
 
-  const highCount = sensors.filter((sensor) => sensor.status === 'Active' && sensor.waterLevelPercentage >= 70).length;
+  const highCount = sensors.filter((sensor) => sensor.status === 'Active' && sensor.waterLevelPercentage >= HIGH_WATER_LEVEL_THRESHOLD).length;
   return (
     <RescuerScreen title="Flood Monitoring" subtitle="Live water levels for rescue operations" refreshing={loading} onRefresh={() => void refresh()}>
       <ErrorMessage message={error} />
@@ -160,13 +146,19 @@ export default function FloodMonitoringScreen({ onAuthError }: { onAuthError: ()
           {sensors.map((sensor) => {
             const unavailable = sensor.status === 'Unavailable' || !sensor.hasReading;
             const percentage = Math.max(0, Math.min(100, sensor.waterLevelPercentage));
-            const levelColor = unavailable ? '#94a3b8' : percentage >= 70 ? '#dc2626' : percentage >= 40 ? '#f59e0b' : '#0284c7';
+            const levelColor = unavailable
+              ? '#94a3b8'
+              : percentage >= HIGH_WATER_LEVEL_THRESHOLD
+                ? '#dc2626'
+                : percentage >= MODERATE_WATER_LEVEL_THRESHOLD
+                  ? '#f59e0b'
+                  : '#0284c7';
             const temperature = temperatureAppearance(sensor.temperatureCelsius);
             const humidity = humidityAppearance(sensor.humidityPercentage);
             return <View key={sensor.id} style={styles.sensorCard}>
               <Text style={styles.sensorName}>Brgy. {sensor.barangayName}</Text>
               <AnimatedWaterGauge unavailable={unavailable} percentage={percentage} levelColor={levelColor} />
-              <Text style={[styles.percentage, percentage >= 70 && styles.highPercentage]}>{unavailable ? 'Unavailable' : `${percentage.toFixed(0)}%`}</Text>
+              <Text style={[styles.percentage, percentage >= HIGH_WATER_LEVEL_THRESHOLD && styles.highPercentage]}>{unavailable ? 'Unavailable' : `${percentage.toFixed(0)}%`}</Text>
               <Text style={[styles.reading, { color: temperature.color }]}>{temperature.icon} Temperature {sensor.temperatureCelsius === null ? '--°C' : `${sensor.temperatureCelsius.toFixed(1)}°C`}</Text>
               <Text style={[styles.reading, { color: humidity.color }]}>{humidity.icon} Humidity {sensor.humidityPercentage === null ? '--%' : `${sensor.humidityPercentage.toFixed(0)}%`}</Text>
             </View>;
@@ -196,10 +188,12 @@ const styles = StyleSheet.create({
   sensorGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 12, marginTop: 8 },
   sensorCard: { width: '50%', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 2 },
   sensorName: { color: '#ffffff', fontSize: 13, fontWeight: '900', textAlign: 'center' },
-  gauge: { height: 164, width: 124, alignSelf: 'center', justifyContent: 'flex-end', overflow: 'hidden', borderRadius: 18, borderWidth: 2, borderColor: '#0f172a', backgroundColor: '#f1f5f9', padding: 4, marginTop: 10, marginBottom: 5, shadowColor: '#020617', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.5, shadowRadius: 3, elevation: 4 },
+  gauge: { height: 144, width: 110, alignSelf: 'center', overflow: 'hidden', borderRadius: 16, borderWidth: 2, borderColor: '#0f172a', backgroundColor: '#f1f5f9', padding: 4, marginTop: 10, marginBottom: 5, shadowColor: '#020617', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.42, shadowRadius: 4, elevation: 4 },
   unavailableGauge: { opacity: 0.75 },
-  gaugeFill: { width: '100%', position: 'relative', overflow: 'hidden', borderBottomLeftRadius: 12, borderBottomRightRadius: 12 },
-  waterSurface: { position: 'absolute', left: -12, right: -12, top: -3, height: 13, borderRadius: 50, backgroundColor: 'rgba(255,255,255,0.38)' },
+  gaugeViewport: { flex: 1, justifyContent: 'flex-end', overflow: 'hidden', borderRadius: 12, backgroundColor: '#e2e8f0' },
+  gaugeFill: { width: '100%', position: 'relative', overflow: 'hidden', borderRadius: 12 },
+  waterSurface: { position: 'absolute', left: -12, right: -12, top: -6, height: 14, borderRadius: 50, backgroundColor: 'rgba(255,255,255,0.48)' },
+  bubbleLayer: { ...StyleSheet.absoluteFillObject },
   bubble: { position: 'absolute', borderRadius: 50, backgroundColor: 'rgba(255,255,255,0.25)' },
   bubbleOne: { width: 7, height: 7, left: 12, top: 31 },
   bubbleTwo: { width: 5, height: 5, right: 14, top: 17 },

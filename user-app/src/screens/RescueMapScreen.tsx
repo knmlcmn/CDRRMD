@@ -73,7 +73,7 @@ type UserMapLayerVisibility = {
 
 type Props = {
   testModeEnabled?: boolean;
-  floodAlertRescueRequest?: { notificationId: number; requestedAt: number } | null;
+  floodAlertRescueRequest?: { notificationId: number | null; requestedAt: number } | null;
 };
 
 function normalizeRescueStatus(value: unknown): RescueRecord['status'] {

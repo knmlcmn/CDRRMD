@@ -7,7 +7,7 @@ import * as Location from 'expo-location';
 import { api } from '../services/api';
 
 type FloodNotification = {
-  id: number;
+  id: number | null;
   title: string;
   body: string;
   category?: string;
@@ -17,40 +17,117 @@ type FloodNotification = {
   read_at?: string | null;
   is_test_account?: boolean;
   matches_current_location?: boolean;
+  live_sensor_key?: string;
+};
+
+type HardwareSensor = {
+  id?: string;
+  barangayName?: string;
+  hardwareNo?: string;
+  active?: boolean;
+  readable?: boolean;
+  waterLevelPercentage?: number | null;
+  updatedAt?: string | null;
 };
 
 type Props = {
+  barangayName?: string;
   onTestAccountRemoved?: () => Promise<void> | void;
-  onSendRescue?: (notificationId: number) => Promise<void> | void;
+  onSendRescue?: (notificationId: number | null) => Promise<void> | void;
 };
 
-export default function ResidentFloodAlert({ onTestAccountRemoved, onSendRescue }: Props) {
+const MODERATE_WATER_LEVEL = 40;
+const HIGH_WATER_LEVEL = 61;
+
+function normalizeBarangayName(value: unknown) {
+  return String(value || '').trim().toLowerCase().replace(/^barangay\s+/, '');
+}
+
+export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved, onSendRescue }: Props) {
   const { height: viewportHeight, width: viewportWidth } = useWindowDimensions();
   const [alert, setAlert] = useState<FloodNotification | null>(null);
   const coordinatesRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const suppressedAlertIdsRef = useRef(new Set<number>());
+  const acknowledgedLiveKeysRef = useRef(new Set<string>());
   const warningPulse = useRef(new Animated.Value(0)).current;
 
   const checkAlerts = useCallback(async () => {
-    const response = await api.get('/reports/notifications/mine', {
-      params: coordinatesRef.current || undefined,
-    });
-    const notifications = Array.isArray(response.data) ? response.data as FloodNotification[] : [];
+    const [notificationResult, sensorResult] = await Promise.allSettled([
+      api.get('/reports/notifications/mine', {
+        params: coordinatesRef.current || undefined,
+      }),
+      api.get('/flood-risk/hardware-sensors'),
+    ]);
+    const notifications = notificationResult.status === 'fulfilled' && Array.isArray(notificationResult.value.data)
+      ? notificationResult.value.data as FloodNotification[]
+      : [];
     const matchingUnread = notifications.filter(
       (item) => String(item.category || '').toLowerCase() === 'flood_sensor'
         && !item.read_at
+        && item.id !== null
         && !suppressedAlertIdsRef.current.has(item.id),
     );
+
+    const sensors = sensorResult.status === 'fulfilled' && Array.isArray(sensorResult.value.data?.sensors)
+      ? sensorResult.value.data.sensors as HardwareSensor[]
+      : [];
+    const residentBarangay = normalizeBarangayName(barangayName);
+    const residentSensor = residentBarangay
+      ? sensors.find((sensor) => normalizeBarangayName(sensor.barangayName) === residentBarangay)
+      : null;
+    const sensorAuthoritative = sensorResult.status === 'fulfilled' && Boolean(residentSensor);
+    const percentage = Number(residentSensor?.waterLevelPercentage);
+    const liveSeverity = residentSensor?.active !== false
+      && residentSensor?.readable !== false
+      && Number.isFinite(percentage)
+      && percentage >= MODERATE_WATER_LEVEL
+      ? (percentage >= HIGH_WATER_LEVEL ? 'high' : 'moderate')
+      : null;
+    const sensorId = String(residentSensor?.id || normalizeBarangayName(residentSensor?.barangayName));
+    const liveKey = liveSeverity && sensorId ? `${sensorId}:${liveSeverity}` : null;
+
+    if (residentSensor && !liveSeverity) {
+      acknowledgedLiveKeysRef.current.delete(`${sensorId}:moderate`);
+      acknowledgedLiveKeysRef.current.delete(`${sensorId}:high`);
+    }
+
     const latestUnread = matchingUnread.find(
+      (item) => liveSeverity
+        && String(item.severity || '').toLowerCase() === liveSeverity
+        && normalizeBarangayName(item.barangay_name) === residentBarangay,
+    ) || matchingUnread.find(
       (item) => String(item.severity || '').toLowerCase() === 'high',
     ) || matchingUnread[0];
+
+    let nextAlert = sensorAuthoritative && !liveSeverity ? null : latestUnread || null;
+    if (liveSeverity && liveKey && !acknowledgedLiveKeysRef.current.has(liveKey)) {
+      const verifiedAlert = matchingUnread.find(
+        (item) => String(item.severity || '').toLowerCase() === liveSeverity
+          && normalizeBarangayName(item.barangay_name) === residentBarangay,
+      );
+      nextAlert = verifiedAlert ? { ...verifiedAlert, live_sensor_key: liveKey } : {
+        id: null,
+        title: liveSeverity === 'high' ? 'Immediate evacuation required' : 'Prepare to evacuate',
+        body: '',
+        category: 'flood_sensor',
+        severity: liveSeverity,
+        barangay_name: residentSensor?.barangayName || barangayName || null,
+        created_at: residentSensor?.updatedAt || new Date().toISOString(),
+        live_sensor_key: liveKey,
+      };
+    }
+
     setAlert((current) => {
-      if (!latestUnread) return current;
-      const incomingIsHigh = String(latestUnread.severity || '').toLowerCase() === 'high';
+      if (!nextAlert) {
+        const currentLiveKey = current?.live_sensor_key;
+        return sensorAuthoritative || (currentLiveKey && acknowledgedLiveKeysRef.current.has(currentLiveKey)) ? null : current;
+      }
+      const incomingIsHigh = String(nextAlert.severity || '').toLowerCase() === 'high';
       const currentIsHigh = String(current?.severity || '').toLowerCase() === 'high';
-      return !current || (incomingIsHigh && !currentIsHigh) ? latestUnread : current;
+      const gainedVerifiedId = current?.id === null && nextAlert.id !== null;
+      return !current || (incomingIsHigh && !currentIsHigh) || gainedVerifiedId ? nextAlert : current;
     });
-  }, []);
+  }, [barangayName]);
 
   useEffect(() => {
     let locationSubscription: Location.LocationSubscription | null = null;
@@ -138,6 +215,8 @@ export default function ResidentFloodAlert({ onTestAccountRemoved, onSendRescue 
     const current = alert;
     setAlert(null);
     if (current) {
+      if (current.live_sensor_key) acknowledgedLiveKeysRef.current.add(current.live_sensor_key);
+      if (current.id === null) return;
       const response = await api.patch(`/reports/notifications/${current.id}/read`).catch(() => null);
       if (response?.data?.accountDeleted) {
         await onTestAccountRemoved?.();
@@ -152,7 +231,8 @@ export default function ResidentFloodAlert({ onTestAccountRemoved, onSendRescue 
     if (!current) return;
     // The API consumes this unread notification as verified proof only after
     // the rescue request is successfully submitted.
-    suppressedAlertIdsRef.current.add(current.id);
+    if (current.id !== null) suppressedAlertIdsRef.current.add(current.id);
+    if (current.live_sensor_key) acknowledgedLiveKeysRef.current.add(current.live_sensor_key);
     setAlert(null);
     await onSendRescue?.(current.id);
   }

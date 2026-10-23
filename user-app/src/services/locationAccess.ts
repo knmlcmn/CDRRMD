@@ -2,12 +2,20 @@ import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 
 export type LiveLocation = { latitude: number; longitude: number };
+export type LiveLocationSubscription = { remove: () => void };
 
 export type LocationAccessResult =
   | { ok: true; location: LiveLocation }
   | { ok: false; message: string };
 
 const LOCATION_TIMEOUT_MS = 15000;
+
+function toLiveLocation(position: Location.LocationObject): LiveLocation {
+  return {
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+  };
+}
 
 function timeoutAfter(ms: number) {
   return new Promise<never>((_, reject) => {
@@ -83,14 +91,22 @@ export async function requireLiveLocation(requestPermission: boolean): Promise<L
       timeoutAfter(LOCATION_TIMEOUT_MS),
     ]);
 
-    return {
-      ok: true,
-      location: {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-      },
-    };
+    return { ok: true, location: toLiveLocation(position) };
   } catch (error: any) {
+    // Android can keep showing a valid map position while a later one-shot GPS
+    // request waits for a new satellite fix. Keep using a recent OS-cached fix
+    // instead of incorrectly treating that temporary timeout as no location.
+    if (Platform.OS !== 'web') {
+      try {
+        const cached = await Location.getLastKnownPositionAsync({
+          maxAge: 120000,
+          requiredAccuracy: 2000,
+        });
+        if (cached) return { ok: true, location: toLiveLocation(cached) };
+      } catch {
+        // Fall through to the actionable error below.
+      }
+    }
     const rawMessage = String(error?.message || '').toLowerCase();
     return {
       ok: false,
@@ -99,4 +115,28 @@ export async function requireLiveLocation(requestPermission: boolean): Promise<L
         : 'Location is unavailable. Turn on device location and allow access for this app, then select Try Again.',
     };
   }
+}
+
+/**
+ * Uses Android/iOS's continuous provider so the responder screen does not
+ * start overlapping one-shot GPS requests. Permission must be requested by
+ * requireLiveLocation first, keeping the prompt tied to a user-visible flow.
+ */
+export async function watchLiveLocation(
+  onLocation: (location: LiveLocation) => void,
+): Promise<LiveLocationSubscription | null> {
+  if (Platform.OS === 'web') return null;
+
+  const permission = await Location.getForegroundPermissionsAsync();
+  if (permission.status !== 'granted' || !(await Location.hasServicesEnabledAsync())) return null;
+
+  return Location.watchPositionAsync(
+    {
+      accuracy: Location.Accuracy.Balanced,
+      timeInterval: 5000,
+      distanceInterval: 3,
+      mayShowUserSettingsDialog: true,
+    },
+    (position) => onLocation(toLiveLocation(position)),
+  );
 }

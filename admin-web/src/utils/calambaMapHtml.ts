@@ -361,6 +361,14 @@ export function buildCalambaMapHtml(
       normalizeDataLayerVisibility();
       var calambaCenter = [14.206021, 121.1556496];
       var calambaBounds = L.latLngBounds([[14.137703, 121.0218057], [14.2662133, 121.2214277]]);
+      var navigationBounds = calambaBounds.pad(0.05);
+      if (mapBehavior.focusOnResponder && payload.responderLocation) {
+        var initialResponderLatitude = Number(payload.responderLocation.latitude);
+        var initialResponderLongitude = Number(payload.responderLocation.longitude);
+        if (Number.isFinite(initialResponderLatitude) && Number.isFinite(initialResponderLongitude)) {
+          navigationBounds.extend([initialResponderLatitude, initialResponderLongitude]);
+        }
+      }
       var map = L.map('map', {
         zoomControl: true,
         attributionControl: false,
@@ -372,7 +380,7 @@ export function buildCalambaMapHtml(
           : false,
         minZoom: 11,
         maxZoom: 18,
-        maxBounds: calambaBounds.pad(0.05),
+        maxBounds: navigationBounds.pad(0.05),
         maxBoundsViscosity: 0.9,
       }).setView(calambaCenter, 12);
 
@@ -568,7 +576,7 @@ export function buildCalambaMapHtml(
         visibility.temperatureOverlay = activeKey === 'temperatureOverlay';
         visibility.humidityOverlay = activeKey === 'humidityOverlay';
         visibility.windOverlay = activeKey === 'windOverlay';
-        visibility.floodHazard = activeKey === null;
+        if (activeKey !== null) visibility.floodHazard = false;
       }
 
       function activeScalarMetric() {
@@ -2288,7 +2296,12 @@ export function buildCalambaMapHtml(
 
         var showBoundary = jurisdictionBarangayKey || focusModeActive ? false : Boolean(visibility.boundary);
         var showFloodHazard = focusModeActive ? false : Boolean(visibility.floodHazard) && !isWeatherLayerVisible();
-        var showBarangayBoundary = jurisdictionBarangayKey || focusModeActive ? true : Boolean(visibility.boundary);
+        // Flood and scalar-weather rendering use the barangay geometry too.
+        // Keep that geometry mounted when one of those layers is active even
+        // if the standalone boundary toggle is off.
+        var showBarangayBoundary = jurisdictionBarangayKey || focusModeActive
+          ? true
+          : Boolean(visibility.boundary) || Boolean(visibility.floodHazard) || isScalarWeatherVisible();
         var showAreas = focusModeActive ? false : Boolean(visibility.evacuationAreas);
         var showIncidents = focusModeActive ? false : Boolean(visibility.incidentMarkers);
         var showResponderRoute = focusModeActive ? false : Boolean(visibility.responderRoute);
@@ -2404,7 +2417,7 @@ export function buildCalambaMapHtml(
         if (payload.mapBehavior && payload.mapBehavior.focusOnResponder && payload.responderLocation) {
           var responderLatitude = Number(payload.responderLocation.latitude);
           var responderLongitude = Number(payload.responderLocation.longitude);
-          if (Number.isFinite(responderLatitude) && Number.isFinite(responderLongitude) && inCalamba(responderLatitude, responderLongitude)) {
+          if (Number.isFinite(responderLatitude) && Number.isFinite(responderLongitude)) {
             map.setView([responderLatitude, responderLongitude], 17, { animate: true });
             requestAnimationFrame(faceNavigationForward);
             return;
@@ -2442,7 +2455,9 @@ export function buildCalambaMapHtml(
             .bindPopup('<strong>Destination evacuation center</strong><br/>' + escapeHtml(payload.evacuationAreaName || 'Assigned evacuation center'));
         }
 
-        if (payload.responderLocation && inCalamba(Number(payload.responderLocation.latitude), Number(payload.responderLocation.longitude))) {
+        if (payload.responderLocation
+          && Number.isFinite(Number(payload.responderLocation.latitude))
+          && Number.isFinite(Number(payload.responderLocation.longitude))) {
           if (extendInitialBounds) fitBounds.extend([payload.responderLocation.latitude, payload.responderLocation.longitude]);
           var responderKind = payload.mapBehavior && payload.mapBehavior.responderKind;
           var responderIconName = responderKind === 'barangay' ? 'bxs-shield' : responderKind === 'cddrmd' ? 'bxs-ambulance' : 'bxs-car';
@@ -2509,7 +2524,10 @@ export function buildCalambaMapHtml(
       ];
       if (mapBehavior.showForecastLayers === false) {
         LAYER_DEFS = LAYER_DEFS.filter(function(def) {
-          return def.key !== 'weatherOverlay' && def.key !== 'windOverlay';
+          return def.key !== 'weatherOverlay'
+            && def.key !== 'temperatureOverlay'
+            && def.key !== 'humidityOverlay'
+            && def.key !== 'windOverlay';
         });
       }
 
@@ -2575,11 +2593,13 @@ export function buildCalambaMapHtml(
             L.DomEvent.on(item, 'click', function() {
               var key = def.key;
               if (key === 'floodHazard') {
-                visibility.floodHazard = true;
-                visibility.weatherOverlay = false;
-                visibility.temperatureOverlay = false;
-                visibility.humidityOverlay = false;
-                visibility.windOverlay = false;
+                visibility.floodHazard = !visibility.floodHazard;
+                if (visibility.floodHazard) {
+                  visibility.weatherOverlay = false;
+                  visibility.temperatureOverlay = false;
+                  visibility.humidityOverlay = false;
+                  visibility.windOverlay = false;
+                }
               } else {
                 visibility[key] = !visibility[key];
               }
@@ -2612,7 +2632,7 @@ export function buildCalambaMapHtml(
               if ((key === 'weatherOverlay' || key === 'temperatureOverlay' || key === 'humidityOverlay' || key === 'windOverlay') && nowOn && map.getZoom() < 12) {
                 map.flyTo(calambaCenter, 12, { duration: 0.45 });
               }
-              if (Boolean(visibility.weatherOverlay)) {
+              if (Boolean(visibility.weatherOverlay) || Boolean(visibility.temperatureOverlay) || Boolean(visibility.humidityOverlay)) {
                 refreshRainImpactData();
               }
               if (Boolean(visibility.floodHazard)) {
@@ -2695,8 +2715,11 @@ export function buildCalambaMapHtml(
         mapResizeObserver.observe(map.getContainer());
       }
 
-      window.addEventListener('message', function(event) {
+      function handleMapBridgeMessage(event) {
         var data = event && event.data ? event.data : null;
+        if (typeof data === 'string') {
+          try { data = JSON.parse(data); } catch (_error) { return; }
+        }
         if (data && data.type === 'evacuation-areas-update') {
           payload.areas = Array.isArray(data.areas) ? data.areas : [];
           renderEvacuationAreas(false);
@@ -2741,7 +2764,11 @@ export function buildCalambaMapHtml(
         focusModeActive = true;
         pendingFocusFit = true;
         applyLayerVisibility();
-      });
+      }
+      window.addEventListener('message', handleMapBridgeMessage);
+      // react-native-webview dispatches postMessage events on document on
+      // some Android versions, while browsers and iOS use window.
+      document.addEventListener('message', handleMapBridgeMessage);
 
       if (fitBounds.isValid()) {
         map.fitBounds(fitBounds.pad(0.08), { maxZoom: 15 });
@@ -2750,7 +2777,7 @@ export function buildCalambaMapHtml(
       }
       if (isScalarWeatherVisible() || Boolean(visibility.windOverlay)) {
         map.setView(calambaCenter, 12, { animate: false });
-      } else if (payload.mapBehavior && payload.mapBehavior.focusOnIncident) {
+      } else if (payload.mapBehavior && (payload.mapBehavior.focusOnIncident || payload.mapBehavior.focusOnResponder)) {
         focusActiveRescue();
       }
 

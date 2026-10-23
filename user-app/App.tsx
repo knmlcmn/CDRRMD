@@ -159,9 +159,9 @@ function NavigationTabButton({ name, focused, scale, onPress }: NavigationTabBut
         ) : (
           <>
             <View style={[styles.tabIconCircle, focused && styles.tabIconCircleSelected, {
-              width: 36 * scale,
-              height: (focused ? 25 : 15) * scale,
-              borderRadius: 12.5 * scale,
+              width: (focused ? 32 : 36) * scale,
+              height: (focused ? 20 : 15) * scale,
+              borderRadius: 999,
             }]}>
               <NavigationIcon
                 name={name as NavigationIconName}
@@ -236,7 +236,7 @@ function AppContent() {
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot-password'>('login');
   const [session, setSession] = useState<SessionData | null>(null);
   const [testModeEnabled, setTestModeEnabled] = useState(false);
-  const [floodAlertRescueRequest, setFloodAlertRescueRequest] = useState<{ notificationId: number; requestedAt: number } | null>(null);
+  const [floodAlertRescueRequest, setFloodAlertRescueRequest] = useState<{ notificationId: number | null; requestedAt: number } | null>(null);
   const [locationChecking, setLocationChecking] = useState(false);
   const [locationGate, setLocationGate] = useState<{ message: string; activeSession: boolean } | null>(null);
   const [logoutConfirmationVisible, setLogoutConfirmationVisible] = useState(false);
@@ -509,7 +509,7 @@ function AppContent() {
     }
   }
 
-  function handleFloodAlertRescue(notificationId: number) {
+  function handleFloodAlertRescue(notificationId: number | null) {
     setFloodAlertRescueRequest({ notificationId, requestedAt: Date.now() });
     if (navigationRef.isReady()) navigationRef.navigate('SOS');
   }
@@ -598,7 +598,11 @@ function AppContent() {
   return (
     <View style={styles.appRoot}>
       <NavigationContainer ref={navigationRef}>
-        <ResidentFloodAlert onTestAccountRemoved={() => void performLogout()} onSendRescue={handleFloodAlertRescue} />
+        <ResidentFloodAlert
+          barangayName={session.user.barangayName ?? ''}
+          onTestAccountRemoved={() => void performLogout()}
+          onSendRescue={handleFloodAlertRescue}
+        />
         <Tab.Navigator
         id="MainTabs"
         tabBar={(props) => <UserTabBar {...props} />}
@@ -714,6 +718,7 @@ const styles = StyleSheet.create({
   tabIconCircle: {
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   tabIconCircleSelected: { backgroundColor: '#3777A8' },
   tabLabel: { color: '#171717', fontFamily: 'Sora_400Regular', fontWeight: '400', textAlign: 'center', includeFontPadding: false },

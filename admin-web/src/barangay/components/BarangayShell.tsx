@@ -219,8 +219,8 @@ export default function BarangayShell({
               activeView === 'dashboard' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            <NavIcon name="dashboard" />
-            <span className="sr-only">Dashboard</span>
+            <span className={[d.shell.mobileNavIcon, activeView === 'dashboard' ? d.shell.mobileNavIconActive : ''].join(' ')}><NavIcon name="dashboard" /></span>
+            <span className={d.shell.mobileNavLabel}>Dashboard</span>
           </button>
           <button
             onClick={onOpenMonitoring}
@@ -231,8 +231,8 @@ export default function BarangayShell({
               activeView === 'monitoring' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            <NavIcon name="incidents" />
-            <span className="sr-only">Incident Monitoring</span>
+            <span className={[d.shell.mobileNavIcon, activeView === 'monitoring' ? d.shell.mobileNavIconActive : ''].join(' ')}><NavIcon name="incidents" /></span>
+            <span className={d.shell.mobileNavLabel}>Incidents</span>
           </button>
           <button
             onClick={onOpenFloodMonitoring}
@@ -243,8 +243,8 @@ export default function BarangayShell({
               activeView === 'flood-monitoring' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            <NavIcon name="flood" />
-            <span className="sr-only">Flood Monitoring</span>
+            <span className={[d.shell.mobileNavIcon, activeView === 'flood-monitoring' ? d.shell.mobileNavIconActive : ''].join(' ')}><NavIcon name="flood" /></span>
+            <span className={d.shell.mobileNavLabel}>Flood</span>
           </button>
           <button
             onClick={onOpenEvacuationCenter}
@@ -255,8 +255,8 @@ export default function BarangayShell({
               activeView === 'evacuation-center' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            <NavIcon name="evacuation" />
-            <span className="sr-only">Evacuation Center</span>
+            <span className={[d.shell.mobileNavIcon, activeView === 'evacuation-center' ? d.shell.mobileNavIconActive : ''].join(' ')}><NavIcon name="evacuation" /></span>
+            <span className={d.shell.mobileNavLabel}>Evacuation</span>
           </button>
           <button
             onClick={onOpenAccount}
@@ -267,8 +267,8 @@ export default function BarangayShell({
               activeView === 'account' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            <NavIcon name="account" />
-            <span className="sr-only">Account</span>
+            <span className={[d.shell.mobileNavIcon, activeView === 'account' ? d.shell.mobileNavIconActive : ''].join(' ')}><NavIcon name="account" /></span>
+            <span className={d.shell.mobileNavLabel}>Account</span>
           </button>
           <button
             onClick={onOpenHistory}
@@ -279,8 +279,8 @@ export default function BarangayShell({
               activeView === 'history' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            <NavIcon name="history" />
-            <span className="sr-only">History</span>
+            <span className={[d.shell.mobileNavIcon, activeView === 'history' ? d.shell.mobileNavIconActive : ''].join(' ')}><NavIcon name="history" /></span>
+            <span className={d.shell.mobileNavLabel}>History</span>
           </button>
         </nav>
       </div>

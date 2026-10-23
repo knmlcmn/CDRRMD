@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Image, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { AppState, Image, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText as Text, TypographyFamily } from '../components/Typography';
@@ -7,21 +7,47 @@ import AssignmentsScreen from './screens/AssignmentsScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import FloodMonitoringScreen from './screens/FloodMonitoringScreen';
 import AccountScreen from './screens/AccountScreen';
+import { sendHeartbeat } from './services/rescuerService';
 import type { ResponderRole } from './types';
 import { rescuerColors } from './components/RescuerScreen';
 
 type Tab = 'assignments' | 'history' | 'flood' | 'account';
-const tabs: Array<{ key: Tab; label: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }> = [
-  { key: 'assignments', label: 'Incident Reports', icon: 'alert-outline' },
-  { key: 'history', label: 'History', icon: 'history' },
-  { key: 'flood', label: 'Flood Monitoring', icon: 'water-outline' },
-  { key: 'account', label: 'Account', icon: 'account-outline' },
+const tabs: Array<{ key: Tab; label: string; mobileLabel: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }> = [
+  { key: 'assignments', label: 'Incident Reports', mobileLabel: 'Incidents', icon: 'alert-outline' },
+  { key: 'history', label: 'History', mobileLabel: 'History', icon: 'history' },
+  { key: 'flood', label: 'Flood Monitoring', mobileLabel: 'Flood', icon: 'water-outline' },
+  { key: 'account', label: 'Account', mobileLabel: 'Account', icon: 'account-outline' },
 ];
 
 export default function RescuerPortal({ role, onLogout, onAuthError }: { role: ResponderRole; onLogout: () => void; onAuthError: () => void }) {
   const { width } = useWindowDimensions();
   const desktop = width >= 820;
   const [tab, setTab] = useState<Tab>('assignments');
+
+  // Presence belongs to the portal, not only the Incidents tab. Keeping this
+  // mounted means a rescuer remains assignable while viewing History, Flood,
+  // or Account, and immediately refreshes presence when the APK resumes.
+  useEffect(() => {
+    let active = true;
+    async function heartbeat() {
+      if (!active) return;
+      try {
+        await sendHeartbeat();
+      } catch (caught: any) {
+        if (caught?.response?.status === 401) onAuthError();
+      }
+    }
+    void heartbeat();
+    const timer = setInterval(() => void heartbeat(), 15000);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void heartbeat();
+    });
+    return () => {
+      active = false;
+      clearInterval(timer);
+      subscription.remove();
+    };
+  }, [onAuthError]);
   const content = tab === 'history'
     ? <HistoryScreen role={role} onAuthError={onAuthError} />
     : tab === 'flood'
@@ -56,6 +82,7 @@ export default function RescuerPortal({ role, onLogout, onAuthError }: { role: R
           const active = tab === item.key;
           return <TouchableOpacity key={item.key} onPress={() => setTab(item.key)} style={styles.tab} accessibilityRole="button" accessibilityState={{ selected: active }}>
             <View style={[styles.iconWrap, active && styles.iconWrapActive]}><MaterialCommunityIcons name={item.icon} size={22} color={active ? '#fff' : rescuerColors.blue} /></View>
+            <Text numberOfLines={1} style={[styles.tabLabel, active && styles.tabLabelActive]}>{item.mobileLabel}</Text>
           </TouchableOpacity>;
         })}
       </View> : null}
@@ -84,8 +111,10 @@ const styles = StyleSheet.create({
   sideNavItemActive: { backgroundColor: '#2a5d8d' },
   sideNavLabel: { color: '#fff', fontSize: 14, fontWeight: '800' },
   desktopLogout: { marginTop: 'auto', minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 12, borderWidth: 1, borderColor: '#486581' },
-  tabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 62, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 7, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#cbd5e1', shadowColor: '#0f172a', shadowOpacity: 0.12, shadowRadius: 7, shadowOffset: { width: 0, height: -2 }, elevation: 10 },
-  tab: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center' },
-  iconWrap: { width: 46, height: 42, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+  tabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 68, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 6, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#cbd5e1', shadowColor: '#0f172a', shadowOpacity: 0.12, shadowRadius: 7, shadowOffset: { width: 0, height: -2 }, elevation: 10 },
+  tab: { flex: 1, minHeight: 54, alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 2 },
+  iconWrap: { width: 42, height: 31, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   iconWrapActive: { backgroundColor: '#1f4e79' },
+  tabLabel: { color: rescuerColors.blue, fontSize: 9, lineHeight: 11, fontWeight: '800', textAlign: 'center' },
+  tabLabelActive: { color: '#1f4e79' },
 });

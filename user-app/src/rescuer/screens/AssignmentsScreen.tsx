@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppText as Text } from '../../components/Typography';
 import PlatformMap from '../../components/PlatformMap';
 import { api } from '../../services/api';
-import { requireLiveLocation } from '../../services/locationAccess';
+import { requireLiveLocation, watchLiveLocation, type LiveLocationSubscription } from '../../services/locationAccess';
 import { fetchRoadRoute } from '../../services/routingService';
 import type { EvacuationAreaItem } from '../../types';
 import { buildCalambaMapHtml } from '../utils/rescuerMapHtml';
 import { Card, DetailRow, EmptyState, ErrorMessage, PrimaryButton, RescuerScreen, rescuerColors } from '../components/RescuerScreen';
-import { acknowledgeAssignment, loadAssignments, loadWeeklyHistory, sendHeartbeat, updateResponderLocation } from '../services/rescuerService';
+import { acknowledgeAssignment, loadAssignments, loadWeeklyHistory, updateResponderLocation } from '../services/rescuerService';
 import type { Assignment, AssignmentHistory, Coordinate, ResponderRole } from '../types';
 
 type Props = { role: ResponderRole; onAuthError: () => void };
@@ -41,6 +41,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const [forecastOverlayVisible, setForecastOverlayVisible] = useState(false);
   const [error, setError] = useState('');
+  const [locationError, setLocationError] = useState('');
   const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -49,6 +50,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
   const locationRef = useRef<Coordinate | null>(null);
   const initialLocationFocusedRef = useRef(false);
   const lastFocusedAssignmentRef = useRef('');
+  const mapBaseUrl = String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '');
 
   const handleApiError = useCallback((caught: any, fallback: string) => {
     if (caught?.response?.status === 401) onAuthError();
@@ -88,43 +90,70 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
   useEffect(() => {
     let active = true;
     let locationBusy = false;
-    async function updateLocation(requestPermission: boolean) {
+    let watcher: LiveLocationSubscription | null = null;
+
+    async function publishLocation(nextLocation: Coordinate) {
+      if (!active) return;
+      locationRef.current = nextLocation;
+      setLocation(nextLocation);
+      setLocationError('');
       if (locationBusy) return;
       locationBusy = true;
       try {
-        const result = await requireLiveLocation(requestPermission);
+        const { data } = await updateResponderLocation(nextLocation.latitude, nextLocation.longitude);
         if (!active) return;
-        if (!result.ok) {
-          setError(result.message);
-          return;
-        }
-        locationRef.current = result.location;
-        setLocation(result.location);
-        const { data } = await updateResponderLocation(result.location.latitude, result.location.longitude);
         if (data.rerouted) setNotice(`Route updated to ${data.evacuationAreaName || 'the nearest available evacuation center'}.`);
         if (data.rerouted || data.pickupConfirmed) void refresh();
       } catch (caught) {
-        handleApiError(caught, 'Unable to update your live responder location.');
+        if (active) handleApiError(caught, 'Unable to update your live responder location.');
       } finally {
         locationBusy = false;
       }
     }
-    void updateLocation(true);
-    const timer = setInterval(() => void updateLocation(false), 3000);
-    return () => { active = false; clearInterval(timer); };
-  }, [handleApiError, refresh]);
 
-  useEffect(() => {
-    let active = true;
-    async function heartbeat() {
-      if (!active) return;
-      try { await sendHeartbeat(); } catch (caught: any) { if (caught?.response?.status === 401) onAuthError(); }
+    async function updateLocation(requestPermission: boolean) {
+      try {
+        const result = await requireLiveLocation(requestPermission);
+        if (!active) return;
+        if (!result.ok) {
+          // A temporary follow-up timeout must not invalidate a location that
+          // is already visible on the map and usable for dispatch.
+          if (!locationRef.current) setLocationError(result.message);
+          else await publishLocation(locationRef.current);
+          return;
+        }
+        await publishLocation(result.location);
+      } catch (caught) {
+        if (active && !locationRef.current) handleApiError(caught, 'Unable to update your live responder location.');
+      }
     }
-    void heartbeat();
-    const timer = setInterval(() => void heartbeat(), 15000);
-    const subscription = AppState.addEventListener('change', (state) => { if (state === 'active') void heartbeat(); });
-    return () => { active = false; clearInterval(timer); subscription.remove(); };
-  }, [onAuthError]);
+
+    async function startTracking() {
+      await updateLocation(true);
+      if (!active || Platform.OS === 'web') return;
+      try {
+        watcher = await watchLiveLocation((nextLocation) => { void publishLocation(nextLocation); });
+      } catch (caught) {
+        if (active && !locationRef.current) handleApiError(caught, 'Unable to start live responder location tracking.');
+      }
+    }
+
+    void startTracking();
+    const webTimer = Platform.OS === 'web'
+      ? setInterval(() => void updateLocation(false), 10000)
+      : null;
+    // Refresh the server timestamp even while the responder is stationary and
+    // Android therefore has no new distance-based watcher event to deliver.
+    const serverTimer = setInterval(() => {
+      if (locationRef.current) void publishLocation(locationRef.current);
+    }, 15000);
+    return () => {
+      active = false;
+      if (webTimer) clearInterval(webTimer);
+      clearInterval(serverTimer);
+      watcher?.remove();
+    };
+  }, [handleApiError, refresh]);
 
   const selected = useMemo(
     () => assignments.find((item) => item.backup_request_id === selectedId) || assignments[0] || null,
@@ -151,7 +180,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
 
   const buildAssignmentMapHtml = useCallback((fullscreen: boolean) => buildCalambaMapHtml(
     areas,
-    null,
+    location,
     [],
     null,
     null,
@@ -181,7 +210,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
       forecastTimelinePosition: 'bottom-right',
       showRecenterControl: true,
     },
-  ), [areas, role]);
+  ), [areas, location, role]);
 
   const mapHtml = useMemo(() => buildAssignmentMapHtml(false), [buildAssignmentMapHtml]);
   const fullscreenMapHtml = useMemo(() => buildAssignmentMapHtml(true), [buildAssignmentMapHtml]);
@@ -298,13 +327,15 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
   return (
     <RescuerScreen title={role === 'barangay_rescuer' ? 'Barangay Rescue Assignments' : 'CDRRMD Backup Assignments'} subtitle={subtitle} refreshing={loading} onRefresh={() => void refresh()}>
       <ErrorMessage message={error} />
+      <ErrorMessage message={locationError} />
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
       <View style={styles.mapCard}>
-        {areasLoaded ? <PlatformMap
+        {areasLoaded && location ? <PlatformMap
           html={mapHtml}
+          baseUrl={mapBaseUrl}
           preserveState
           updateMessage={mapUpdate}
-        /> : <EmptyState loading message="Loading rescue map…" />}
+        /> : <EmptyState loading message={areasLoaded ? 'Waiting for your current location…' : 'Loading rescue map…'} />}
         <TouchableOpacity accessibilityLabel="Open map full screen" onPress={() => { setForecastOverlayVisible(false); setMapFullscreen(true); }} style={styles.fullscreenButton}>
           <MaterialCommunityIcons name="fullscreen" size={22} color="#ffffff" />
         </TouchableOpacity>
@@ -349,7 +380,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
 
       <Modal visible={mapFullscreen} animationType="fade" statusBarTranslucent onRequestClose={closeFullscreenMap}>
         <View style={styles.fullscreenMap}>
-          {areasLoaded ? <PlatformMap html={fullscreenMapHtml} preserveState updateMessage={mapUpdate} onMessage={handleFullscreenMapMessage} /> : <EmptyState loading message="Loading rescue map…" />}
+          {areasLoaded && location ? <PlatformMap html={fullscreenMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={mapUpdate} onMessage={handleFullscreenMapMessage} /> : <EmptyState loading message={areasLoaded ? 'Waiting for your current location…' : 'Loading rescue map…'} />}
           <TouchableOpacity accessibilityLabel="Close full-screen map" onPress={closeFullscreenMap} style={[styles.fullscreenClose, forecastOverlayVisible && styles.fullscreenCloseRaised]}>
             <MaterialCommunityIcons name="fullscreen-exit" size={24} color="#ffffff" />
           </TouchableOpacity>
@@ -370,7 +401,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
             <DetailRow label="Barangay" value={newAssignment.assigned_barangay} />
             <DetailRow label="Evacuation" value={newAssignment.evacuation_area_name || 'Nearest available center'} />
             <DetailRow label="Shortest route" value={alertRoute.distanceKm != null && alertRoute.etaMinutes != null ? `${alertRoute.distanceKm.toFixed(2)} km · about ${alertRoute.etaMinutes} min` : 'Calculating…'} />
-            {location && alertDestination ? <View style={styles.alertMap}><PlatformMap key={newAssignment.backup_request_id} html={alertMapHtml} preserveState updateMessage={{ type: 'rescue-map-update', responderLocation: location, routeCoordinates: alertRoute.routeCoordinates, incidentLocation: alertDestination, selectedReportCode: newAssignment.report_code, incidentPoints: [{ reportCode: newAssignment.report_code, ...alertDestination, status: 'pending', reportType: 'rescue' }], pickedUp: false, responderKind: role === 'barangay_rescuer' ? 'barangay' : 'cddrmd' }} /></View> : <View style={styles.alertMap}><EmptyState loading message="Waiting for GPS…" /></View>}
+            {location && alertDestination ? <View style={styles.alertMap}><PlatformMap key={newAssignment.backup_request_id} html={alertMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={{ type: 'rescue-map-update', responderLocation: location, routeCoordinates: alertRoute.routeCoordinates, incidentLocation: alertDestination, selectedReportCode: newAssignment.report_code, incidentPoints: [{ reportCode: newAssignment.report_code, ...alertDestination, status: 'pending', reportType: 'rescue' }], pickedUp: false, responderKind: role === 'barangay_rescuer' ? 'barangay' : 'cddrmd' }} /></View> : <View style={styles.alertMap}><EmptyState loading message="Waiting for GPS…" /></View>}
             <Text style={styles.modalCode}>{newAssignment.report_code}</Text>
             <View style={styles.modalActions}>
               <PrimaryButton disabled={busy || !location} label={busy ? 'Confirming…' : location ? 'Confirm Dispatch' : 'Waiting for GPS…'} onPress={() => void dispatch(newAssignment)} />

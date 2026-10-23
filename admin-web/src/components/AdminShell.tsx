@@ -216,8 +216,8 @@ export default function AdminShell({
               activeView === 'dashboard' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            <NavIcon name="dashboard" />
-            <span className="sr-only">Dashboard</span>
+            <span className={[d.shell.mobileNavIcon, activeView === 'dashboard' ? d.shell.mobileNavIconActive : ''].join(' ')}><NavIcon name="dashboard" /></span>
+            <span className={d.shell.mobileNavLabel}>Dashboard</span>
           </button>
           <button
             onClick={onOpenAdmin}
@@ -228,8 +228,8 @@ export default function AdminShell({
               activeView === 'admin' || activeView === 'users' || activeView === 'barangay' || activeView === 'rescuers' ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
             ].join(' ')}
           >
-            <NavIcon name="accounts" />
-            <span className="sr-only">Accounts</span>
+            <span className={[d.shell.mobileNavIcon, isAccountsView ? d.shell.mobileNavIconActive : ''].join(' ')}><NavIcon name="accounts" /></span>
+            <span className={d.shell.mobileNavLabel}>Accounts</span>
           </button>
           {navItems.map((item) => (
             <button
@@ -242,8 +242,8 @@ export default function AdminShell({
                 activeView === item.key ? d.shell.mobileNavActive : d.shell.mobileNavIdle,
               ].join(' ')}
             >
-              <NavIcon name={item.icon} />
-              <span className="sr-only">{item.label}</span>
+              <span className={[d.shell.mobileNavIcon, activeView === item.key ? d.shell.mobileNavIconActive : ''].join(' ')}><NavIcon name={item.icon} /></span>
+              <span className={d.shell.mobileNavLabel}>{item.key === 'monitoring' ? 'Incidents' : item.key === 'flood-monitoring' ? 'Flood' : item.key === 'post-updates' ? 'Updates' : item.key === 'evacuation' ? 'Evacuation' : item.label}</span>
             </button>
           ))}
         </nav>

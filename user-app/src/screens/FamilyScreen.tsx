@@ -8,7 +8,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../services/api';
 import { useResponsiveLayout } from '../utils/responsive';
 
-type FamilyStatus = 'Safe' | 'No Response';
+type FamilyStatus = 'Safe' | 'No response';
 
 type FamilyMember = {
   invitationId: number;
@@ -38,7 +38,7 @@ function fmtTime(date = new Date()) {
 
 export default function FamilyScreen() {
   const { isSmall, horizontalPadding } = useResponsiveLayout();
-  const [myStatus, setMyStatus] = useState<FamilyStatus>('Safe');
+  const [myStatus, setMyStatus] = useState<FamilyStatus>('No response');
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [inviteId, setInviteId] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +51,7 @@ export default function FamilyScreen() {
       id: invitation.member.accountId,
       firstName: invitation.member.firstName,
       lastName: invitation.member.lastName,
-      status: 'No Response',
+      status: 'No response',
       invitationStatus: invitation.status,
       direction: invitation.direction,
       updatedAt: fmtTime(new Date(invitation.createdAt)),
@@ -74,7 +74,7 @@ export default function FamilyScreen() {
   const counts = useMemo(() => {
     const accepted = members.filter((member) => member.invitationStatus === 'accepted');
     const safe = accepted.filter((m) => m.status === 'Safe').length + (myStatus === 'Safe' ? 1 : 0);
-    const nr = accepted.filter((m) => m.status === 'No Response').length + (myStatus === 'No Response' ? 1 : 0);
+    const nr = accepted.filter((m) => m.status === 'No response').length + (myStatus === 'No response' ? 1 : 0);
     return { safe, nr };
   }, [members, myStatus]);
 
@@ -133,7 +133,7 @@ export default function FamilyScreen() {
             <Text style={[st.counterValue, { color: '#14532d' }]}>{counts.safe}</Text>
           </View>
           <View style={st.counterCard}>
-            <Text style={[st.counterLabel, { color: '#b45309' }]}>No Response</Text>
+            <Text style={[st.counterLabel, { color: '#b45309' }]}>No response</Text>
             <Text style={[st.counterValue, { color: '#78350f' }]}>{counts.nr}</Text>
           </View>
         </View>
@@ -156,7 +156,7 @@ export default function FamilyScreen() {
           <Text style={st.yourStatusNote}>Only you can mark yourself as safe.</Text>
           <TouchableOpacity
             style={[st.markBtn, { backgroundColor: myStatus === 'Safe' ? '#16a34a' : '#cbd5e1' }]}
-            onPress={() => setMyStatus(myStatus === 'Safe' ? 'No Response' : 'Safe')}
+            onPress={() => setMyStatus(myStatus === 'Safe' ? 'No response' : 'Safe')}
           >
             <Text style={[st.markBtnText, { color: myStatus === 'Safe' ? '#fff' : '#334155' }]}>
               {myStatus === 'Safe' ? 'You are Marked Safe' : 'Mark Safe'}
