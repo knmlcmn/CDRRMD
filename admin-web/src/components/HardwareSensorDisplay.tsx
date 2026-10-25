@@ -1,8 +1,8 @@
 import { HIGH_WATER_LEVEL_THRESHOLD as HIGH_WATER_THRESHOLD, MODERATE_WATER_LEVEL_THRESHOLD as FLOOD_REPORT_THRESHOLD } from '../services/waterLevelHazard';
 
-export type SensorMetric = 'water' | 'temperature' | 'humidity';
+type SensorMetric = 'water' | 'temperature' | 'humidity';
 
-export const SENSOR_METRIC_LABELS: Record<SensorMetric, string> = {
+const SENSOR_METRIC_LABELS: Record<SensorMetric, string> = {
   water: 'Water Gauge',
   temperature: 'Temperature',
   humidity: 'Humidity',
@@ -22,11 +22,6 @@ type HardwareSensorDisplayProps = {
   humidityPercentage?: number | null;
   metric: SensorMetric | 'all';
   classes: SensorCardClasses;
-};
-
-type SensorMetricSelectorProps = {
-  value: SensorMetric;
-  onChange: (metric: SensorMetric) => void;
 };
 
 function readingStyle(metric: Exclude<SensorMetric, 'water'>, value?: number | null) {
@@ -125,29 +120,6 @@ function WaterGauge({
       <strong className="sensor-water-percentage">
         {status === 'Unavailable' ? 'Unavailable' : `${percentage.toFixed(0)}%`}
       </strong>
-    </div>
-  );
-}
-
-export function SensorMetricSelector({ value, onChange }: SensorMetricSelectorProps) {
-  return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" role="group" aria-label="Sensor reading to display">
-      {(Object.keys(SENSOR_METRIC_LABELS) as SensorMetric[]).map((metric) => (
-        <button
-          key={metric}
-          type="button"
-          onClick={() => onChange(metric)}
-          aria-pressed={value === metric}
-          className={[
-            'rounded-lg border px-3 py-2 text-sm font-extrabold transition',
-            value === metric
-              ? 'border-sky-500 bg-sky-600 text-white shadow-sm'
-              : 'border-slate-300 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50',
-          ].join(' ')}
-        >
-          {SENSOR_METRIC_LABELS[metric]}
-        </button>
-      ))}
     </div>
   );
 }

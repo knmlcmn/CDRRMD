@@ -1,5 +1,6 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import cdrrmdLogo from '../../assets/cdrrmd-logo.png';
+import { LogoutIcon, PortalPageHeading, SidebarCollapseButton, SidebarSectionLabel } from '../../components/PortalShellElements';
 import { d } from '../barangayDesign';
 
 type ActiveView = 'dashboard' | 'monitoring' | 'flood-monitoring' | 'evacuation-center' | 'account' | 'history';
@@ -118,9 +119,19 @@ export default function BarangayShell({
   actions,
   children,
 }: Props) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('cdrrmd_barangay_sidebar') === 'collapsed');
+
+  function toggleSidebar() {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem('cdrrmd_barangay_sidebar', next ? 'collapsed' : 'expanded');
+      return next;
+    });
+  }
+
   return (
     <div className={d.shell.root}>
-      <div className={d.shell.layout}>
+      <div className={`${d.shell.layout} ${sidebarCollapsed ? 'portal-shell-collapsed' : ''}`}>
         {/* Mobile top bar */}
         <div className={d.shell.mobileTop}>
           <div className={d.shell.mobileTopInner}>
@@ -138,53 +149,53 @@ export default function BarangayShell({
         </div>
 
         {/* Desktop sidebar */}
-        <aside className={d.shell.aside}>
+        <aside className={`${d.shell.aside} ${sidebarCollapsed ? 'is-collapsed' : ''}`}>
           <div className={d.shell.logoWrap}>
             <img src={cdrrmdLogo} alt="CDRRMD logo" className={d.shell.logo} />
-            <div>
+            <div className="portal-brand-copy">
               <p className={d.shell.brand}>CDRRMD</p>
               <p className={d.shell.city}>Barangay Portal</p>
             </div>
           </div>
 
           {/* Barangay badge */}
-          <div style={{
-            background: 'rgba(255,255,255,0.08)',
-            border: '1px solid rgba(255,255,255,0.15)',
-            borderRadius: 12,
-            padding: '10px 12px',
-          }}>
-            <p style={{ fontSize: '0.68rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+          <div className="portal-jurisdiction">
+            <p className="portal-jurisdiction-copy portal-jurisdiction-label">
               Jurisdiction
             </p>
-            <p style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff', marginTop: 2 }}>
+            <p className="portal-jurisdiction-copy portal-jurisdiction-name">
               Brgy. {barangayName}
             </p>
           </div>
 
           <nav className={d.shell.nav}>
-            <button onClick={onOpenDashboard} className={itemClass(activeView === 'dashboard')}>
+            <SidebarSectionLabel>Overview</SidebarSectionLabel>
+            <button onClick={onOpenDashboard} className={itemClass(activeView === 'dashboard')} aria-current={activeView === 'dashboard' ? 'page' : undefined} title="Dashboard">
               <NavLabel icon="dashboard" label="Dashboard" />
             </button>
-            <button onClick={onOpenMonitoring} className={itemClass(activeView === 'monitoring')}>
+            <SidebarSectionLabel>Response Operations</SidebarSectionLabel>
+            <button onClick={onOpenMonitoring} className={itemClass(activeView === 'monitoring')} aria-current={activeView === 'monitoring' ? 'page' : undefined} title="Incident Monitoring">
               <NavLabel icon="incidents" label="Incident Monitoring" />
             </button>
-            <button onClick={onOpenFloodMonitoring} className={itemClass(activeView === 'flood-monitoring')}>
+            <button onClick={onOpenFloodMonitoring} className={itemClass(activeView === 'flood-monitoring')} aria-current={activeView === 'flood-monitoring' ? 'page' : undefined} title="Flood Monitoring">
               <NavLabel icon="flood" label="Flood Monitoring" />
             </button>
-            <button onClick={onOpenEvacuationCenter} className={itemClass(activeView === 'evacuation-center')}>
+            <button onClick={onOpenEvacuationCenter} className={itemClass(activeView === 'evacuation-center')} aria-current={activeView === 'evacuation-center' ? 'page' : undefined} title="Evacuation Center">
               <NavLabel icon="evacuation" label="Evacuation Center" />
             </button>
-            <button onClick={onOpenAccount} className={itemClass(activeView === 'account')}>
+            <SidebarSectionLabel>Records & Personnel</SidebarSectionLabel>
+            <button onClick={onOpenAccount} className={itemClass(activeView === 'account')} aria-current={activeView === 'account' ? 'page' : undefined} title="Account">
               <NavLabel icon="account" label="Account" />
             </button>
-            <button onClick={onOpenHistory} className={itemClass(activeView === 'history')}>
+            <button onClick={onOpenHistory} className={itemClass(activeView === 'history')} aria-current={activeView === 'history' ? 'page' : undefined} title="History">
               <NavLabel icon="history" label="History" />
             </button>
           </nav>
 
-          <button onClick={onLogout} className={d.shell.logout}>
-            Logout
+          <SidebarCollapseButton collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
+          <button onClick={onLogout} className={d.shell.logout} aria-label="Log out" title="Log out">
+            <LogoutIcon />
+            <span className="portal-logout-label">Logout</span>
           </button>
         </aside>
 
@@ -196,13 +207,12 @@ export default function BarangayShell({
           ].join(' ')}
         >
           <header className={d.shell.header}>
-            <div className={d.shell.headerInner}>
-              <div>
-                <h1 className={d.shell.h1}>{title}</h1>
-                {subtitle ? <p className={d.shell.subtitle}>{subtitle}</p> : null}
-              </div>
-              {actions ? <div className={d.shell.actions}>{actions}</div> : null}
-            </div>
+            <PortalPageHeading
+              portalLabel={`Barangay ${barangayName}`}
+              title={title}
+              subtitle={subtitle}
+              actions={actions ? <div className={d.shell.actions}>{actions}</div> : undefined}
+            />
           </header>
 
           {children}

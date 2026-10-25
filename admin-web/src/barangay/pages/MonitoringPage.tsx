@@ -189,7 +189,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
       } else if (reportsRes.reason?.response?.status === 401) {
         onAuthError();
         return;
-      } else {
+      } else if (showLoading) {
         setReports([]);
       }
 
@@ -199,19 +199,21 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
       } else if (personnelRes.reason?.response?.status === 401) {
         onAuthError();
         return;
-      } else {
+      } else if (showLoading) {
         setBarangayRescuers([]);
       }
 
-      if (reportsFailed) {
+      if (reportsFailed && showLoading) {
         setError('Failed to load monitoring data.');
-      } else {
+      } else if (!reportsFailed) {
         setError(null);
       }
     } catch (err: unknown) {
       const apiError = err as ApiError;
       if (apiError.response?.status === 401) { onAuthError(); return; }
-      setError(apiError.response?.data?.message || 'Failed to load monitoring data.');
+      if (showLoading) {
+        setError(apiError.response?.data?.message || 'Failed to load monitoring data.');
+      }
     } finally {
       dataLoadInFlightRef.current = false;
       if (showLoading) setLoading(false);
@@ -731,7 +733,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
       onOpenAccount={onOpenAccount}
       onOpenHistory={onOpenHistory}
     >
-      <div className={`${d.monitoring.root} incident-monitoring-root`}>
+      <div className={`${d.monitoring.root} incident-monitoring-root monitoring-steady-ui`}>
         {error ? <div className={d.page.error}>{error}</div> : null}
 
         {/* Stats */}

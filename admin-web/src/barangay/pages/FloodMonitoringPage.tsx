@@ -280,7 +280,9 @@ export default function FloodMonitoringPage({
         onAuthError();
         return;
       }
-      setError(apiError.response?.data?.message || 'Failed to load flood monitoring data.');
+      if (showLoading) {
+        setError(apiError.response?.data?.message || 'Failed to load flood monitoring data.');
+      }
     } finally {
       loadInFlightRef.current = false;
       if (showLoading) setLoading(false);
@@ -289,7 +291,9 @@ export default function FloodMonitoringPage({
 
   useEffect(() => {
     loadData(true).catch(() => {});
-    const refreshTimer = setInterval(() => loadData(false).catch(() => {}), 2_000);
+    const refreshTimer = setInterval(() => {
+      if (document.visibilityState === 'visible') loadData(false).catch(() => {});
+    }, 2_000);
     return () => clearInterval(refreshTimer);
   }, [loadData]);
 
@@ -312,7 +316,7 @@ export default function FloodMonitoringPage({
       onOpenHistory={onOpenHistory}
       actions={<button onClick={onOpenMonitoring} className={d.monitoring.actionEvac}>Open Incident Monitoring</button>}
     >
-      <div className={d.monitoring.floodRoot}>
+      <div className={`${d.monitoring.floodRoot} monitoring-steady-ui`}>
         {error ? <div className={d.page.error}>{error}</div> : null}
 
         <section className={d.monitoring.floodIndicatorsCard}>

@@ -1,6 +1,7 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import cdrrmdLogo from '../assets/cdrrmd-logo.png';
 import { d } from '../adminDesign';
+import { LogoutIcon, PortalPageHeading, SidebarCollapseButton, SidebarSectionLabel } from './PortalShellElements';
 
 type ActiveView = 'dashboard' | 'admin' | 'users' | 'barangay' | 'rescuers' | 'monitoring' | 'flood-monitoring' | 'evacuation' | 'post-updates' | 'history';
 
@@ -96,7 +97,16 @@ export default function AdminShell({
   actions,
   children,
 }: Props) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('cdrrmd_admin_sidebar') === 'collapsed');
   const isAccountsView = activeView === 'admin' || activeView === 'users' || activeView === 'barangay' || activeView === 'rescuers';
+
+  function toggleSidebar() {
+    setSidebarCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem('cdrrmd_admin_sidebar', next ? 'collapsed' : 'expanded');
+      return next;
+    });
+  }
 
   function openAccounts() {
     if (!isAccountsView) {
@@ -115,7 +125,7 @@ export default function AdminShell({
 
   return (
     <div className={`${d.shell.root} admin-font-manrope`}>
-      <div className={d.shell.layout}>
+      <div className={`${d.shell.layout} ${sidebarCollapsed ? 'portal-shell-collapsed' : ''}`}>
         {/* Mobile top bar */}
         <div className={d.shell.mobileTop}>
           <div className={d.shell.mobileTopInner}>
@@ -130,38 +140,50 @@ export default function AdminShell({
           </div>
         </div>
 
-        <aside className={d.shell.aside}>
+        <aside className={`${d.shell.aside} ${sidebarCollapsed ? 'is-collapsed' : ''}`}>
           <div className={d.shell.logoWrap}>
             <img src={cdrrmdLogo} alt="CDRRMD logo" className={d.shell.logo} />
-            <div>
+            <div className="portal-brand-copy">
               <p className={d.shell.brand}>CDRRMD</p>
               <p className={d.shell.city}>Admin Portal</p>
             </div>
           </div>
 
           <nav className={d.shell.nav}>
-            <button onClick={onOpenDashboard} className={itemClass(activeView === 'dashboard')}>
+            <SidebarSectionLabel>Overview</SidebarSectionLabel>
+            <button onClick={onOpenDashboard} className={itemClass(activeView === 'dashboard')} aria-current={activeView === 'dashboard' ? 'page' : undefined} title="Dashboard">
               <NavLabel icon="dashboard" label="Dashboard" />
             </button>
 
-            <div>
-              <button onClick={openAccounts} className={itemClass(isAccountsView)}>
-                <NavLabel icon="accounts" label="Accounts" />
-              </button>
-            </div>
-
-            {navItems.map((item) => (
-              <button key={item.key} onClick={item.onClick} className={itemClass(activeView === item.key)}>
+            <SidebarSectionLabel>Operations</SidebarSectionLabel>
+            {navItems.slice(0, 3).map((item) => (
+              <button key={item.key} onClick={item.onClick} className={itemClass(activeView === item.key)} aria-current={activeView === item.key ? 'page' : undefined} title={item.label}>
                 <NavLabel icon={item.icon} label={item.label} />
               </button>
             ))}
+
+            <SidebarSectionLabel>Records & Resources</SidebarSectionLabel>
+            {navItems.slice(3).map((item) => (
+              <button key={item.key} onClick={item.onClick} className={itemClass(activeView === item.key)} aria-current={activeView === item.key ? 'page' : undefined} title={item.label}>
+                <NavLabel icon={item.icon} label={item.label} />
+              </button>
+            ))}
+
+            <SidebarSectionLabel>Administration</SidebarSectionLabel>
+            <button onClick={openAccounts} className={itemClass(isAccountsView)} aria-current={isAccountsView ? 'page' : undefined} title="Accounts">
+              <NavLabel icon="accounts" label="Accounts" />
+            </button>
           </nav>
 
+          <SidebarCollapseButton collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
           <button
             onClick={onLogout}
             className={d.shell.logout}
+            aria-label="Log out"
+            title="Log out"
           >
-            Logout
+            <LogoutIcon />
+            <span className="portal-logout-label">Logout</span>
           </button>
         </aside>
 
@@ -173,13 +195,13 @@ export default function AdminShell({
         >
           {/* Shared page header for all admin views */}
           <header className={d.shell.header}>
-            <div className={d.shell.headerInner}>
-              <div>
-                <h1 className={d.shell.h1}>{title}</h1>
-                {subtitle ? <p className={d.shell.subtitle}>{subtitle}</p> : null}
-              </div>
-              {isAccountsView ? (
-                <nav className="grid w-full min-w-0 grid-cols-4 gap-1 min-[820px]:ml-auto min-[820px]:flex min-[820px]:w-auto min-[820px]:gap-2" role="tablist" aria-label="Account roles">
+            <PortalPageHeading
+              portalLabel="Admin Portal"
+              title={title}
+              subtitle={subtitle}
+              actions={(isAccountsView || actions) ? <>
+                {isAccountsView ? (
+                <nav className="portal-account-tabs" role="tablist" aria-label="Account roles">
                   {[
                     ['admin', 'Admin', onOpenAdmin],
                     ['users', 'User', onOpenUsers],
@@ -192,15 +214,16 @@ export default function AdminShell({
                       role="tab"
                       aria-selected={activeView === key}
                       onClick={onClick as () => void}
-                      className={`min-w-0 rounded-lg px-1.5 py-2 text-[0.68rem] font-black transition sm:px-2 sm:text-xs min-[820px]:min-w-24 min-[820px]:px-4 min-[820px]:text-sm ${activeView === key ? 'bg-[#1f4e79] text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}
+                      className="portal-account-tab"
                     >
                       {String(label)}
                     </button>
                   ))}
                 </nav>
-              ) : null}
-              {actions ? <div className={d.shell.actions}>{actions}</div> : null}
-            </div>
+                ) : null}
+                {actions ? <div className={d.shell.actions}>{actions}</div> : null}
+              </> : undefined}
+            />
           </header>
 
           {children}

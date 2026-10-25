@@ -75,12 +75,12 @@ const NON_VISUAL_REFRESH_FIELDS = new Set([
   'last_seen_at',
   'location_updated_at',
   'rescuer_location_updated_at',
+  'updated_at',
 ]);
 const REPORT_LIVE_FIELDS = new Set([
   ...NON_VISUAL_REFRESH_FIELDS,
   'rescuer_latitude',
   'rescuer_longitude',
-  'updated_at',
 ]);
 const BACKUP_LIVE_FIELDS = new Set([
   ...NON_VISUAL_REFRESH_FIELDS,
@@ -745,7 +745,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       onOpenHistory={onOpenHistory}
       actions={<><button type="button" onClick={() => setShowIncidentHistory(true)} className={d.btn.secondary}>Incident History</button><button onClick={onOpenEvacuationAreas} className={d.monitoring.actionEvac}>Evacuation Readiness</button></>}
     >
-      <div className={`${d.monitoring.root} admin-incident-monitoring-root`}>
+      <div className={`${d.monitoring.root} admin-incident-monitoring-root monitoring-steady-ui`}>
         {error ? <div className={d.page.error}>{error}</div> : null}
 
         <section className={d.monitoring.statsGrid}>

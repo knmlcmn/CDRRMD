@@ -77,6 +77,11 @@ const FIREBASE_SENSOR_PATHS = [
 
 const FIREBASE_FLOOD_REPORTS_PATH = 'Flood Reports';
 const FIREBASE_SENSOR_STATUS_PATH = 'Sensor Status Settings';
+
+function sameData(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function distanceToFillPct(distanceCm?: number | null) {
   if (typeof distanceCm !== 'number' || !Number.isFinite(distanceCm)) {
     return 0;
@@ -367,18 +372,18 @@ async function syncFirebaseFloodReports(
         endedAt: null,
       };
 
-      const savedIndex = nextReports.findIndex((report) => report.firebaseKey === next.firebaseKey);
-      if (savedIndex >= 0) {
-        nextReports[savedIndex] = next;
-      } else {
-        nextReports.push(next);
-      }
       const hasChanged = shouldStartEvent
         || saved.level !== next.level
         || saved.location !== next.location
         || saved.distanceCm !== next.distanceCm
         || saved.waterLevelPercentage !== next.waterLevelPercentage;
       if (hasChanged) {
+        const savedIndex = nextReports.findIndex((report) => report.firebaseKey === next.firebaseKey);
+        if (savedIndex >= 0) {
+          nextReports[savedIndex] = next;
+        } else {
+          nextReports.push(next);
+        }
         writes.push(putFirebaseFloodReport(next));
       }
       return;
@@ -474,9 +479,9 @@ export default function FloodMonitoringPage({
         };
       });
 
-      setHardwareSlots(nextHardwareSlots);
+      setHardwareSlots((current) => sameData(current, nextHardwareSlots) ? current : nextHardwareSlots);
       const nextReports = await syncFirebaseFloodReports(nextHardwareSlots, savedFloodReports);
-      setReports(nextReports);
+      setReports((current) => sameData(current, nextReports) ? current : nextReports);
 
       setSelectedReportId((currentId) => {
         const activeReports = nextReports.filter((item) => item.active && isCurrentManilaDay(item.createdAt));
@@ -495,7 +500,9 @@ export default function FloodMonitoringPage({
         onAuthError();
         return;
       }
-      setError(apiError.response?.data?.message || (err instanceof Error ? err.message : 'Failed to load flood monitoring data.'));
+      if (showLoading) {
+        setError(apiError.response?.data?.message || (err instanceof Error ? err.message : 'Failed to load flood monitoring data.'));
+      }
     } finally {
       loadInFlightRef.current = false;
       if (showLoading) {
@@ -508,7 +515,7 @@ export default function FloodMonitoringPage({
     loadData(true).catch(() => {});
 
     const refreshTimer = setInterval(() => {
-      loadData(false).catch(() => {});
+      if (document.visibilityState === 'visible') loadData(false).catch(() => {});
     }, 2_000);
 
     return () => clearInterval(refreshTimer);
@@ -653,7 +660,7 @@ export default function FloodMonitoringPage({
         </div>
       ) : null}
 
-      <div className={d.monitoring.root}>
+      <div className={`${d.monitoring.root} monitoring-steady-ui`}>
         {error ? <div className={d.page.error}>{error}</div> : null}
 
         <section className={d.monitoring.floodIndicatorsCard}>

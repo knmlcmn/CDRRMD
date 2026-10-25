@@ -408,7 +408,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       label: 'Emergency Alerts',
       value: cards.emergencyAlerts,
       className: d.dashboard.cardEmergency,
-      borderClass: 'border-rose-400',
       toneClass: 'text-rose-600',
     },
     {
@@ -416,7 +415,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       label: 'Active Teams',
       value: cards.activeTeams,
       className: d.dashboard.cardTeams,
-      borderClass: 'border-sky-400',
       toneClass: 'text-sky-600',
     },
     {
@@ -424,7 +422,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       label: 'Evacuation Areas',
       value: cards.evacuationAreas,
       className: d.dashboard.cardEvac,
-      borderClass: 'border-amber-400',
       toneClass: 'text-amber-600',
     },
     {
@@ -432,7 +429,6 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       label: 'Total Evacuees',
       value: cards.totalEvacuees,
       className: d.dashboard.cardEvacuees,
-      borderClass: 'border-emerald-400',
       toneClass: 'text-emerald-600',
     },
   ];
@@ -466,7 +462,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
 
           <section className={d.dashboard.metricsGrid}>
             {cardsToRender.map((card) => (
-              <article key={card.key} className={`${d.dashboard.metricCard} ${card.borderClass}`}>
+              <article key={card.key} className={`${d.dashboard.metricCard} ${card.className}`}>
                 <p className={d.dashboard.metricLabel}>{card.label}</p>
                 <p className={`${d.dashboard.metricValue} ${card.toneClass}`}>{card.value}</p>
               </article>

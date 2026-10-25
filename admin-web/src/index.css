@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -954,11 +954,6 @@ body,
   to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
 }
 
-@keyframes hardware-water-notice-pulse {
-  0%, 100% { box-shadow: 0 0 0 5px rgba(220, 38, 38, 0.14), 0 22px 60px rgba(127, 29, 29, 0.34); }
-  50% { box-shadow: 0 0 0 11px rgba(220, 38, 38, 0.05), 0 26px 68px rgba(127, 29, 29, 0.43); }
-}
-
 /* High-visibility hardware notification shared by the Admin and Barangay portals. */
 .hardware-water-notice {
   position: fixed;
@@ -990,7 +985,7 @@ body,
   border: 3px solid #dc2626 !important;
   background: linear-gradient(135deg, #fff 0%, #fff1f0 58%, #fee2e2 100%) !important;
   box-shadow: 0 0 0 5px rgba(220, 38, 38, 0.14), 0 22px 60px rgba(127, 29, 29, 0.34) !important;
-  animation: hardware-water-notice-entry 0.42s ease-out, hardware-water-notice-pulse 2.2s ease-in-out 0.55s 3;
+  animation: hardware-water-notice-entry 0.42s ease-out;
 }
 
 .hardware-water-notice-reminder {
@@ -1347,16 +1342,6 @@ body,
   }
 }
 
-@keyframes water-gauge-breathe {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
-}
-
-@keyframes water-gauge-alert {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-3px) scale(1.025); }
-}
-
 @keyframes water-surface-sway {
   0% { transform: translateX(-8%) rotate(0deg); }
   50% { transform: translateX(8%) rotate(2deg); }
@@ -1376,17 +1361,17 @@ body,
 
 .water-gauge-low {
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06), 0 0 14px rgba(56, 189, 248, 0.25);
-  animation: water-gauge-breathe 3.8s ease-in-out infinite;
+  animation: none;
 }
 
 .water-gauge-moderate {
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06), 0 0 22px rgba(245, 158, 11, 0.48);
-  animation: water-gauge-breathe 2.25s ease-in-out infinite;
+  animation: none;
 }
 
 .water-gauge-high {
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.06), 0 0 30px rgba(239, 68, 68, 0.68);
-  animation: water-gauge-alert 1.05s ease-in-out infinite;
+  animation: none;
 }
 
 .water-gauge-unavailable {
