@@ -19,3 +19,18 @@ export async function loginStaff(accountId: string, password: string) {
   }
   return data as { token: string; user: { role: StaffPortal } };
 }
+
+export async function requestStaffPasswordResetCode(email: string) {
+  const { data } = await api.post('/auth/password-reset-otp', { email, portal: 'staff' });
+  return data as { message?: string; expiresInSeconds?: number; resendAfterSeconds?: number };
+}
+
+export async function resetStaffPassword(email: string, otp: string, newPassword: string) {
+  const { data } = await api.post('/auth/password-reset', {
+    email,
+    otp,
+    newPassword,
+    portal: 'staff',
+  });
+  return data as { message?: string };
+}

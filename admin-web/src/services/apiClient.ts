@@ -2,7 +2,9 @@ import axios from 'axios';
 
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.PROD ? '/api' : 'http://localhost:4000/api');
+  (import.meta.env.PROD
+    ? 'https://cdrrmd-backend.vercel.app/api'
+    : 'http://localhost:4000/api');
 const ADMIN_TOKEN_KEY = 'admin_token';
 
 export const api = axios.create({

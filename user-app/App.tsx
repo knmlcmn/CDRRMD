@@ -598,7 +598,12 @@ function AppContent() {
   if (session.user.role === 'rescuer' || session.user.role === 'barangay_rescuer') {
     return (
       <View style={styles.appRoot}>
-        <RescuerPortal role={session.user.role as ResponderRole} onLogout={requestLogout} onAuthError={() => void performLogout()} />
+        <RescuerPortal
+          role={session.user.role as ResponderRole}
+          barangayName={session.user.barangayName}
+          onLogout={requestLogout}
+          onAuthError={() => void performLogout()}
+        />
         <LogoutConfirmationModal
           visible={logoutConfirmationVisible}
           responder

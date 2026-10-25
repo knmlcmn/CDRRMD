@@ -138,11 +138,17 @@ async function requestRegistrationOtp(payload) {
 async function requestPasswordResetOtp(payload) {
   const email = emailOtpService.normalizeEmail(payload?.email);
   const user = await userModel.findUserByEmail(email);
-  if (user?.role === 'user') {
-    await emailOtpService.sendCode(email, 'password_reset');
+  const staffRecovery = payload?.portal === 'staff';
+  const eligible = staffRecovery
+    ? user && ['admin', 'barangay'].includes(user.role)
+    : user?.role === 'user';
+  if (eligible) {
+    await emailOtpService.sendCode(email, staffRecovery ? 'staff_password_reset' : 'password_reset');
   }
   return {
-    message: 'If a resident account uses that email, a verification code has been sent.',
+    message: staffRecovery
+      ? 'If an Admin or Barangay account uses that email, a verification code has been sent.'
+      : 'If a resident account uses that email, a verification code has been sent.',
     expiresInSeconds: 600,
     resendAfterSeconds: 60,
   };
@@ -154,14 +160,20 @@ async function resetPassword(payload) {
   if (newPassword.length < 6) throw httpError(400, 'Password must be at least 6 characters.');
 
   const user = await userModel.findUserByEmail(email);
-  if (!user || user.role !== 'user') {
+  const staffRecovery = payload?.portal === 'staff';
+  const allowedRoles = staffRecovery ? ['admin', 'barangay'] : ['user'];
+  if (!user || !allowedRoles.includes(user.role)) {
     throw httpError(400, 'The verification code is missing or expired. Request a new code.', 'INVALID_OTP');
   }
-  await emailOtpService.verifyCode(email, 'password_reset', payload?.otp);
+  await emailOtpService.verifyCode(
+    email,
+    staffRecovery ? 'staff_password_reset' : 'password_reset',
+    payload?.otp,
+  );
 
   const passwordHash = await bcrypt.hash(newPassword, 10);
   await refreshTokenModel.withTransaction(async (client) => {
-    const updated = await userModel.updateUserPasswordById(user.id, passwordHash, client);
+    const updated = await userModel.updateUserPasswordByIdForRoles(user.id, passwordHash, allowedRoles, client);
     if (!updated) throw httpError(404, 'User account not found.');
     await refreshTokenModel.revokeActiveByUser(client, user.id);
   });

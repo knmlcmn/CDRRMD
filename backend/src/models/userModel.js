@@ -125,16 +125,20 @@ async function findDuplicateEmailForUser(email, userId) {
 }
 
 async function updateUserPasswordById(id, passwordHash, database = pool) {
+  return updateUserPasswordByIdForRoles(id, passwordHash, ['user'], database);
+}
+
+async function updateUserPasswordByIdForRoles(id, passwordHash, allowedRoles, database = pool) {
   const result = await database.query(
     `UPDATE users
      SET password_hash = $2,
          is_active = FALSE,
          last_seen_at = NOW()
      WHERE id = $1
-       AND role = 'user'
+       AND role = ANY($3::text[])
        AND COALESCE(is_archived, FALSE) = FALSE
      RETURNING id`,
-    [id, passwordHash],
+    [id, passwordHash, allowedRoles],
   );
   return result.rows[0] || null;
 }
@@ -1034,6 +1038,7 @@ module.exports = {
   updateResidentLocation,
   findDuplicateEmailForUser,
   updateUserPasswordById,
+  updateUserPasswordByIdForRoles,
   listAdmins,
   listUsers,
   findDuplicateAdmin,

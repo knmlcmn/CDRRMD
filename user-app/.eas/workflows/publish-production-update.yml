@@ -1,0 +1,10 @@
+name: Publish optimized Android production update
+
+jobs:
+  publish_android_update:
+    name: Publish Android production update
+    type: update
+    params:
+      platform: android
+      branch: resident-alert-reliability-v7
+      message: Fix reliable resident moderate and high alert transitions

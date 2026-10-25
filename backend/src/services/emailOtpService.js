@@ -8,7 +8,7 @@ const OTP_LENGTH = 6;
 const OTP_TTL_MINUTES = 10;
 const OTP_RESEND_SECONDS = 60;
 const OTP_MAX_ATTEMPTS = 5;
-const ALLOWED_PURPOSES = new Set(['registration', 'password_reset']);
+const ALLOWED_PURPOSES = new Set(['registration', 'password_reset', 'staff_password_reset']);
 
 function normalizeEmail(value) {
   const email = String(value || '').trim().toLowerCase();

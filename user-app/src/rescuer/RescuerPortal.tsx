@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AppState, Image, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,9 +7,12 @@ import AssignmentsScreen from './screens/AssignmentsScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import FloodMonitoringScreen from './screens/FloodMonitoringScreen';
 import AccountScreen from './screens/AccountScreen';
-import { sendHeartbeat } from './services/rescuerService';
-import type { ResponderRole } from './types';
+import WaterLevelAlert from './components/WaterLevelAlert';
+import { loadWaterLevelSensors, sendHeartbeat } from './services/rescuerService';
+import type { ResponderRole, WaterLevelSensor } from './types';
 import { rescuerColors } from './components/RescuerScreen';
+import { MODERATE_WATER_LEVEL_THRESHOLD } from '../utils/waterLevelHazard';
+import { scopeWaterLevelSensors } from './utils/sensorScope';
 
 type Tab = 'assignments' | 'history' | 'flood' | 'account';
 const tabs: Array<{ key: Tab; label: string; mobileLabel: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }> = [
@@ -19,10 +22,20 @@ const tabs: Array<{ key: Tab; label: string; mobileLabel: string; icon: keyof ty
   { key: 'account', label: 'Account', mobileLabel: 'Account', icon: 'account-outline' },
 ];
 
-export default function RescuerPortal({ role, onLogout, onAuthError }: { role: ResponderRole; onLogout: () => void; onAuthError: () => void }) {
+type Props = {
+  role: ResponderRole;
+  barangayName?: string | null;
+  onLogout: () => void;
+  onAuthError: () => void;
+};
+
+export default function RescuerPortal({ role, barangayName, onLogout, onAuthError }: Props) {
   const { width } = useWindowDimensions();
   const desktop = width >= 820;
   const [tab, setTab] = useState<Tab>('assignments');
+  const [alertSensors, setAlertSensors] = useState<WaterLevelSensor[]>([]);
+  const [alertVisible, setAlertVisible] = useState(false);
+  const alertBuckets = useRef<Record<string, number>>({});
 
   // Presence belongs to the portal, not only the Incidents tab. Keeping this
   // mounted means a rescuer remains assignable while viewing History, Flood,
@@ -48,10 +61,61 @@ export default function RescuerPortal({ role, onLogout, onAuthError }: { role: R
       subscription.remove();
     };
   }, [onAuthError]);
+
+  useEffect(() => {
+    let active = true;
+    let loading = false;
+
+    async function checkWaterLevels() {
+      if (!active || loading) return;
+      loading = true;
+      try {
+        const loaded = await loadWaterLevelSensors();
+        if (!active) return;
+        const scoped = scopeWaterLevelSensors(loaded, role, barangayName);
+        const hazardous = scoped
+          .filter((sensor) => sensor.status === 'Active' && sensor.hasReading
+            && sensor.waterLevelPercentage >= MODERATE_WATER_LEVEL_THRESHOLD)
+          .sort((first, second) => second.waterLevelPercentage - first.waterLevelPercentage);
+        const hazardousIds = new Set(hazardous.map((sensor) => sensor.id));
+        let changed = false;
+
+        hazardous.forEach((sensor) => {
+          const bucket = Math.floor(sensor.waterLevelPercentage / 10) * 10;
+          if (alertBuckets.current[sensor.id] !== bucket) changed = true;
+          alertBuckets.current[sensor.id] = bucket;
+        });
+        Object.keys(alertBuckets.current).forEach((sensorId) => {
+          if (!hazardousIds.has(sensorId)) delete alertBuckets.current[sensorId];
+        });
+
+        if (changed && hazardous.length > 0) {
+          setAlertSensors(hazardous);
+          setAlertVisible(true);
+        }
+      } catch (caught: any) {
+        if (caught?.response?.status === 401) onAuthError();
+      } finally {
+        loading = false;
+      }
+    }
+
+    void checkWaterLevels();
+    const timer = setInterval(() => void checkWaterLevels(), 2_000);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void checkWaterLevels();
+    });
+    return () => {
+      active = false;
+      clearInterval(timer);
+      subscription.remove();
+    };
+  }, [barangayName, onAuthError, role]);
+
   const content = tab === 'history'
     ? <HistoryScreen role={role} onAuthError={onAuthError} />
     : tab === 'flood'
-      ? <FloodMonitoringScreen onAuthError={onAuthError} />
+      ? <FloodMonitoringScreen role={role} barangayName={barangayName} onAuthError={onAuthError} />
       : tab === 'account'
         ? <AccountScreen role={role} onAuthError={onAuthError} />
         : <AssignmentsScreen role={role} onAuthError={onAuthError} />;
@@ -86,6 +150,15 @@ export default function RescuerPortal({ role, onLogout, onAuthError }: { role: R
           </TouchableOpacity>;
         })}
       </View> : null}
+      <WaterLevelAlert
+        sensors={alertSensors}
+        visible={alertVisible}
+        onClose={() => setAlertVisible(false)}
+        onSeeDetails={() => {
+          setAlertVisible(false);
+          setTab('flood');
+        }}
+      />
     </SafeAreaView>
     </TypographyFamily>
   );

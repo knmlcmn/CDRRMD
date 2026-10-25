@@ -257,7 +257,7 @@ async function putFirebaseSensorStatus(hardwareId: string, status: SensorStatus)
   }
 }
 
-function createFloodReportId(hardwareNo: string, now: Date) {
+function createFloodReportId(sensorId: string, now: Date) {
   const date = [now.getFullYear(), now.getMonth() + 1, now.getDate()]
     .map((part, index) => String(part).padStart(index === 0 ? 4 : 2, '0'))
     .join('');
@@ -265,7 +265,30 @@ function createFloodReportId(hardwareNo: string, now: Date) {
     .map((part) => String(part).padStart(2, '0'))
     .join('');
 
-  return `FLD-${date}-${time}-${hardwareNo}`;
+  return `FLD-${date}-${time}-${sensorId}`;
+}
+
+function formatLoggedAt(value: string) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '\u2014';
+  return date.toLocaleString('en-PH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Manila',
+  });
+}
+
+const manilaDayFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Manila',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function isCurrentManilaDay(value: string) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime())
+    && manilaDayFormatter.format(date) === manilaDayFormatter.format(new Date());
 }
 
 async function putFirebaseFloodReport(report: FloodSensorReport) {
@@ -279,7 +302,7 @@ async function putFirebaseFloodReport(report: FloodSensorReport) {
   });
 
   if (!response.ok) {
-    throw new Error(`Unable to save the flood report for ${report.hardwareNo}.`);
+    throw new Error(`Unable to save flood report ${report.reportId}.`);
   }
 }
 
@@ -328,14 +351,13 @@ async function syncFirebaseFloodReports(
     if (slot.fillPct >= FLOOD_REPORT_THRESHOLD) {
       const level: FloodSensorReport['level'] = slot.fillPct >= HIGH_WATER_THRESHOLD ? 'High' : 'Moderate';
       const shouldStartEvent = !saved?.active;
-      const reportId = shouldStartEvent ? createFloodReportId(slot.hardwareNo, now) : saved.reportId;
+      const reportId = shouldStartEvent ? createFloodReportId(slot.hardwareId, now) : saved.reportId;
       const next: FloodSensorReport = {
         firebaseKey: shouldStartEvent ? reportId : saved.firebaseKey,
         sensorId: slot.hardwareId,
         reportId,
         location: slot.assignedArea,
         level,
-        hardwareNo: slot.hardwareNo,
         status: 'Active',
         distanceCm: slot.distanceCm,
         waterLevelPercentage: Number(slot.fillPct.toFixed(1)),
@@ -391,7 +413,6 @@ export default function FloodMonitoringPage({
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showReportHistory, setShowReportHistory] = useState(false);
   const [hardwareSlots, setHardwareSlots] = useState<HardwareSlot[]>([]);
   const [sensorManagerOpen, setSensorManagerOpen] = useState(false);
   const [pendingSensorStatus, setPendingSensorStatus] = useState<{ hardwareId: string; status: SensorStatus } | null>(null);
@@ -458,7 +479,7 @@ export default function FloodMonitoringPage({
       setReports(nextReports);
 
       setSelectedReportId((currentId) => {
-        const activeReports = nextReports.filter((item) => item.active);
+        const activeReports = nextReports.filter((item) => item.active && isCurrentManilaDay(item.createdAt));
         if (activeReports.length === 0) {
           return null;
         }
@@ -519,27 +540,14 @@ export default function FloodMonitoringPage({
 
   const activeReports = useMemo(
     () => reports
-      .filter((item) => item.active)
+      .filter((item) => item.active && isCurrentManilaDay(item.createdAt))
       .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime()),
     [reports],
   );
 
-  const historyReports = useMemo(
-    () => reports
-      .filter((item) => !item.active)
-      .sort((first, second) => {
-        const firstDate = new Date(first.endedAt || first.createdAt).getTime();
-        const secondDate = new Date(second.endedAt || second.createdAt).getTime();
-        return secondDate - firstDate;
-      }),
-    [reports],
-  );
-
-  const displayedReports = showReportHistory ? historyReports : activeReports;
-
   const selectedReport = useMemo(
-    () => displayedReports.find((item) => item.reportId === selectedReportId) ?? displayedReports[0] ?? null,
-    [displayedReports, selectedReportId],
+    () => activeReports.find((item) => item.reportId === selectedReportId) ?? activeReports[0] ?? null,
+    [activeReports, selectedReportId],
   );
 
   const pendingSensorSlot = pendingSensorStatus
@@ -716,32 +724,8 @@ export default function FloodMonitoringPage({
         <section className={d.monitoring.lowerGrid}>
           <article className={d.monitoring.incidentsCard}>
             <div className={d.monitoring.incidentsHead}>
-              <h3 className={d.monitoring.incidentsTitle}>{showReportHistory ? 'Flood Report History' : 'Flood Reports'}</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                <p className={d.monitoring.rainRankUpdated}>
-                  {showReportHistory ? `${historyReports.length} historical` : `${activeReports.length} active`}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowReportHistory((previous) => !previous);
-                    setSelectedReportId(null);
-                  }}
-                  style={{
-                    border: 0,
-                    padding: 0,
-                    background: 'transparent',
-                    color: '#38bdf8',
-                    font: 'inherit',
-                    fontSize: '0.8rem',
-                    fontWeight: 800,
-                    textDecoration: 'underline',
-                    cursor: 'pointer',
-                  }}
-                >
-                  {showReportHistory ? 'Active reports' : 'History'}
-                </button>
-              </div>
+              <h3 className={d.monitoring.incidentsTitle}>Flood Reports</h3>
+              <p className={d.monitoring.rainRankUpdated}>{activeReports.length} active today</p>
             </div>
             <div className={d.monitoring.incidentsTableWrap}>
               <table className={d.monitoring.floodReportsTable}>
@@ -750,17 +734,17 @@ export default function FloodMonitoringPage({
                 </colgroup>
                 <thead>
                   <tr>
-                    <th>Location</th><th>Level</th><th>Hardware no.</th><th>Distance (cm)</th>
+                    <th>Location</th><th>Level</th><th>Logged</th><th>Distance (cm)</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {displayedReports.length === 0 ? (
+                  {activeReports.length === 0 ? (
                     <tr>
                       <td colSpan={4} className={d.table.empty}>
-                        {showReportHistory ? 'No flood report history yet.' : 'No active flood reports.'}
+                        No active flood reports logged today.
                       </td>
                     </tr>
-                  ) : displayedReports.map((item) => (
+                  ) : activeReports.map((item) => (
                     <tr
                       key={item.reportId}
                       onClick={() => setSelectedReportId(item.reportId)}
@@ -777,7 +761,7 @@ export default function FloodMonitoringPage({
                           {item.level}
                         </span>
                       </td>
-                      <td>{item.hardwareNo}</td>
+                      <td>{formatLoggedAt(item.createdAt)}</td>
                       <td>{item.distanceCm === null ? '—' : item.distanceCm.toFixed(1)}</td>
                     </tr>
                   ))}

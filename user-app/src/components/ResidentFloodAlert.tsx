@@ -49,9 +49,16 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
   const coordinatesRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const suppressedAlertIdsRef = useRef(new Set<number>());
   const acknowledgedLiveKeysRef = useRef(new Set<string>());
+  const latestCheckRef = useRef(0);
+  const lastLiveKeyRef = useRef<string | null>(null);
+  const consecutiveSafeReadingsRef = useRef(0);
   const warningPulse = useRef(new Animated.Value(0)).current;
 
   const checkAlerts = useCallback(async () => {
+    // Location, polling, app-resume, and browser-focus checks can overlap. Only
+    // the newest request may change alert state so an older moderate/empty
+    // response can never overwrite a newer high-water response.
+    const checkNumber = ++latestCheckRef.current;
     const [notificationResult, sensorResult] = await Promise.allSettled([
       api.get('/reports/notifications/mine', {
         params: coordinatesRef.current || undefined,
@@ -86,9 +93,31 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
     const sensorId = String(residentSensor?.id || normalizeBarangayName(residentSensor?.barangayName));
     const liveKey = liveSeverity && sensorId ? `${sensorId}:${liveSeverity}` : null;
 
-    if (residentSensor && !liveSeverity) {
+    if (checkNumber !== latestCheckRef.current) return;
+
+    if (liveKey) {
+      consecutiveSafeReadingsRef.current = 0;
+      // A severity transition is a new emergency event. This also allows a
+      // later high -> moderate -> high test cycle to display every transition,
+      // even when an earlier alert at that severity was acknowledged.
+      if (lastLiveKeyRef.current && lastLiveKeyRef.current !== liveKey) {
+        acknowledgedLiveKeysRef.current.delete(liveKey);
+      }
+      lastLiveKeyRef.current = liveKey;
+    } else if (sensorAuthoritative) {
+      consecutiveSafeReadingsRef.current += 1;
+    }
+
+    // Sensor gateways can briefly publish an unreadable/empty value while a
+    // reading changes. Require two consecutive authoritative safe readings
+    // before closing an active modal, preventing moderate -> high flicker.
+    const confirmedSafe = sensorAuthoritative
+      && !liveSeverity
+      && consecutiveSafeReadingsRef.current >= 2;
+    if (confirmedSafe && sensorId) {
       acknowledgedLiveKeysRef.current.delete(`${sensorId}:moderate`);
       acknowledgedLiveKeysRef.current.delete(`${sensorId}:high`);
+      lastLiveKeyRef.current = null;
     }
 
     const latestUnread = matchingUnread.find(
@@ -99,7 +128,7 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
       (item) => String(item.severity || '').toLowerCase() === 'high',
     ) || matchingUnread[0];
 
-    let nextAlert = sensorAuthoritative && !liveSeverity ? null : latestUnread || null;
+    let nextAlert = confirmedSafe ? null : latestUnread || null;
     if (liveSeverity && liveKey && !acknowledgedLiveKeysRef.current.has(liveKey)) {
       const verifiedAlert = matchingUnread.find(
         (item) => String(item.severity || '').toLowerCase() === liveSeverity
@@ -120,12 +149,19 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
     setAlert((current) => {
       if (!nextAlert) {
         const currentLiveKey = current?.live_sensor_key;
-        return sensorAuthoritative || (currentLiveKey && acknowledgedLiveKeysRef.current.has(currentLiveKey)) ? null : current;
+        return confirmedSafe || (currentLiveKey && acknowledgedLiveKeysRef.current.has(currentLiveKey)) ? null : current;
       }
       const incomingIsHigh = String(nextAlert.severity || '').toLowerCase() === 'high';
       const currentIsHigh = String(current?.severity || '').toLowerCase() === 'high';
       const gainedVerifiedId = current?.id === null && nextAlert.id !== null;
-      return !current || (incomingIsHigh && !currentIsHigh) || gainedVerifiedId ? nextAlert : current;
+      const changedLiveSeverity = Boolean(
+        current?.live_sensor_key
+          && nextAlert.live_sensor_key
+          && current.live_sensor_key !== nextAlert.live_sensor_key,
+      );
+      return !current || changedLiveSeverity || (incomingIsHigh && !currentIsHigh) || gainedVerifiedId
+        ? nextAlert
+        : current;
     });
   }, [barangayName]);
 

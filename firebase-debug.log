@@ -1,0 +1,27 @@
+[debug] [2026-10-23T13:28:42.775Z] ----------------------------------------------------------------------
+[debug] [2026-10-23T13:28:42.778Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\Laurence\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js functions:secrets:set FLOOD_SENSOR_WEBHOOK_SECRET --data-file - --project capstone-4de76
+[debug] [2026-10-23T13:28:42.778Z] CLI Version:   15.34.1
+[debug] [2026-10-23T13:28:42.778Z] Platform:      win32
+[debug] [2026-10-23T13:28:42.778Z] Node Version:  v24.14.0
+[debug] [2026-10-23T13:28:42.778Z] Detected Agent: codex_cli
+[debug] [2026-10-23T13:28:42.779Z] Time:          Fri Oct 23 2026 21:28:42 GMT+0800 (Philippine Standard Time)
+[debug] [2026-10-23T13:28:42.779Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-10-23T13:28:42.922Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-10-23T13:28:42.922Z] > authorizing via signed-in user (lorenzbalasico@gmail.com)
+[debug] [2026-10-23T13:28:42.931Z] Checked if tokens are valid: true, expires at: 1792765183690
+[debug] [2026-10-23T13:28:42.931Z] Checked if tokens are valid: true, expires at: 1792765183690
+[debug] [2026-10-23T13:28:42.931Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/capstone-4de76/services/secretmanager.googleapis.com [none]
+[debug] [2026-10-23T13:28:42.932Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/capstone-4de76/services/secretmanager.googleapis.com  x-goog-user-project=capstone-4de76
+[debug] [2026-10-23T13:28:44.374Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/capstone-4de76/services/secretmanager.googleapis.com 200
+[debug] [2026-10-23T13:28:44.374Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/capstone-4de76/services/secretmanager.googleapis.com [omitted]
+[debug] [2026-10-23T13:28:44.374Z] Checked if tokens are valid: true, expires at: 1792765183690
+[debug] [2026-10-23T13:28:44.374Z] Checked if tokens are valid: true, expires at: 1792765183690
+[debug] [2026-10-23T13:28:44.375Z] >>> [apiv2][query] POST https://serviceusage.googleapis.com/v1/projects/capstone-4de76/services/secretmanager.googleapis.com:enable [none]
+[debug] [2026-10-23T13:28:44.375Z] >>> [apiv2][(partial)header] POST https://serviceusage.googleapis.com/v1/projects/capstone-4de76/services/secretmanager.googleapis.com:enable  x-goog-user-project=capstone-4de76
+[debug] [2026-10-23T13:28:45.675Z] <<< [apiv2][status] POST https://serviceusage.googleapis.com/v1/projects/capstone-4de76/services/secretmanager.googleapis.com:enable 400
+[debug] [2026-10-23T13:28:45.675Z] <<< [apiv2][body] POST https://serviceusage.googleapis.com/v1/projects/capstone-4de76/services/secretmanager.googleapis.com:enable [omitted]
+[error] 
+[error] Error: Your project capstone-4de76 must be on the Blaze (pay-as-you-go) plan to complete this command. Required API secretmanager.googleapis.com can't be enabled until the upgrade is complete. To upgrade, visit the following URL:
+
+https://console.firebase.google.com/project/capstone-4de76/usage/details

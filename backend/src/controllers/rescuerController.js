@@ -6,6 +6,7 @@ const {
   evacuationAreaStillHasCapacity,
   findNearestAvailableEvacuationArea,
 } = require('../services/evacuationRoutingService');
+const { loadHardwareSensorSnapshot } = require('../services/hardwareSensorService');
 
 function requireRole(req, role) {
   if (req.user?.role !== role) {
@@ -326,6 +327,9 @@ async function listMyCompleteIncidentHistory(req, res) {
   return res.json(rows);
 }
 
+// Retained for backward compatibility with installed app bundles that still
+// request this endpoint. The current flood-monitoring screen uses the live,
+// jurisdiction-scoped hardware sensor feed below.
 async function listFloodReports(req, res) {
   const scope = responseScope(req);
   const { rows } = await pool.query(
@@ -343,6 +347,77 @@ async function listFloodReports(req, res) {
     [scope.barangayName],
   );
   return res.json(rows);
+}
+
+const FLOOD_REPORT_PAGE_SIZE = 10;
+
+async function listFloodReportLogs(req, res) {
+  const scope = responseScope(req);
+  const view = req.query?.view === 'history' ? 'history' : 'today';
+  const page = Math.max(1, Number.parseInt(String(req.query?.page || '1'), 10) || 1);
+  const offset = (page - 1) * FLOOD_REPORT_PAGE_SIZE;
+  const dateComparison = view === 'history' ? '<' : '=';
+  const { rows } = await pool.query(
+    `SELECT e.id, e.barangay_name, e.level, e.water_level_percentage,
+            COALESCE(
+              e.distance_cm,
+              GREATEST(2, LEAST(20, 20 - (e.water_level_percentage * 0.18)))
+            ) AS distance_cm,
+            e.created_at,
+            COUNT(*) OVER() AS total_count
+     FROM flood_sensor_alert_events e
+     WHERE ($1::text IS NULL OR LOWER(e.barangay_name) = LOWER($1))
+       AND (((e.created_at AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Manila')::date
+         ${dateComparison} (NOW() AT TIME ZONE 'Asia/Manila')::date)
+     ORDER BY e.created_at DESC, e.id DESC
+     LIMIT $2 OFFSET $3`,
+    [scope.barangayName, FLOOD_REPORT_PAGE_SIZE, offset],
+  );
+  const total = Number(rows[0]?.total_count || 0);
+  return res.json({
+    items: rows.map(({ total_count: _totalCount, ...item }) => item),
+    page,
+    pageSize: FLOOD_REPORT_PAGE_SIZE,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / FLOOD_REPORT_PAGE_SIZE)),
+    view,
+  });
+}
+
+function averageSensorReading(sensors, field) {
+  const values = sensors
+    .filter((sensor) => sensor.active && sensor.readable)
+    .map((sensor) => sensor[field])
+    .filter((value) => value !== null && value !== undefined && value !== '')
+    .map(Number)
+    .filter(Number.isFinite);
+  return values.length
+    ? values.reduce((sum, value) => sum + value, 0) / values.length
+    : null;
+}
+
+async function listWaterLevelSensors(req, res) {
+  const scope = responseScope(req);
+  const snapshot = await loadHardwareSensorSnapshot();
+  const sensors = Array.isArray(snapshot?.sensors) ? snapshot.sensors : [];
+  const normalizedBarangay = String(scope.barangayName || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^(barangay|brgy\.?)\s*/i, '');
+  const scopedSensors = scope.barangayName
+    ? sensors.filter((sensor) => String(sensor.barangayName || '')
+      .trim()
+      .toLowerCase()
+      .replace(/^(barangay|brgy\.?)\s*/i, '') === normalizedBarangay)
+    : sensors;
+
+  return res.json({
+    source: snapshot?.source || 'firebase-hardware',
+    updatedAt: snapshot?.updatedAt || new Date().toISOString(),
+    sensors: scopedSensors,
+    averageTemperatureCelsius: averageSensorReading(scopedSensors, 'temperatureCelsius'),
+    averageHumidityPercentage: averageSensorReading(scopedSensors, 'humidityPercentage'),
+  });
 }
 
 async function heartbeatPresence(req, res) {
@@ -549,6 +624,8 @@ module.exports = {
   listMyIncidentHistory,
   listMyCompleteIncidentHistory,
   listFloodReports,
+  listFloodReportLogs,
+  listWaterLevelSensors,
   heartbeatPresence,
   updateMyLocation,
 };

@@ -81,6 +81,29 @@ function optionalNumber(...values: unknown[]) {
   return Number.isFinite(number) ? number : undefined;
 }
 
+function formatLoggedAt(value: string) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '\u2014';
+  return date.toLocaleString('en-PH', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'Asia/Manila',
+  });
+}
+
+const manilaDayFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Manila',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+function isCurrentManilaDay(value: string) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime())
+    && manilaDayFormatter.format(date) === manilaDayFormatter.format(new Date());
+}
+
 function temperatureStatus(value?: number) {
   if (typeof value !== 'number') return { icon: '\u2014', className: 'climate-badge-unavailable' };
   if (value < 25) return { icon: '\u2744\uFE0F', className: 'climate-badge-cold' };
@@ -188,7 +211,6 @@ export default function FloodMonitoringPage({
     return SENSOR_ASSIGNMENTS.find((item) => item.barangayName.toLowerCase() === normalizedBarangay) || null;
   }, [barangayName]);
   const [reports, setReports] = useState<FloodSensorReport[]>([]);
-  const [showReportHistory, setShowReportHistory] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hardwareSlots, setHardwareSlots] = useState<HardwareSlot[]>([]);
@@ -272,22 +294,14 @@ export default function FloodMonitoringPage({
   }, [loadData]);
 
   const activeFloodReports = useMemo(
-    () => reports.filter((item) => item.active),
+    () => reports.filter((item) => item.active && isCurrentManilaDay(item.createdAt)),
     [reports],
   );
-  const historicalFloodReports = useMemo(
-    () => reports
-      .filter((item) => !item.active)
-      .sort((first, second) => new Date(second.endedAt || second.createdAt).getTime() - new Date(first.endedAt || first.createdAt).getTime()),
-    [reports],
-  );
-  const displayedReports = showReportHistory ? historicalFloodReports : activeFloodReports;
   return (
     <BarangayShell
       activeView="flood-monitoring"
       title="Flood Monitoring"
       subtitle={`Flood reports and live water sensors for Barangay ${barangayName}`}
-      noMainScroll
       barangayName={barangayName}
       onLogout={onLogout}
       onOpenDashboard={onOpenDashboard}
@@ -298,7 +312,7 @@ export default function FloodMonitoringPage({
       onOpenHistory={onOpenHistory}
       actions={<button onClick={onOpenMonitoring} className={d.monitoring.actionEvac}>Open Incident Monitoring</button>}
     >
-      <div className={d.monitoring.root}>
+      <div className={d.monitoring.floodRoot}>
         {error ? <div className={d.page.error}>{error}</div> : null}
 
         <section className={d.monitoring.floodIndicatorsCard}>
@@ -366,28 +380,23 @@ export default function FloodMonitoringPage({
           </div>
         </section>
 
-        <section className={d.monitoring.lowerGrid}>
-          <article className={d.monitoring.incidentsCard}>
+        <section className={d.monitoring.floodLowerGrid}>
+          <article className={d.monitoring.floodReportsCard}>
             <div className={d.monitoring.incidentsHead}>
-              <h3 className={d.monitoring.incidentsTitle}>{showReportHistory ? 'Flood Report History' : 'Flood Reports'}</h3>
-              <div className="flex items-center gap-3">
-                <p className={d.monitoring.rainRankUpdated}>{showReportHistory ? `${historicalFloodReports.length} historical` : `${activeFloodReports.length} active`}</p>
-                <button type="button" onClick={() => setShowReportHistory((current) => !current)} className="text-xs font-extrabold text-sky-300 underline">
-                  {showReportHistory ? 'Active reports' : 'History'}
-                </button>
-              </div>
+              <h3 className={d.monitoring.incidentsTitle}>Flood Reports</h3>
+              <p className={d.monitoring.rainRankUpdated}>{activeFloodReports.length} active today</p>
             </div>
             <div className={d.monitoring.incidentsTableWrap}>
               <table className={d.monitoring.floodReportsTable}>
                 <colgroup><col className="w-1/4" /><col className="w-1/4" /><col className="w-1/4" /><col className="w-1/4" /></colgroup>
-                <thead><tr><th>Level</th><th>Hardware no.</th><th>Water level</th><th>Distance (cm)</th></tr></thead>
+                <thead><tr><th>Level</th><th>Logged</th><th>Water level</th><th>Distance (cm)</th></tr></thead>
                 <tbody>
-                  {displayedReports.length === 0 ? (
-                    <tr><td colSpan={4} className={d.table.empty}>{showReportHistory ? 'No flood report history yet.' : 'No active moderate or high flood reports.'}</td></tr>
-                  ) : displayedReports.map((item) => (
+                  {activeFloodReports.length === 0 ? (
+                    <tr><td colSpan={4} className={d.table.empty}>No active moderate or high flood reports logged today.</td></tr>
+                  ) : activeFloodReports.map((item) => (
                     <tr key={item.firebaseKey} className={d.monitoring.rowBase}>
                       <td><span className={[d.monitoring.statusChip, item.level === 'High' ? d.monitoring.floodLevelHigh : d.monitoring.floodLevelModerate].join(' ')}>{item.level}</span></td>
-                      <td>{item.hardwareNo}</td>
+                      <td>{formatLoggedAt(item.createdAt)}</td>
                       <td>{item.waterLevelPercentage.toFixed(0)}%</td>
                       <td>{item.active && hardwareSlots[0]?.distanceCm !== null && hardwareSlots[0]?.distanceCm !== undefined ? hardwareSlots[0].distanceCm.toFixed(1) : item.distanceCm === null ? '—' : item.distanceCm.toFixed(1)}</td>
                     </tr>
@@ -397,7 +406,7 @@ export default function FloodMonitoringPage({
             </div>
           </article>
 
-          <article className={d.monitoring.validationCard}>
+          <article className={d.monitoring.floodNotesCard}>
             <h3 className={d.monitoring.validationTitle}>Flood Watch Notes</h3>
             <div className={d.monitoring.validationScrollWrap}>
               <div className={d.monitoring.validationStack}>

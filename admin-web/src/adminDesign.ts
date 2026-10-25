@@ -112,27 +112,6 @@ export const d = {
     empty: 'px-2 py-8 text-center text-sm text-slate-500',
   },
 
-  login: {
-    root: 'admin-font-manrope admin-desktop-scale app-bg min-h-[var(--admin-viewport-height)] w-full',
-    layout: 'grid min-h-[var(--admin-viewport-height)] w-full bg-white lg:grid-cols-[1.02fr_0.98fr]',
-    left: 'order-2 flex flex-col justify-center bg-[linear-gradient(155deg,#f8fbff_0%,#edf3fb_60%,#e4edf8_100%)] px-5 py-8 sm:px-10 md:px-14 lg:order-1 lg:px-16',
-    overline: 'mb-5 text-xs font-semibold uppercase tracking-[0.28em] text-slate-500 sm:mb-7',
-    title: 'mb-2 text-[clamp(2rem,5vw,3rem)] font-black tracking-tight text-[#0b2e4e]',
-    subtitle: 'mb-6 max-w-xl text-sm text-slate-600 sm:mb-8',
-    form: 'w-full max-w-[min(560px,100%)] space-y-4 sm:space-y-5',
-    input: 'h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm text-slate-700 shadow-[0_2px_6px_rgba(15,41,72,0.12)] outline-none transition focus:border-[#1f4e79]',
-    rememberLabel: 'flex cursor-pointer items-center gap-2 text-sm font-medium text-[#1f3c54]',
-    checkbox: 'h-4 w-4 rounded border-slate-400 text-[#12314b]',
-    error: 'text-sm font-medium text-red-600',
-    loginBtn: 'h-12 w-full rounded-xl bg-[#1f4e79] text-base font-bold text-white shadow-[0_4px_10px_rgba(18,49,75,0.25)] transition hover:bg-[#173a5b] disabled:cursor-not-allowed disabled:opacity-60',
-    right: 'relative order-1 flex min-h-[220px] items-center justify-center overflow-hidden bg-[#0f3558] sm:min-h-[280px] lg:order-2 lg:min-h-[var(--admin-viewport-height)]',
-    heroImg: 'absolute inset-0 h-full w-full object-cover opacity-20',
-    overlay: 'absolute inset-0 bg-gradient-to-b from-[#1f5f93]/45 to-[#0b2740]/75',
-    heroBody: 'relative z-10 flex max-w-sm flex-col items-center px-4 text-center text-white',
-    seal: 'mb-4 h-24 w-24 rounded-full border-[5px] border-[#f6d84c] bg-white object-cover shadow-xl sm:h-28 sm:w-28 lg:mb-5 lg:h-36 lg:w-36 lg:border-[6px]',
-    heroTitle: 'text-[clamp(1rem,3.8vw,2rem)] font-black leading-tight',
-  },
-
   dashboard: {
     root: 'relative flex min-h-0 flex-col gap-2 min-[820px]:h-[calc(var(--admin-viewport-height)-8.5rem)] min-[820px]:overflow-hidden',
     topActions: 'btn-secondary',

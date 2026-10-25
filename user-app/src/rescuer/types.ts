@@ -59,16 +59,6 @@ export type RescuerAccount = {
   last_login: string | null;
 };
 
-export type FloodReport = {
-  id: number;
-  report_code: string;
-  location: string;
-  water_level: string | null;
-  status: string;
-  assigned_barangay: string | null;
-  reporter_name: string | null;
-};
-
 export type WaterLevelSensor = {
   id: string;
   barangayName: string;
@@ -78,4 +68,23 @@ export type WaterLevelSensor = {
   hasReading: boolean;
   temperatureCelsius: number | null;
   humidityPercentage: number | null;
+  loggedAt: string | null;
+};
+
+export type FloodReportLog = {
+  id: number;
+  barangay_name: string;
+  level: 'moderate' | 'high';
+  water_level_percentage: number;
+  distance_cm: number | null;
+  created_at: string;
+};
+
+export type FloodReportLogPage = {
+  items: FloodReportLog[];
+  page: number;
+  pageSize: 10;
+  total: number;
+  totalPages: number;
+  view: 'today' | 'history';
 };
