@@ -270,7 +270,6 @@ export default function UsersPage(props: Props) {
         <div className={d.admin.headerRow}>
           <h2 className={d.admin.title}>User Accounts</h2>
           <div className={d.admin.searchRow}>
-            <button type="button" onClick={() => loadUsers(false).catch(() => {})} className={d.admin.archiveButton} disabled={loading}>Refresh</button>
             <button type="button" onClick={() => { setIsArchiveOpen(true); loadArchivedUsers().catch(() => {}); }} className={d.admin.archiveButton}>
               <img src={ARCHIVE_ICON} alt="Archive" className={d.admin.archiveIcon} />
               Archive

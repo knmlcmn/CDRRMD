@@ -246,7 +246,6 @@ export default function BarangayAccountsPage({
         <div className={d.admin.headerRow}>
           <h2 className={d.admin.title}>Barangay Accounts</h2>
           <div className={d.admin.searchRow}>
-            <button type="button" onClick={() => void loadAccounts(false)} className={d.admin.archiveButton} disabled={loading}>Refresh</button>
             <button type="button" onClick={openArchiveModal} className={d.admin.archiveButton}>
               <img src={ARCHIVE_ICON} alt="Archive" className={d.admin.archiveIcon} />
               Archive

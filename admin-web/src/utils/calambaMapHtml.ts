@@ -27,6 +27,7 @@ export type MapBehavior = {
   pickedUp?: boolean;
   jurisdictionBarangayName?: string;
   headingUpOnRecenter?: boolean;
+  sensorRefreshIntervalMs?: number;
 };
 
 const MIN_ACTIVE_RAIN_MM_PER_HOUR = 0.1;
@@ -2676,7 +2677,7 @@ export function buildCalambaMapHtml(
         if (document.visibilityState === 'visible' && Boolean(visibility.floodHazard)) {
           refreshHardwareFloodLevels();
         }
-      }, 2000);
+      }, Math.max(2000, Number(mapBehavior.sensorRefreshIntervalMs) || 2000));
       setInterval(function() {
         if (document.visibilityState === 'visible' && (Boolean(visibility.weatherOverlay) || Boolean(visibility.windOverlay))) {
           windLoadState = 'idle';
@@ -2727,22 +2728,37 @@ export function buildCalambaMapHtml(
           return;
         }
         if (data && data.type === 'rescue-map-update' && payload.mapBehavior && payload.mapBehavior.allowLiveRouteUpdates) {
+          var nextIncidentPoints = Array.isArray(data.incidentPoints) ? data.incidentPoints : [];
+          var nextResponderPoints = Array.isArray(data.responderPoints) ? data.responderPoints : [];
+          var nextSelectedReportCode = data.selectedReportCode || null;
+          var nextSelectedResponderId = data.selectedResponderId || null;
+          var nextPickedUp = Boolean(data.pickedUp);
+          var incidentsChanged = JSON.stringify(nextIncidentPoints) !== JSON.stringify(payload.incidentPoints || [])
+            || nextSelectedReportCode !== payload.selectedReportCode
+            || nextPickedUp !== Boolean(payload.pickedUp);
+          var respondersChanged = JSON.stringify(nextResponderPoints) !== JSON.stringify(payload.responderPoints || [])
+            || nextSelectedResponderId !== payload.selectedResponderId;
           payload.responderLocation = data.responderLocation || null;
           payload.routeCoordinates = Array.isArray(data.routeCoordinates) ? data.routeCoordinates : [];
           payload.incidentLocation = data.incidentLocation || null;
-          payload.selectedReportCode = data.selectedReportCode || null;
-          payload.incidentPoints = Array.isArray(data.incidentPoints) ? data.incidentPoints : [];
-          payload.responderPoints = Array.isArray(data.responderPoints) ? data.responderPoints : [];
-          payload.selectedResponderId = data.selectedResponderId || null;
-          payload.pickedUp = Boolean(data.pickedUp);
+          payload.selectedReportCode = nextSelectedReportCode;
+          payload.incidentPoints = nextIncidentPoints;
+          payload.responderPoints = nextResponderPoints;
+          payload.selectedResponderId = nextSelectedResponderId;
+          payload.pickedUp = nextPickedUp;
           payload.routeDestination = data.routeDestination || null;
           payload.evacuationAreaName = data.evacuationAreaName || null;
           if (data.responderKind) payload.mapBehavior.responderKind = data.responderKind;
           payload.responderHeading = Number.isFinite(Number(data.responderHeading)) ? Number(data.responderHeading) : null;
-          renderIncidents();
-          renderResponderFleet(false);
+          if (incidentsChanged) renderIncidents();
+          if (respondersChanged) renderResponderFleet(false);
           renderResponderRoute(false);
-          applyLayerVisibility();
+          // Live GPS updates only move the dynamic rescue layer. Rebuilding
+          // barangay polygons, weather fills, and evacuation markers here made
+          // the responder map stutter on every location or assignment poll.
+          setLayerVisible(incidentLayer, !focusModeActive && Boolean(visibility.incidentMarkers));
+          setLayerVisible(responderFleetLayer, !focusModeActive && Boolean(visibility.responderRoute));
+          setLayerVisible(responderRouteLayer, !focusModeActive && Boolean(visibility.responderRoute));
           var recenterRequestId = Number(data.recenterRequestId) || 0;
           if (data.recenter === true || (recenterRequestId && recenterRequestId !== lastRecenterRequestId)) {
             lastRecenterRequestId = recenterRequestId;

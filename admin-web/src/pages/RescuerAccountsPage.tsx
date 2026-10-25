@@ -240,7 +240,6 @@ export default function RescuerAccountsPage(props: Props) {
             </div>
           </div>
           <div className={d.admin.searchRow}>
-            <button type="button" onClick={() => void loadAccounts()} className={d.admin.archiveButton} disabled={loading}>Refresh</button>
             <button type="button" onClick={() => { setShowArchive(true); void loadArchivedAccounts(); }} className={d.admin.archiveButton}><img src={ARCHIVE_ICON} alt="Archive" className={d.admin.archiveIcon} /> Archive</button>
             <select value={availabilityFilter} onChange={(event) => setAvailabilityFilter(event.target.value)} className={d.admin.search} aria-label="Filter rescuer accounts by availability"><option value="all">All Rescuers</option><option value="available">Available</option><option value="assigned">Assigned</option></select>
             <input className={d.admin.search} placeholder={`Search ${accountLabel} Account`} value={search} onChange={(event) => setSearch(event.target.value)} />

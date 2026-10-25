@@ -50,6 +50,9 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
   const locationRef = useRef<Coordinate | null>(null);
   const initialLocationFocusedRef = useRef(false);
   const lastFocusedAssignmentRef = useRef('');
+  const initialMapLocationRef = useRef<Coordinate | null>(null);
+  if (!initialMapLocationRef.current && location) initialMapLocationRef.current = location;
+  const initialMapLocation = initialMapLocationRef.current;
   const mapBaseUrl = String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '');
 
   const handleApiError = useCallback((caught: any, fallback: string) => {
@@ -180,7 +183,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
 
   const buildAssignmentMapHtml = useCallback((fullscreen: boolean) => buildCalambaMapHtml(
     areas,
-    location,
+    initialMapLocation,
     [],
     null,
     null,
@@ -209,11 +212,12 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
       showForecastLayers: true,
       forecastTimelinePosition: 'bottom-right',
       showRecenterControl: true,
+      sensorRefreshIntervalMs: 5000,
     },
-  ), [areas, location, role]);
+  ), [areas, initialMapLocation, role]);
 
   const mapHtml = useMemo(() => buildAssignmentMapHtml(false), [buildAssignmentMapHtml]);
-  const fullscreenMapHtml = useMemo(() => buildAssignmentMapHtml(true), [buildAssignmentMapHtml]);
+  const fullscreenMapHtml = useMemo(() => mapFullscreen ? buildAssignmentMapHtml(true) : '', [buildAssignmentMapHtml, mapFullscreen]);
 
   const handleFullscreenMapMessage = useCallback((message: string) => {
     try {
@@ -380,7 +384,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
 
       <Modal visible={mapFullscreen} animationType="fade" statusBarTranslucent onRequestClose={closeFullscreenMap}>
         <View style={styles.fullscreenMap}>
-          {areasLoaded && location ? <PlatformMap html={fullscreenMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={mapUpdate} onMessage={handleFullscreenMapMessage} /> : <EmptyState loading message={areasLoaded ? 'Waiting for your current location…' : 'Loading rescue map…'} />}
+          {mapFullscreen && areasLoaded && location ? <PlatformMap html={fullscreenMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={mapUpdate} onMessage={handleFullscreenMapMessage} /> : <EmptyState loading message={areasLoaded ? 'Waiting for your current location…' : 'Loading rescue map…'} />}
           <TouchableOpacity accessibilityLabel="Close full-screen map" onPress={closeFullscreenMap} style={[styles.fullscreenClose, forecastOverlayVisible && styles.fullscreenCloseRaised]}>
             <MaterialCommunityIcons name="fullscreen-exit" size={24} color="#ffffff" />
           </TouchableOpacity>

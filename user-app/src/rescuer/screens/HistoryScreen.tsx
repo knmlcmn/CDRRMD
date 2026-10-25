@@ -69,7 +69,7 @@ export default function HistoryScreen({ role, onAuthError }: { role: ResponderRo
           <SelectField label="Year" value={year} options={[{ value: 'all', label: 'All years' }, ...years.map((value) => ({ value: String(value), label: String(value) }))]} onChange={(value) => { setYear(value); setPage(1); }} />
           <TouchableOpacity onPress={() => { setSearch(''); setMonth('all'); setYear('all'); setPage(1); }} style={styles.clearButton}><Text style={styles.clearText}>Clear</Text></TouchableOpacity>
         </View>
-        <View style={styles.summaryRow}><Text style={styles.count}>{filtered.length} of {history.length} assignments</Text><TouchableOpacity disabled={loading} onPress={() => void refresh()} style={[styles.refreshButton, loading && styles.disabled]}><Text style={styles.refreshText}>{loading ? 'Loading…' : 'Refresh'}</Text></TouchableOpacity></View>
+        <View style={styles.summaryRow}><Text style={styles.count}>{filtered.length} of {history.length} assignments</Text></View>
         {!visible.length ? <EmptyState loading={loading} message="No assignment history matches the selected filters." /> : <ScrollView horizontal showsHorizontalScrollIndicator style={styles.tableWrap}>
           <View style={styles.table}>
             <View style={[styles.tableRow, styles.tableHead]}>{['Incident ID', 'Assignment ID', 'Resident', 'Barangay', 'Location', 'Evacuation Area', 'Assigned', 'Completed'].map((label, index) => <Text key={label} style={[styles.cell, index >= 4 && styles.wideCell, styles.headText]}>{label}</Text>)}</View>
@@ -110,8 +110,6 @@ const styles = StyleSheet.create({
   clearText: { color: '#475569', fontSize: 12, fontWeight: '800' },
   summaryRow: { marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   count: { color: rescuerColors.muted, fontSize: 11, fontWeight: '800' },
-  refreshButton: { borderRadius: 8, backgroundColor: '#1f4e79', paddingHorizontal: 14, paddingVertical: 9 },
-  refreshText: { color: '#fff', fontSize: 11, fontWeight: '900' },
   tableWrap: { marginTop: 10, borderRadius: 8, borderWidth: 1, borderColor: '#cbd5e1' },
   table: { minWidth: 1120 },
   tableRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#cbd5e1' },

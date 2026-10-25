@@ -27,6 +27,7 @@ export default function PlatformMap({
 }: PlatformMapProps) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const webViewRef = useRef<WebView>(null);
+  const lastPostedMessageRef = useRef('');
   const initialHtmlRef = useRef(html);
   const renderedHtml = preserveState ? initialHtmlRef.current : html;
   const nativeSource = useMemo(
@@ -34,9 +35,11 @@ export default function PlatformMap({
     [baseUrl, renderedHtml],
   );
 
-  const postUpdate = useCallback(() => {
+  const postUpdate = useCallback((force = false) => {
     if (!updateMessage) return;
     const message = JSON.stringify(updateMessage);
+    if (!force && message === lastPostedMessageRef.current) return;
+    lastPostedMessageRef.current = message;
     if (Platform.OS === 'web') {
       iframeRef.current?.contentWindow?.postMessage(updateMessage, '*');
     } else {
@@ -85,7 +88,7 @@ export default function PlatformMap({
           title="Rescue Map"
           srcDoc={renderedHtml}
           allow="geolocation"
-          onLoad={postUpdate}
+          onLoad={() => postUpdate(true)}
           style={{
             width: '100%',
             height: '100%',
@@ -110,7 +113,7 @@ export default function PlatformMap({
         setBuiltInZoomControls={false}
         mixedContentMode="always"
         onMessage={handleNativeMessage}
-        onLoadEnd={postUpdate}
+        onLoadEnd={() => postUpdate(true)}
         style={styles.webView}
       />
     </View>
