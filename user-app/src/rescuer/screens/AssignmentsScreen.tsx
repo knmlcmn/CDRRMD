@@ -28,6 +28,10 @@ function formatDate(value: string) {
   return new Date(value).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function sameRecords<T>(current: T[], next: T[]) {
+  return JSON.stringify(current) === JSON.stringify(next);
+}
+
 export default function AssignmentsScreen({ role, onAuthError }: Props) {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [history, setHistory] = useState<AssignmentHistory[]>([]);
@@ -65,8 +69,8 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
     loadingRef.current = true;
     try {
       const [active, weekly] = await Promise.all([loadAssignments(), loadWeeklyHistory()]);
-      setAssignments(active);
-      setHistory(weekly);
+      setAssignments((current) => sameRecords(current, active) ? current : active);
+      setHistory((current) => sameRecords(current, weekly) ? current : weekly);
       setSelectedId((current) => active.some((item) => item.backup_request_id === current) ? current : active[0]?.backup_request_id ?? null);
       setError('');
     } catch (caught) {
@@ -97,8 +101,11 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
 
     async function publishLocation(nextLocation: Coordinate) {
       if (!active) return;
+      const previous = locationRef.current;
       locationRef.current = nextLocation;
-      setLocation(nextLocation);
+      if (!previous || previous.latitude !== nextLocation.latitude || previous.longitude !== nextLocation.longitude) {
+        setLocation(nextLocation);
+      }
       setLocationError('');
       if (locationBusy) return;
       locationBusy = true;
@@ -333,6 +340,11 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
       <ErrorMessage message={error} />
       <ErrorMessage message={locationError} />
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+      <View style={styles.statusStrip}>
+        <View style={styles.statusItem}><View style={[styles.statusDot, location ? styles.statusOnline : styles.statusWaiting]} /><View><Text style={styles.statusLabel}>LIVE LOCATION</Text><Text style={styles.statusValue}>{location ? 'Connected' : 'Acquiring GPS'}</Text></View></View>
+        <View style={styles.statusDivider} />
+        <View style={styles.statusItem}><MaterialCommunityIcons name="radio-tower" size={20} color={rescuerColors.blue} /><View><Text style={styles.statusLabel}>ASSIGNMENTS</Text><Text style={styles.statusValue}>{assignments.length} active</Text></View></View>
+      </View>
       <View style={styles.mapCard}>
         {areasLoaded && location ? <PlatformMap
           html={mapHtml}
@@ -419,7 +431,15 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
 }
 
 const styles = StyleSheet.create({
-  mapCard: { height: 360, overflow: 'hidden', borderRadius: 14, borderWidth: 1, borderColor: rescuerColors.border, backgroundColor: '#dbe5eb' },
+  statusStrip: { minHeight: 68, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, borderRadius: 16, borderWidth: 1, borderColor: rescuerColors.border, backgroundColor: '#fff', shadowColor: '#0b2e4e', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+  statusItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  statusDivider: { width: 1, height: 32, marginHorizontal: 12, backgroundColor: '#dce7ef' },
+  statusDot: { width: 11, height: 11, borderRadius: 6 },
+  statusOnline: { backgroundColor: '#10b981' },
+  statusWaiting: { backgroundColor: '#f59e0b' },
+  statusLabel: { color: rescuerColors.muted, fontSize: 8, lineHeight: 11, fontWeight: '900', letterSpacing: 0.8 },
+  statusValue: { color: rescuerColors.ink, fontSize: 12, lineHeight: 16, fontWeight: '900' },
+  mapCard: { height: 370, overflow: 'hidden', borderRadius: 18, borderWidth: 1, borderColor: rescuerColors.border, backgroundColor: '#dbe5eb', shadowColor: '#0b2e4e', shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
   fullscreenButton: { position: 'absolute', right: 12, bottom: 12, width: 42, height: 42, borderRadius: 9, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(18,49,75,0.94)', alignItems: 'center', justifyContent: 'center' },
   fullscreenMap: { flex: 1, backgroundColor: '#0f172a' },
   fullscreenClose: { position: 'absolute', right: 14, bottom: 14, width: 46, height: 46, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)', backgroundColor: 'rgba(18,49,75,0.96)', alignItems: 'center', justifyContent: 'center' },
@@ -427,8 +447,8 @@ const styles = StyleSheet.create({
   sectionTitle: { color: rescuerColors.ink, fontSize: 17, fontWeight: '900' },
   hint: { color: rescuerColors.muted, fontSize: 11, marginTop: 2 },
   notice: { padding: 11, borderRadius: 10, backgroundColor: '#fffbeb', borderWidth: 1, borderColor: '#fcd34d', color: '#92400e', fontWeight: '700' },
-  assignment: { flexDirection: 'row', alignItems: 'center', marginTop: 9, padding: 11, borderRadius: 10, backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0' },
-  assignmentSelected: { backgroundColor: '#dbeafe', borderColor: '#93c5fd' },
+  assignment: { flexDirection: 'row', alignItems: 'center', marginTop: 9, padding: 12, borderRadius: 12, backgroundColor: '#f8fbfd', borderWidth: 1, borderColor: '#dce7ef' },
+  assignmentSelected: { backgroundColor: '#e4f1fa', borderColor: '#72aed3', borderLeftWidth: 4 },
   assignmentText: { flex: 1 },
   assignmentCode: { color: rescuerColors.ink, fontSize: 13, fontWeight: '900' },
   assignmentMeta: { color: '#475569', fontSize: 11, marginTop: 2 },

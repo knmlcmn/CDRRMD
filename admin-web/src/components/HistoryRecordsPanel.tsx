@@ -89,7 +89,7 @@ export default function HistoryRecordsPanel({ scopeLabel, onAuthError }: Props) 
 
   return (
     <section className="command-card rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="portal-account-tabs w-fit max-w-full overflow-x-auto" role="tablist" aria-label="History category">
+      <div className="portal-account-tabs history-category-tabs max-w-full overflow-x-auto" role="tablist" aria-label="History category">
         {TABS.map((tab) => <button key={tab.key} type="button" role="tab" aria-selected={kind === tab.key} onClick={() => setKind(tab.key)} className="portal-account-tab whitespace-nowrap">{tab.label}</button>)}
       </div>
       <p className="mt-3 text-sm text-slate-500">Complete records available to {scopeLabel}. Twenty records are displayed per page.</p>

@@ -11,8 +11,7 @@ import {
   View,
 } from 'react-native';
 import { AppText as Text, AppTextInput as TextInput } from '../components/Typography';
-import { DashboardHeader } from '../components/DashboardHeader';
-import { editorial } from '../components/EditorialTheme';
+import { AuthShell, authColors } from '../components/AuthShell';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { postAuth } from '../services/api';
 import { SessionData } from '../services/session';
@@ -37,10 +36,11 @@ type FieldProps = {
 };
 
 function Field({ icon, trailing, ...props }: FieldProps) {
+  const [focused, setFocused] = useState(false);
   return (
-    <View style={styles.inputWrap}>
-      <MaterialCommunityIcons name={icon} size={16} color={editorial.accent} />
-      <TextInput {...props} placeholderTextColor="#526170" style={styles.input} />
+    <View style={[styles.inputWrap, focused && styles.inputWrapFocused]}>
+      <MaterialCommunityIcons name={icon} size={17} color={authColors.blue} />
+      <TextInput {...props} onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} placeholderTextColor="#526170" style={styles.input} />
       {trailing}
     </View>
   );
@@ -169,13 +169,11 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
   }
 
   return (
-    <View style={styles.root}>
-      <DashboardHeader />
+    <AuthShell title="Create a resident account" subtitle="Registration is for residents. Responder accounts remain provisioned by authorized personnel.">
       <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" bounces={false}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
           <View style={styles.form}>
-            <Text style={styles.title}>Create your Account</Text>
-            <Text style={styles.sectionLabel}>Register</Text>
+            <Text style={styles.sectionLabel}>Resident information</Text>
 
             <Field icon="account-outline" value={username} onChangeText={setUsername} placeholder="Username" autoCapitalize="none" />
             <View style={[styles.nameRow, isSmall && styles.nameRowSmall]}>
@@ -184,7 +182,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
             </View>
             <Field icon="email-outline" value={email} onChangeText={updateEmail} placeholder="Email *" keyboardType="email-address" autoCapitalize="none" />
             <TouchableOpacity style={styles.inputWrap} onPress={() => setShowBarangays((value) => !value)} activeOpacity={0.8}>
-              <MaterialCommunityIcons name="map-marker-outline" size={16} color={editorial.accent} />
+              <MaterialCommunityIcons name="map-marker-outline" size={17} color={authColors.blue} />
               <Text style={[styles.selectText, !barangayName && styles.selectPlaceholder]}>{barangayName || 'Select Barangay *'}</Text>
               <MaterialCommunityIcons name={showBarangays ? 'chevron-up' : 'chevron-down'} size={18} color="#526170" />
             </TouchableOpacity>
@@ -216,7 +214,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
             />
 
             <Text style={styles.locationHint}>After verification, your Account ID and login details will be sent to this address. Residents sign in using their email.</Text>
-            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+            {error ? <View accessibilityRole="alert" style={styles.errorBox}><MaterialCommunityIcons name="alert-circle-outline" size={16} color={authColors.danger} /><Text style={styles.errorText}>{error}</Text></View> : null}
 
             <TouchableOpacity style={styles.primaryButton} onPress={onRegister} disabled={loading || otpSending} activeOpacity={0.85}>
               {otpSending ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Create Account</Text>}
@@ -239,7 +237,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
         <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.modalCard}>
             <View style={styles.modalIcon}>
-              <MaterialCommunityIcons name="email-check-outline" size={28} color={editorial.accent} />
+              <MaterialCommunityIcons name="email-check-outline" size={28} color={authColors.blue} />
             </View>
             <Text style={styles.modalTitle}>Verify your email</Text>
             <Text style={styles.modalDescription}>Enter the 6-digit verification code sent to {email.trim()}.</Text>
@@ -263,22 +261,20 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
           </View>
         </KeyboardAvoidingView>
       </Modal>
-
-    </View>
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#ffffff' },
   keyboard: { flex: 1 },
-  scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 24, backgroundColor: editorial.background },
-  form: { width: '100%', maxWidth: 420, padding: 18, borderRadius: 14, backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border },
-  title: { color: editorial.ink, fontSize: 25, textAlign: 'left', lineHeight: 30, marginBottom: 18 },
-  sectionLabel: { color: editorial.ink, fontSize: 14, fontWeight: '400', marginLeft: 8, marginBottom: 8 },
+  scroll: { flexGrow: 1, justifyContent: 'center', paddingBottom: 4 },
+  form: { width: '100%', padding: 18, borderRadius: 18, backgroundColor: authColors.white, borderWidth: 1, borderColor: authColors.border, shadowColor: authColors.navy, shadowOpacity: 0.07, shadowRadius: 13, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
+  sectionLabel: { color: authColors.ink, fontSize: 12, fontWeight: '900', marginBottom: 10, letterSpacing: 0.25 },
   inputWrap: {
-    height: 42, borderWidth: 1, borderColor: editorial.border, borderRadius: 10, paddingHorizontal: 13,
-    flexDirection: 'row', alignItems: 'center', marginBottom: 8, backgroundColor: '#fff',
+    minHeight: 46, borderWidth: 1, borderColor: authColors.border, borderRadius: 11, paddingHorizontal: 13,
+    flexDirection: 'row', alignItems: 'center', marginBottom: 9, backgroundColor: '#fafdff',
   },
+  inputWrapFocused: { borderColor: authColors.blue, borderWidth: 2, backgroundColor: '#ffffff' },
   input: { flex: 1, color: '#111111', fontSize: 12, marginLeft: 7, paddingVertical: 0, minWidth: 0 },
   nameRow: { flexDirection: 'row', gap: 7 },
   nameRowSmall: { flexDirection: 'column', gap: 0 },
@@ -287,28 +283,29 @@ const styles = StyleSheet.create({
   streetField: { flex: 1.28, minWidth: 0 },
   selectText: { flex: 1, color: '#111111', fontSize: 12, marginLeft: 7 },
   selectPlaceholder: { color: '#526170' },
-  barangayOptions: { marginTop: -3, marginBottom: 8, padding: 5, borderWidth: 1, borderColor: editorial.border, borderRadius: 10, backgroundColor: '#fff' },
+  barangayOptions: { marginTop: -3, marginBottom: 8, padding: 5, borderWidth: 1, borderColor: authColors.border, borderRadius: 10, backgroundColor: '#fff' },
   barangayOption: { paddingHorizontal: 12, paddingVertical: 9, borderRadius: 7 },
   barangayOptionSelected: { backgroundColor: '#fff0eb' },
   barangayOptionText: { color: '#26384a', fontSize: 12 },
-  barangayOptionTextSelected: { color: editorial.accent, fontWeight: '800' },
+  barangayOptionTextSelected: { color: authColors.blue, fontWeight: '800' },
   locationHint: { color: '#555555', fontSize: 10, marginHorizontal: 8, marginBottom: 8 },
   noticeText: { color: '#15803d', fontSize: 11, marginHorizontal: 8, marginBottom: 8 },
-  errorText: { color: '#c62828', fontSize: 11, marginHorizontal: 8, marginBottom: 8 },
-  primaryButton: { height: 45, borderRadius: 10, backgroundColor: editorial.accent, alignItems: 'center', justifyContent: 'center', marginTop: 2, marginBottom: 10 },
+  errorBox: { flexDirection: 'row', alignItems: 'center', gap: 7, padding: 9, marginBottom: 9, borderRadius: 10, borderWidth: 1, borderColor: '#fac5c8', backgroundColor: '#fff3f3' },
+  errorText: { flex: 1, color: authColors.danger, fontSize: 11, lineHeight: 16 },
+  primaryButton: { height: 48, borderRadius: 12, backgroundColor: authColors.blue, alignItems: 'center', justifyContent: 'center', marginTop: 2, marginBottom: 10 },
   primaryButtonText: { color: '#fff', fontSize: 14, fontWeight: '900' },
   footerRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
   footerText: { color: '#555555', fontSize: 10 },
-  footerLink: { color: editorial.accent, fontSize: 10, fontWeight: '900' },
+  footerLink: { color: authColors.blue, fontSize: 10, fontWeight: '900' },
   modalOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.62)' },
-  modalCard: { width: '100%', maxWidth: 390, padding: 20, borderRadius: 16, borderWidth: 1, borderColor: editorial.border, backgroundColor: '#fff' },
+  modalCard: { width: '100%', maxWidth: 390, padding: 20, borderRadius: 18, borderWidth: 1, borderColor: authColors.border, backgroundColor: '#fff' },
   modalIcon: { width: 52, height: 52, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', borderRadius: 26, backgroundColor: '#fff0eb', marginBottom: 12 },
-  modalTitle: { color: editorial.ink, fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  modalTitle: { color: authColors.ink, fontSize: 20, fontWeight: '800', textAlign: 'center' },
   modalDescription: { color: '#526170', fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 6, marginBottom: 14 },
   modalErrorText: { color: '#c62828', fontSize: 11, marginBottom: 10 },
   modalActions: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  modalCancelButton: { flex: 1, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1, borderColor: editorial.border, backgroundColor: '#fff' },
+  modalCancelButton: { flex: 1, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 10, borderWidth: 1, borderColor: authColors.border, backgroundColor: '#fff' },
   modalCancelText: { color: '#526170', fontSize: 12, fontWeight: '800' },
-  modalVerifyButton: { flex: 1.5, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: editorial.accent },
+  modalVerifyButton: { flex: 1.5, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: authColors.blue },
   modalVerifyText: { color: '#fff', fontSize: 12, fontWeight: '900' },
 });

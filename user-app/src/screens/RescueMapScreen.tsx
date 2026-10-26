@@ -265,7 +265,7 @@ function buildLeafletHtml(
       .map-legend .updated{color:#64748b;font-size:10px;margin-top:5px}
       .legend-section-label{align-items:center;border-top:1px solid #e2e8f0;color:#1e40af;display:flex;flex-direction:row;font-size:10px;font-weight:800;justify-content:flex-start;gap:4px;margin-top:7px;padding-top:5px;text-transform:uppercase;letter-spacing:0.04em}
       .legend-section-dot{border-radius:999px;display:inline-block;flex-shrink:0;height:8px;width:8px}
-      .layer-control{font-family:Arial,sans-serif;height:34px;max-width:calc(100vw - 16px);position:relative;width:220px}.layer-control-button{background:rgba(15,23,42,.94);border:1px solid rgba(148,163,184,.6);border-radius:8px;color:#fff;cursor:pointer;font:700 12px/1 Arial,sans-serif;height:34px;min-width:96px;padding:0 11px;position:absolute;right:0;top:0;white-space:nowrap}.layer-control-panel{background:rgba(13,20,35,.98);border:1px solid rgba(148,163,184,.4);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.6);box-sizing:border-box;display:none;max-height:calc(100vh - 66px);max-height:calc(100dvh - 66px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;padding:10px 11px 8px;position:absolute;right:0;scrollbar-width:thin;top:40px;width:min(220px,calc(100vw - 16px))}.layer-control-panel.open{display:block}.layer-control-panel.scrollable{max-height:min(230px,calc(100vh - 66px));max-height:min(230px,calc(100dvh - 66px))}.layer-control-title{border-bottom:1px solid rgba(148,163,184,.3);color:#cbd5e1;font-size:10px;font-weight:800;letter-spacing:.1em;margin-bottom:7px;padding-bottom:6px;text-align:center;text-transform:uppercase}.layer-control-row{align-items:center;color:#f1f5f9;display:flex;font-size:11px;font-weight:700;gap:8px;justify-content:space-between;min-height:22px;padding:5px 0}.layer-control-row input{accent-color:#38bdf8;flex-shrink:0;height:16px;width:16px}
+      .layer-control{font-family:Inter,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;height:34px;max-width:calc(100vw - 16px);position:relative;width:240px}.layer-control-button{align-items:center;background:rgba(15,23,42,.94);border:1px solid rgba(148,163,184,.6);border-radius:8px;color:#fff;cursor:pointer;display:flex;font-family:inherit;font-size:12px;font-weight:700;gap:5px;height:34px;line-height:1;min-width:88px;padding:0 10px;position:absolute;right:0;top:0;white-space:nowrap}.layer-control-button svg{height:16px;width:16px}.layer-control-panel{background:rgba(13,20,35,.98);border:1px solid rgba(148,163,184,.4);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.6);box-sizing:border-box;display:none;max-height:calc(100vh - 66px);max-height:calc(100dvh - 66px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;padding:10px 9px 9px;position:absolute;right:0;scrollbar-width:thin;top:40px;width:min(240px,calc(100vw - 16px))}.layer-control-panel.open{display:block}.layer-control-panel.scrollable{max-height:min(270px,calc(100vh - 66px));max-height:min(270px,calc(100dvh - 66px))}.layer-control-title{border-bottom:1px solid rgba(148,163,184,.3);color:#a8b5c5;font-size:9px;font-weight:700;letter-spacing:.12em;margin-bottom:8px;padding-bottom:5px;text-align:center;text-transform:uppercase}.layer-icon-grid{display:grid;gap:6px;grid-template-columns:repeat(3,minmax(0,1fr))}.layer-icon-item{align-items:center;background:transparent;border:1.5px solid transparent;border-radius:10px;color:#d8e0e9;cursor:pointer;display:flex;flex-direction:column;font-family:inherit;gap:4px;justify-content:center;min-height:60px;min-width:0;padding:6px 3px 5px;text-align:center;user-select:none}.layer-icon-item.layer-icon-on{background:rgba(56,189,248,.15);border-color:rgba(56,189,248,.8);color:#38bdf8}.layer-icon-svg{display:block;flex-shrink:0;height:26px;width:26px}.layer-icon-label{font-size:10px;font-weight:650;letter-spacing:0;line-height:1.18;overflow-wrap:normal;word-break:normal}
       .flood-info{font:13px/1.35 Arial,sans-serif;min-width:220px}
       .flood-info .head{background:#0891b2;color:#fff;font-weight:800;margin:-10px -12px 10px;padding:10px 12px}
       .flood-info table{border-collapse:collapse;width:100%}
@@ -284,7 +284,7 @@ function buildLeafletHtml(
       .evac-status.available{background:#dcfce7;color:#166534}
       .evac-status.full{background:#fee2e2;color:#991b1b}
       .map-rain-canvas{left:0;opacity:.5;pointer-events:none;position:absolute;top:0;z-index:429}.map-wind-canvas{left:0;opacity:.5;pointer-events:none;position:absolute;top:0;z-index:430}.forecast-timebar{backdrop-filter:blur(9px);background:rgba(7,17,24,.94);border:1px solid rgba(148,163,184,.35);border-radius:18px;bottom:10px;box-shadow:0 5px 18px rgba(0,0,0,.38);color:#fff;display:none;left:50%;max-width:calc(100% - 16px);padding:8px 10px 7px;pointer-events:auto;position:absolute;transform:translateX(-50%);width:calc(100% - 16px);z-index:700}.forecast-time-track{position:relative}.forecast-time-labels{display:flex;justify-content:space-between;margin:0 5px 3px}.forecast-time-label{color:#f8fafc;font:700 10px/1.1 Arial,sans-serif;text-align:center}.forecast-time-date{color:#cbd5e1;display:block;font:8px/1 Arial,sans-serif}.forecast-time-range{appearance:none;background:repeating-linear-gradient(90deg,rgba(203,213,225,.7) 0 1px,transparent 1px 9px);border:0;display:block;height:26px;margin:0;outline:none;width:100%}.forecast-time-range::-webkit-slider-thumb{appearance:none;background:#f97316;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px rgba(249,115,22,.3);cursor:grab;height:17px;width:5px}.forecast-time-range::-moz-range-thumb{background:#f97316;border:2px solid #fff;border-radius:50%;cursor:grab;height:17px;width:5px}.forecast-time-summary{color:#dbeafe;font:700 9px/1.3 Arial,sans-serif;overflow:hidden;text-align:center;text-overflow:ellipsis;white-space:nowrap}
-      @media (max-width:420px){.forecast-timebar{bottom:6px;padding:6px 7px}.forecast-time-label{font-size:9px}.forecast-time-date{font-size:7px}.leaflet-control-zoom a{height:28px!important;line-height:28px!important;width:28px!important}.layer-control{width:200px}.layer-control-button{font-size:11px;height:32px;min-width:88px;padding:0 9px}.layer-control-panel{border-radius:10px;padding:8px 9px 7px;top:37px;width:min(200px,calc(100vw - 14px))}.layer-control-title{font-size:9px;margin-bottom:5px;padding-bottom:5px}.layer-control-row{font-size:10px;min-height:21px;padding:4px 0}}
+      @media (max-width:420px){.forecast-timebar{bottom:6px;padding:6px 7px}.forecast-time-label{font-size:9px}.forecast-time-date{font-size:7px}.leaflet-control-zoom a{height:28px!important;line-height:28px!important;width:28px!important}.layer-control{width:232px}.layer-control-button{font-size:11px;height:32px;min-width:84px;padding:0 9px}.layer-control-panel{border-radius:10px;padding:8px 7px 7px;top:37px;width:min(232px,calc(100vw - 14px))}.layer-control-title{font-size:8.5px;margin-bottom:5px;padding-bottom:4px}.layer-icon-grid{gap:4px}.layer-icon-item{border-radius:8px;gap:3px;min-height:54px;padding:5px 2px}.layer-icon-svg{height:23px;width:23px}.layer-icon-label{font-size:9.25px;font-weight:650;line-height:1.14}.map-legend{box-sizing:border-box;max-height:min(58vh,calc(100vh - 88px));overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;padding:6px 7px;pointer-events:auto;scrollbar-width:thin;width:min(168px,calc(100vw - 84px))}.map-legend .title{font-size:9px;margin-bottom:2px}.map-legend .row{font-size:8.5px;gap:3px;line-height:1.08;margin:1px 0;min-height:14px}.legend-map-icon{border-width:1px;height:14px;width:14px}.legend-map-icon img{height:8px;width:8px}.legend-map-line{border-top-width:2px;width:14px}.legend-map-boundary{height:9px;width:14px}.legend-section-label{font-size:8px;gap:3px;margin-top:4px;padding-top:3px}.map-legend .updated{font-size:8px;margin-top:2px}}
     </style>
   </head>
   <body>
@@ -496,6 +496,7 @@ function buildLeafletHtml(
             var first = wrap.firstChild;
             if (first) {
               L.DomEvent.disableClickPropagation(first);
+              L.DomEvent.disableScrollPropagation(first);
               return first;
             }
             return L.DomUtil.create('div', 'map-legend');
@@ -1180,41 +1181,53 @@ function buildLeafletHtml(
           var wrap = L.DomUtil.create('div', 'layer-control');
           var button = L.DomUtil.create('button', 'layer-control-button', wrap);
           button.type = 'button';
-          button.textContent = 'Map Layers';
+          button.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg><span>Layers</span>';
           var panel = L.DomUtil.create('div', 'layer-control-panel', wrap);
           if (!data.showForecastTimeline) panel.classList.add('scrollable');
           var title = L.DomUtil.create('div', 'layer-control-title', panel);
           title.textContent = 'Map Layers';
-          var rows = [
-            ['boundary', 'Calamba Boundary'],
-            ['evacuationAreas', 'Evacuation Areas'],
-            ['userMarker', 'Rescuer Location'],
-            ['route', 'Responder Route'],
-            ['floodHazard', 'Flood Hazard'],
-            ['rainOverlay', 'Rain Accumulation'],
-            ['temperatureOverlay', 'Temperature'],
-            ['humidityOverlay', 'Relative Humidity'],
-            ['windOverlay', 'Wind Forecast'],
+          var grid = L.DomUtil.create('div', 'layer-icon-grid', panel);
+          var definitions = [
+            { key: 'boundary', label: 'Calamba Boundary', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.8"><rect x="4" y="4" width="5" height="5" rx="1"/><rect x="15" y="4" width="5" height="5" rx="1"/><rect x="4" y="15" width="5" height="5" rx="1"/><rect x="15" y="15" width="5" height="5" rx="1"/><path d="M9 6.5h6M6.5 9v6M17.5 9v6M9 17.5h6" stroke-dasharray="2 2"/></svg>' },
+            { key: 'floodHazard', label: 'Flood Hazard', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="1.8" stroke-linecap="round"><path d="M2 15c3 0 3-3 6-3s3 3 6 3 3-3 6-3 3 3 4 3"/><path d="M2 20c3 0 3-3 6-3s3 3 6 3 3-3 6-3 3 3 4 3"/><path d="M5 10l4-5 3 3 3-4 4 6"/></svg>' },
+            { key: 'evacuationAreas', label: 'Evacuation Areas', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#10d9a0" stroke-width="1.8"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0z"/><circle cx="12" cy="10" r="2.5"/></svg>' },
+            { key: 'userMarker', label: 'Your Location', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#fb7185" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>' },
+            { key: 'route', label: 'Rescue Route', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="1.8"><path d="M5 17h14l-1-5-2-3H8l-2 3-1 5z"/><circle cx="8" cy="17" r="2"/><circle cx="16" cy="17" r="2"/><path d="M9 9V6h6"/></svg>' },
+            { key: 'rainOverlay', label: 'Rain Accumulation', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="1.8"><path d="M7 18h11a4 4 0 0 0 .5-8 7 7 0 0 0-13-1.5A5 5 0 0 0 7 18z"/></svg>' },
+            { key: 'temperatureOverlay', label: 'Temperature', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#fb7185" stroke-width="1.8"><path d="M10 14.8V5a2 2 0 1 1 4 0v9.8a4 4 0 1 1-4 0z"/><path d="M12 11v6"/></svg>' },
+            { key: 'humidityOverlay', label: 'Relative Humidity', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="1.8"><path d="M12 2.5S5.5 9.5 5.5 15a6.5 6.5 0 0 0 13 0C18.5 9.5 12 2.5 12 2.5z"/></svg>' },
+            { key: 'windOverlay', label: 'Wind Forecast', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#facc15" stroke-width="1.8" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h8"/></svg>' },
           ];
-          rows.forEach(function(row) {
-            var line = L.DomUtil.create('label', 'layer-control-row', panel);
-            line.textContent = row[1];
-            var checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.checked = Boolean(visibility[row[0]]);
-            checkbox.disabled = row[0] === 'floodHazard';
-            checkbox.addEventListener('change', function() {
-              visibility[row[0]] = checkbox.checked;
-              if ((row[0] === 'rainOverlay' || row[0] === 'temperatureOverlay' || row[0] === 'humidityOverlay' || row[0] === 'windOverlay') && checkbox.checked) {
-                visibility.rainOverlay = row[0] === 'rainOverlay';
-                visibility.temperatureOverlay = row[0] === 'temperatureOverlay';
-                visibility.humidityOverlay = row[0] === 'humidityOverlay';
-                visibility.windOverlay = row[0] === 'windOverlay';
+          function refreshLayerTiles() {
+            grid.querySelectorAll('.layer-icon-item').forEach(function(item) {
+              item.classList.toggle('layer-icon-on', Boolean(visibility[item.dataset.key]));
+              item.setAttribute('aria-pressed', Boolean(visibility[item.dataset.key]) ? 'true' : 'false');
+            });
+          }
+          definitions.forEach(function(definition) {
+            var item = L.DomUtil.create('button', 'layer-icon-item' + (visibility[definition.key] ? ' layer-icon-on' : ''), grid);
+            item.type = 'button';
+            item.dataset.key = definition.key;
+            item.setAttribute('aria-pressed', Boolean(visibility[definition.key]) ? 'true' : 'false');
+            item.innerHTML = definition.icon + '<span class="layer-icon-label">' + definition.label + '</span>';
+            item.addEventListener('click', function() {
+              var key = definition.key;
+              if (key === 'floodHazard') {
+                visibility.rainOverlay = false;
+                visibility.temperatureOverlay = false;
+                visibility.humidityOverlay = false;
+                visibility.windOverlay = false;
+              } else if (key === 'rainOverlay' || key === 'temperatureOverlay' || key === 'humidityOverlay' || key === 'windOverlay') {
+                var nextWeatherState = !Boolean(visibility[key]);
+                visibility.rainOverlay = nextWeatherState && key === 'rainOverlay';
+                visibility.temperatureOverlay = nextWeatherState && key === 'temperatureOverlay';
+                visibility.humidityOverlay = nextWeatherState && key === 'humidityOverlay';
+                visibility.windOverlay = nextWeatherState && key === 'windOverlay';
+              } else {
+                visibility[key] = !Boolean(visibility[key]);
               }
               normalizeDataLayerVisibility();
-              panel.querySelectorAll('input').forEach(function(input, index) {
-                input.checked = Boolean(visibility[rows[index][0]]);
-              });
+              refreshLayerTiles();
               applyLayerVisibility();
               updateForecastTimebar();
               var message = JSON.stringify({ type: 'layer-visibility', visibility: visibility });
@@ -1224,7 +1237,6 @@ function buildLeafletHtml(
                 window.parent.postMessage(message, '*');
               }
             });
-            line.appendChild(checkbox);
           });
           button.addEventListener('click', function(event) {
             event.preventDefault();

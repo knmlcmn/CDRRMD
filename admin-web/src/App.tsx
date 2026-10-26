@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { API_BASE_URL, setAuthToken, api } from './services/apiClient';
 import LoginPage from './pages/LoginPage';
 import type { StaffPortal } from './services/authService';
@@ -93,12 +93,18 @@ function App() {
       const availableSensorIds = new Set(
         sensors.filter((sensor) => sensor.status === 'Active').map((sensor) => sensor.id),
       );
-      setWaterUpdateNotices((current) => current
-        .map((notice) => ({
-          ...notice,
-          sensors: notice.sensors.filter((sensor) => availableSensorIds.has(sensor.id)),
-        }))
-        .filter((notice) => notice.sensors.length > 0));
+      setWaterUpdateNotices((current) => {
+        if (current.length === 0) return current;
+        const next = current
+          .map((notice) => {
+            const sensors = notice.sensors.filter((sensor) => availableSensorIds.has(sensor.id));
+            return sensors.length === notice.sensors.length ? notice : { ...notice, sensors };
+          })
+          .filter((notice) => notice.sensors.length > 0);
+        return next.length === current.length && next.every((notice, index) => notice === current[index])
+          ? current
+          : next;
+      });
 
       const updatedSensors: WaterLevelSensor[] = [];
       sensors.forEach((sensor) => {
@@ -170,7 +176,7 @@ function App() {
     setRole(nextRole);
   }
 
-  function onLogout() {
+  const onLogout = useCallback(() => {
     api.post('/auth/logout').catch(() => {});
     localStorage.removeItem('admin_token');
     sessionStorage.removeItem('admin_token');
@@ -180,22 +186,13 @@ function App() {
     setToken(null);
     setRole(null);
     setView('dashboard');
-  }
+  }, []);
 
-  function openView(nextView: View) {
+  const openView = useCallback((nextView: View) => {
     setView(nextView);
-  }
+  }, []);
 
-  if (!token || !role) {
-    return <LoginPage onLoggedIn={onLoggedIn} />;
-  }
-
-  if (role === 'barangay') {
-    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { barangayName?: string };
-    return <Suspense fallback={<p className="p-6 text-sm text-slate-600">Loading Barangay Portal...</p>}><BarangayPortal token={token} barangayName={payload.barangayName || 'Unknown'} onLogout={onLogout} onAuthError={onLogout} /></Suspense>;
-  }
-
-  const shellProps = {
+  const shellProps = useMemo(() => ({
     onLogout,
     onOpenDashboard: () => openView('dashboard'),
     onOpenAdmin: () => openView('admin'),
@@ -209,7 +206,16 @@ function App() {
     onOpenHistory: () => openView('history'),
     onOpenBackupRequest: setBackupNoticeReportId,
     onAuthError: onLogout,
-  };
+  }), [onLogout, openView]);
+
+  if (!token || !role) {
+    return <LoginPage onLoggedIn={onLoggedIn} />;
+  }
+
+  if (role === 'barangay') {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { barangayName?: string };
+    return <Suspense fallback={<p className="p-6 text-sm text-slate-600">Loading Barangay Portal...</p>}><BarangayPortal token={token} barangayName={payload.barangayName || 'Unknown'} onLogout={onLogout} onAuthError={onLogout} /></Suspense>;
+  }
 
   let currentPage = <DashboardPage {...shellProps} />;
   if (view === 'evacuation-areas') currentPage = <EvacuationAreasPage {...shellProps} />;

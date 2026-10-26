@@ -1,11 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { AppText as Text } from '../../components/Typography';
 import { Card, EmptyState, ErrorMessage, RescuerScreen, rescuerColors } from '../components/RescuerScreen';
 import { loadFloodReportLogs, loadWaterLevelSensors } from '../services/rescuerService';
 import type { FloodReportLogPage, ResponderRole, WaterLevelSensor } from '../types';
 import { HIGH_WATER_LEVEL_THRESHOLD, MODERATE_WATER_LEVEL_THRESHOLD } from '../../utils/waterLevelHazard';
 import { scopeWaterLevelSensors } from '../utils/sensorScope';
+import { useReducedMotion } from '../../utils/useReducedMotion';
+
+function sensorSignature(sensors: WaterLevelSensor[]) {
+  return sensors.map((sensor) => [
+    sensor.id,
+    sensor.status,
+    sensor.hasReading ? 1 : 0,
+    sensor.waterLevelPercentage,
+    sensor.temperatureCelsius,
+    sensor.humidityPercentage,
+    sensor.distanceCm,
+    sensor.loggedAt,
+  ].join(':')).join('|');
+}
 
 function formatLoggedAt(value: string | null) {
   if (!value) return '—';
@@ -34,11 +48,12 @@ function humidityAppearance(value: number | null) {
   return { icon: value >= 70 ? '🌊' : '💧', color: value >= 70 ? '#818cf8' : '#38bdf8' };
 }
 
-function AnimatedWaterGauge({ unavailable, percentage, levelColor }: {
+const AnimatedWaterGauge = memo(function AnimatedWaterGauge({ unavailable, percentage, levelColor }: {
   unavailable: boolean;
   percentage: number;
   levelColor: string;
 }) {
+  const reducedMotion = useReducedMotion();
   const fillProgress = useRef(new Animated.Value(0)).current;
   const waveProgress = useRef(new Animated.Value(0)).current;
   const bubbleProgress = useRef(new Animated.Value(0)).current;
@@ -49,16 +64,16 @@ function AnimatedWaterGauge({ unavailable, percentage, levelColor }: {
     // next one so Android never accumulates native animation/SVG work.
     fillProgress.stopAnimation();
     const animation = Animated.timing(fillProgress, {
-      duration: 450,
+      duration: reducedMotion ? 0 : 450,
       toValue: unavailable ? 0 : percentage,
       useNativeDriver: false,
     });
     animation.start();
     return () => animation.stop();
-  }, [fillProgress, percentage, unavailable]);
+  }, [fillProgress, percentage, reducedMotion, unavailable]);
 
   useEffect(() => {
-    if (unavailable) {
+    if (unavailable || reducedMotion) {
       waveProgress.setValue(0);
       bubbleProgress.setValue(0);
       return undefined;
@@ -82,7 +97,7 @@ function AnimatedWaterGauge({ unavailable, percentage, levelColor }: {
       waveAnimation.stop();
       bubbleAnimation.stop();
     };
-  }, [bubbleProgress, unavailable, waveProgress]);
+  }, [bubbleProgress, reducedMotion, unavailable, waveProgress]);
 
   return (
     <View style={[styles.gauge, unavailable && styles.unavailableGauge]}>
@@ -116,7 +131,7 @@ function AnimatedWaterGauge({ unavailable, percentage, levelColor }: {
       </View>
     </View>
   );
-}
+});
 
 type Props = {
   role: ResponderRole;
@@ -134,6 +149,7 @@ const EMPTY_REPORT_PAGE: FloodReportLogPage = {
 };
 
 export default function FloodMonitoringScreen({ role, barangayName, onAuthError }: Props) {
+  const { width } = useWindowDimensions();
   const [sensors, setSensors] = useState<WaterLevelSensor[]>([]);
   const [reportView, setReportView] = useState<'today' | 'history'>('today');
   const [reportPage, setReportPage] = useState(1);
@@ -148,8 +164,8 @@ export default function FloodMonitoringScreen({ role, barangayName, onAuthError 
     if (loadingRef.current) return;
     loadingRef.current = true;
     try {
-      const nextSensors = await loadWaterLevelSensors();
-      setSensors(scopeWaterLevelSensors(nextSensors, role, barangayName));
+      const nextSensors = scopeWaterLevelSensors(await loadWaterLevelSensors(), role, barangayName);
+      setSensors((current) => sensorSignature(current) === sensorSignature(nextSensors) ? current : nextSensors);
       setError('');
     } catch (caught: any) {
       if (caught?.response?.status === 401) onAuthError();
@@ -172,7 +188,7 @@ export default function FloodMonitoringScreen({ role, barangayName, onAuthError 
     try {
       const nextReports = await loadFloodReportLogs(reportView, reportPage);
       if (requestId !== reportRequestRef.current) return;
-      setReportData(nextReports);
+      setReportData((current) => JSON.stringify(current) === JSON.stringify(nextReports) ? current : nextReports);
       setError('');
       if (reportPage > nextReports.totalPages) setReportPage(nextReports.totalPages);
     } catch (caught: any) {
@@ -187,11 +203,12 @@ export default function FloodMonitoringScreen({ role, barangayName, onAuthError 
   useEffect(() => {
     void refreshReports();
     if (reportView === 'history') return undefined;
-    const timer = setInterval(() => void refreshReports(), 2_000);
+    const timer = setInterval(() => void refreshReports(), 5_000);
     return () => clearInterval(timer);
   }, [refreshReports, reportView]);
 
-  const highCount = sensors.filter((sensor) => sensor.status === 'Active' && sensor.waterLevelPercentage >= HIGH_WATER_LEVEL_THRESHOLD).length;
+  const highCount = useMemo(() => sensors.filter((sensor) => sensor.status === 'Active' && sensor.waterLevelPercentage >= HIGH_WATER_LEVEL_THRESHOLD).length, [sensors]);
+  const sensorWidth = role === 'barangay_rescuer' ? '100%' : width >= 1100 ? '16.666%' : width >= 700 ? '33.333%' : '50%';
   return (
     <RescuerScreen title="Flood Monitoring" subtitle="Live water levels for rescue operations" refreshing={loading} onRefresh={() => void refresh()}>
       <ErrorMessage message={error} />
@@ -210,12 +227,13 @@ export default function FloodMonitoringScreen({ role, barangayName, onAuthError 
                   : '#0284c7';
             const temperature = temperatureAppearance(sensor.temperatureCelsius);
             const humidity = humidityAppearance(sensor.humidityPercentage);
-            return <View key={sensor.id} style={styles.sensorCard}>
+            return <View key={sensor.id} style={[styles.sensorCard, { width: sensorWidth }]}>
               <Text style={styles.sensorName}>Brgy. {sensor.barangayName}</Text>
               <AnimatedWaterGauge unavailable={unavailable} percentage={percentage} levelColor={levelColor} />
               <Text style={[styles.percentage, percentage >= HIGH_WATER_LEVEL_THRESHOLD && styles.highPercentage]}>{unavailable ? 'Unavailable' : `${percentage.toFixed(0)}%`}</Text>
               <Text style={[styles.reading, { color: temperature.color }]}>{temperature.icon} Temperature {sensor.temperatureCelsius === null ? '--°C' : `${sensor.temperatureCelsius.toFixed(1)}°C`}</Text>
               <Text style={[styles.reading, { color: humidity.color }]}>{humidity.icon} Humidity {sensor.humidityPercentage === null ? '--%' : `${sensor.humidityPercentage.toFixed(0)}%`}</Text>
+              <Text style={[styles.connection, unavailable ? styles.connectionOffline : styles.connectionOnline]}>{unavailable ? '● Sensor unavailable' : '● Live sensor'}</Text>
             </View>;
           })}
         </View>
@@ -272,12 +290,12 @@ export default function FloodMonitoringScreen({ role, barangayName, onAuthError 
 
 const styles = StyleSheet.create({
   headingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  sensorPanel: { borderRadius: 7, borderWidth: 1, borderColor: '#64748b', backgroundColor: '#1c3f5a', paddingHorizontal: 13, paddingTop: 14, paddingBottom: 20 },
+  sensorPanel: { borderRadius: 18, borderWidth: 1, borderColor: '#315b78', backgroundColor: '#123f63', paddingHorizontal: 13, paddingTop: 15, paddingBottom: 20, shadowColor: '#071f35', shadowOpacity: 0.14, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   title: { color: '#ffffff', fontSize: 18, fontWeight: '900' },
   cardTitle: { color: rescuerColors.ink, fontSize: 17, fontWeight: '900' },
   high: { color: '#64748b', fontSize: 11, fontWeight: '600' },
   sensorGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', rowGap: 12, marginTop: 8 },
-  sensorCard: { width: '50%', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 2 },
+  sensorCard: { alignItems: 'center', paddingVertical: 9, paddingHorizontal: 3 },
   sensorName: { color: '#ffffff', fontSize: 13, fontWeight: '900', textAlign: 'center' },
   gauge: { height: 144, width: 110, alignSelf: 'center', overflow: 'hidden', borderRadius: 16, borderWidth: 2, borderColor: '#0f172a', backgroundColor: '#f1f5f9', padding: 4, marginTop: 10, marginBottom: 5, shadowColor: '#020617', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.42, shadowRadius: 4, elevation: 4 },
   unavailableGauge: { opacity: 0.75 },
@@ -293,6 +311,9 @@ const styles = StyleSheet.create({
   percentage: { color: '#ffffff', textAlign: 'center', fontSize: 18, fontWeight: '900' },
   highPercentage: { color: '#fecdd3' },
   reading: { fontSize: 11, lineHeight: 17, fontWeight: '800', textAlign: 'center' },
+  connection: { marginTop: 3, fontSize: 8, lineHeight: 11, fontWeight: '900', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.45 },
+  connectionOnline: { color: '#86efac' },
+  connectionOffline: { color: '#cbd5e1' },
   reportsCard: { minWidth: 0 },
   note: { color: rescuerColors.muted, fontSize: 10 },
   reportTabs: { flexDirection: 'row', gap: 8, marginTop: 12 },

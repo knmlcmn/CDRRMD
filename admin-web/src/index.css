@@ -1019,7 +1019,7 @@ body,
 .hardware-water-summary-copy h2 { margin: 0; color: #450a0a; font-size: 1.35rem; font-weight: 900; line-height: 1.2; }
 .hardware-water-notice-reminder .hardware-water-summary-copy h2 { color: #78350f; }
 .hardware-water-summary-copy .hardware-water-message { margin: 0.42rem 0 0; color: #3f4653; font-size: 1rem; line-height: 1.45; }
-.hardware-water-see-details { margin-top: 0.7rem; border: 0; border-radius: 0.55rem; background: #b91c1c; color: #fff; cursor: pointer; padding: 0.52rem 0.9rem; font-size: 0.92rem; font-weight: 850; text-decoration: none; }
+.hardware-water-see-details { display: block; margin: 0.7rem auto 0; border: 0; border-radius: 0.55rem; background: #b91c1c; color: #fff; cursor: pointer; padding: 0.52rem 0.9rem; font-size: 0.92rem; font-weight: 850; text-decoration: none; }
 .hardware-water-see-details:hover { background: #991b1b; }
 .hardware-water-notice-reminder .hardware-water-see-details { background: #b45309; color: #fff; }
 .hardware-water-notice-reminder .hardware-water-see-details:hover { background: #92400e; }

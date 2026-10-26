@@ -181,7 +181,25 @@ export function buildCalambaMapHtml(
       .weather-live-hud{backdrop-filter:blur(7px);background:rgba(15,23,42,.82);border:1px solid rgba(125,211,252,.45);border-radius:9px;color:#fff;display:none;font:700 10px/1.35 Arial,sans-serif;left:50%;padding:6px 9px;pointer-events:none;position:absolute;top:10px;transform:translateX(-50%);z-index:700;white-space:nowrap;box-shadow:0 4px 18px rgba(2,8,23,.3)}.weather-live-hud b{color:#7dd3fc}
       @media (max-width: 768px) {
         .legend-toggle { font: 700 10px/1 Arial, sans-serif; padding: 6px 8px; }
-        .map-legend { width: min(162px, calc(100vw - 20px)); font-size: 10px; }
+        body.host-mobile-map .map-legend {
+          box-sizing: border-box;
+          max-height: min(58vh, calc(100vh - 88px));
+          overflow-x: hidden;
+          overflow-y: auto;
+          overscroll-behavior: contain;
+          padding: 6px 7px;
+          pointer-events: auto;
+          scrollbar-width: thin;
+          width: min(168px, calc(100vw - 84px));
+        }
+        body.host-mobile-map .map-legend .title { font-size: 9px; margin-bottom: 2px; }
+        body.host-mobile-map .map-legend .row { font-size: 8.5px; gap: 3px; line-height: 1.08; margin: 1px 0; min-height: 14px; }
+        body.host-mobile-map .legend-map-icon { border-width: 1px; height: 14px; width: 14px; }
+        body.host-mobile-map .legend-map-icon img { height: 8px; width: 8px; }
+        body.host-mobile-map .legend-map-line { border-top-width: 2px; width: 14px; }
+        body.host-mobile-map .legend-map-boundary { height: 9px; width: 14px; }
+        body.host-mobile-map .legend-section-label { font-size: 8px; gap: 3px; margin-top: 4px; padding-top: 3px; }
+        body.host-mobile-map .map-legend .updated { font-size: 8px; margin-top: 2px; }
         .flood-info { min-width: 146px; max-width: 190px; font-size: 11px; }
         .city-alert-banner { font-size: 11px; padding: 7px 8px; }
         .weather-popup {
@@ -197,6 +215,17 @@ export function buildCalambaMapHtml(
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script>
       var payload = ${payload};
+      function syncHostViewportMode() {
+        var hostViewportWidth = window.innerWidth;
+        try {
+          if (window.parent && window.parent !== window) hostViewportWidth = window.parent.innerWidth;
+        } catch (_error) {
+          hostViewportWidth = window.innerWidth;
+        }
+        document.body.classList.toggle('host-mobile-map', hostViewportWidth <= 768);
+      }
+      syncHostViewportMode();
+      window.addEventListener('resize', syncHostViewportMode);
       ${buildHardwareFloodRuntimeScript()}
       var visibility = Object.assign({
         boundary: true,
@@ -844,6 +873,7 @@ export function buildCalambaMapHtml(
             var first = wrap.firstChild;
             if (first) {
               L.DomEvent.disableClickPropagation(first);
+              L.DomEvent.disableScrollPropagation(first);
               return first;
             }
             return L.DomUtil.create('div', 'map-legend');

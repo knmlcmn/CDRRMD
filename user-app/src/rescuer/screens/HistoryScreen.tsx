@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppText as Text, AppTextInput as TextInput } from '../../components/Typography';
 import { Card, EmptyState, ErrorMessage, RescuerScreen, rescuerColors } from '../components/RescuerScreen';
 import { loadCompleteHistory } from '../services/rescuerService';
 import type { AssignmentHistory, ResponderRole } from '../types';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 function SelectField({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
@@ -21,6 +22,8 @@ function formatDate(value: string) {
 }
 
 export default function HistoryScreen({ role, onAuthError }: { role: ResponderRole; onAuthError: () => void }) {
+  const { width } = useWindowDimensions();
+  const compact = width < 720;
   const [history, setHistory] = useState<AssignmentHistory[]>([]);
   const [search, setSearch] = useState('');
   const [month, setMonth] = useState('all');
@@ -70,7 +73,13 @@ export default function HistoryScreen({ role, onAuthError }: { role: ResponderRo
           <TouchableOpacity onPress={() => { setSearch(''); setMonth('all'); setYear('all'); setPage(1); }} style={styles.clearButton}><Text style={styles.clearText}>Clear</Text></TouchableOpacity>
         </View>
         <View style={styles.summaryRow}><Text style={styles.count}>{filtered.length} of {history.length} assignments</Text></View>
-        {!visible.length ? <EmptyState loading={loading} message="No assignment history matches the selected filters." /> : <ScrollView horizontal showsHorizontalScrollIndicator style={styles.tableWrap}>
+        {!visible.length ? <EmptyState loading={loading} message="No assignment history matches the selected filters." /> : compact ? <View style={styles.mobileList}>{visible.map((item) => <View key={item.backup_request_id} style={styles.mobileRecord}>
+          <View style={styles.mobileRecordHead}><View style={styles.historyIcon}><MaterialCommunityIcons name="check-decagram-outline" size={18} color={rescuerColors.success} /></View><View style={styles.mobileRecordTitle}><Text style={styles.code}>{item.report_code}</Text><Text style={styles.assignmentId}>ASN-{String(item.backup_request_id).padStart(6, '0')}</Text></View><Text style={styles.completedBadge}>Completed</Text></View>
+          <Text style={styles.mobileName}>{item.reporter_name || 'Resident'}</Text>
+          <Text style={styles.mobileMeta}>{item.assigned_barangay || '-'} · {item.location || '-'}</Text>
+          <Text style={styles.mobileMeta}>Evacuation: {item.evacuation_area_name || '-'}</Text>
+          <Text style={styles.mobileDate}>{formatDate(item.arrived_at)}</Text>
+        </View>)}</View> : <ScrollView horizontal showsHorizontalScrollIndicator style={styles.tableWrap}>
           <View style={styles.table}>
             <View style={[styles.tableRow, styles.tableHead]}>{['Incident ID', 'Assignment ID', 'Resident', 'Barangay', 'Location', 'Evacuation Area', 'Assigned', 'Completed'].map((label, index) => <Text key={label} style={[styles.cell, index >= 4 && styles.wideCell, styles.headText]}>{label}</Text>)}</View>
             {visible.map((item, rowIndex) => <View key={item.backup_request_id} style={[styles.tableRow, rowIndex % 2 === 1 && styles.altRow]}>
@@ -121,6 +130,15 @@ const styles = StyleSheet.create({
   code: { color: rescuerColors.ink, fontSize: 13, fontWeight: '900' },
   assignmentId: { color: rescuerColors.muted, fontSize: 10, fontWeight: '700' },
   completed: { color: rescuerColors.success, fontWeight: '800' },
+  mobileList: { gap: 9, marginTop: 12 },
+  mobileRecord: { padding: 13, borderRadius: 13, borderWidth: 1, borderColor: '#d8e5ee', backgroundColor: '#fafdff' },
+  mobileRecordHead: { flexDirection: 'row', alignItems: 'center', gap: 9 },
+  historyIcon: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#e5f7f0' },
+  mobileRecordTitle: { flex: 1 },
+  completedBadge: { color: rescuerColors.success, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: '#dff5ec', fontSize: 8, fontWeight: '900' },
+  mobileName: { color: rescuerColors.ink, marginTop: 10, fontSize: 12, fontWeight: '900' },
+  mobileMeta: { color: rescuerColors.muted, marginTop: 3, fontSize: 10, lineHeight: 15 },
+  mobileDate: { color: rescuerColors.blue, marginTop: 8, fontSize: 10, fontWeight: '800' },
   pagination: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 14 },
   pageButton: { borderRadius: 8, borderWidth: 1, borderColor: '#cbd5e1', paddingHorizontal: 13, paddingVertical: 9 },
   pageButtonText: { color: rescuerColors.ink, fontSize: 11, fontWeight: '800' },

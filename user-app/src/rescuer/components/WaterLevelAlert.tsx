@@ -132,7 +132,7 @@ const styles = StyleSheet.create({
   highText: { color: '#dc2626' },
   moderateText: { color: '#b45309' },
   detailsButton: {
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
     minHeight: 43,
     justifyContent: 'center',
     marginTop: 13,

@@ -10,8 +10,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-import { DashboardHeader } from '../components/DashboardHeader';
-import { editorial } from '../components/EditorialTheme';
+import { AuthShell, authColors } from '../components/AuthShell';
 import { AppText as Text, AppTextInput as TextInput } from '../components/Typography';
 import { postAuth } from '../services/api';
 
@@ -74,29 +73,27 @@ export default function ForgotPasswordScreen({ onShowLogin }: Props) {
   }
 
   return (
-    <View style={styles.root}>
-      <DashboardHeader />
+    <AuthShell title="Recover your account" subtitle="Verify your registered email to securely restore access.">
       <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" bounces={false}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
           <View style={styles.form}>
-            <Text style={styles.title}>Recover your account</Text>
             <Text style={styles.description}>We will send a one-time verification code to your registered email address.</Text>
 
             {!success ? (
               <>
                 <View style={styles.inputWrap}>
-                  <MaterialCommunityIcons name="email-outline" size={17} color={editorial.accent} />
+                  <MaterialCommunityIcons name="email-outline" size={17} color={authColors.blue} />
                   <TextInput value={email} onChangeText={(value) => { setEmail(value); setCodeSent(false); setOtp(''); }} placeholder="Registered email" placeholderTextColor="#526170" style={styles.input} autoCapitalize="none" keyboardType="email-address" editable={!loading} />
                 </View>
                 <TouchableOpacity style={styles.secondaryButton} onPress={requestCode} disabled={loading}>
-                  {loading && !codeSent ? <ActivityIndicator size="small" color={editorial.accent} /> : <Text style={styles.secondaryButtonText}>{codeSent ? 'Resend Email Code' : 'Send Email Code'}</Text>}
+                  {loading && !codeSent ? <ActivityIndicator size="small" color={authColors.blue} /> : <Text style={styles.secondaryButtonText}>{codeSent ? 'Resend Email Code' : 'Send Email Code'}</Text>}
                 </TouchableOpacity>
 
                 {codeSent ? (
                   <>
-                    <View style={styles.inputWrap}><MaterialCommunityIcons name="shield-key-outline" size={17} color={editorial.accent} /><TextInput value={otp} onChangeText={(value) => setOtp(value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit email code" placeholderTextColor="#526170" style={styles.input} keyboardType="phone-pad" /></View>
-                    <View style={styles.inputWrap}><MaterialCommunityIcons name="lock-outline" size={17} color={editorial.accent} /><TextInput value={newPassword} onChangeText={setNewPassword} placeholder="New password" placeholderTextColor="#526170" style={styles.input} secureTextEntry /></View>
-                    <View style={styles.inputWrap}><MaterialCommunityIcons name="lock-check-outline" size={17} color={editorial.accent} /><TextInput value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Confirm new password" placeholderTextColor="#526170" style={styles.input} secureTextEntry /></View>
+                    <View style={styles.inputWrap}><MaterialCommunityIcons name="shield-key-outline" size={17} color={authColors.blue} /><TextInput value={otp} onChangeText={(value) => setOtp(value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit email code" placeholderTextColor="#526170" style={styles.input} keyboardType="phone-pad" /></View>
+                    <View style={styles.inputWrap}><MaterialCommunityIcons name="lock-outline" size={17} color={authColors.blue} /><TextInput value={newPassword} onChangeText={setNewPassword} placeholder="New password" placeholderTextColor="#526170" style={styles.input} secureTextEntry /></View>
+                    <View style={styles.inputWrap}><MaterialCommunityIcons name="lock-check-outline" size={17} color={authColors.blue} /><TextInput value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Confirm new password" placeholderTextColor="#526170" style={styles.input} secureTextEntry /></View>
                   </>
                 ) : null}
               </>
@@ -110,25 +107,23 @@ export default function ForgotPasswordScreen({ onShowLogin }: Props) {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-    </View>
+    </AuthShell>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#ffffff' },
   keyboard: { flex: 1 },
-  scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 30, backgroundColor: editorial.background },
-  form: { width: '100%', maxWidth: 410, padding: 22, borderRadius: 14, backgroundColor: editorial.surface, borderWidth: 1, borderColor: editorial.border },
-  title: { color: editorial.ink, fontSize: 24, lineHeight: 30, marginBottom: 8 },
+  scroll: { flexGrow: 1, justifyContent: 'center' },
+  form: { width: '100%', padding: 20, borderRadius: 18, backgroundColor: authColors.white, borderWidth: 1, borderColor: authColors.border, shadowColor: authColors.navy, shadowOpacity: 0.07, shadowRadius: 13, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
   description: { color: '#526170', fontSize: 12, lineHeight: 18, marginBottom: 18 },
-  inputWrap: { height: 45, borderWidth: 1, borderColor: editorial.border, borderRadius: 10, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 10, backgroundColor: '#fff' },
+  inputWrap: { height: 48, borderWidth: 1, borderColor: authColors.border, borderRadius: 11, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 10, backgroundColor: '#fafdff' },
   input: { flex: 1, color: '#111111', fontSize: 13, marginLeft: 8, paddingVertical: 0 },
-  secondaryButton: { height: 42, borderWidth: 1, borderColor: editorial.accent, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 12, backgroundColor: '#f7fbfe' },
-  secondaryButtonText: { color: editorial.accent, fontSize: 12, fontWeight: '900' },
-  primaryButton: { height: 47, borderRadius: 10, backgroundColor: editorial.accent, alignItems: 'center', justifyContent: 'center', marginTop: 4, marginBottom: 10 },
+  secondaryButton: { height: 44, borderWidth: 1, borderColor: authColors.blue, borderRadius: 11, alignItems: 'center', justifyContent: 'center', marginBottom: 12, backgroundColor: '#f1f8fc' },
+  secondaryButtonText: { color: authColors.blue, fontSize: 12, fontWeight: '900' },
+  primaryButton: { height: 48, borderRadius: 11, backgroundColor: authColors.blue, alignItems: 'center', justifyContent: 'center', marginTop: 4, marginBottom: 10 },
   primaryButtonText: { color: '#fff', fontSize: 14, fontWeight: '900' },
   backButton: { alignItems: 'center', paddingVertical: 9 },
-  backText: { color: editorial.accent, fontSize: 12, fontWeight: '800' },
+  backText: { color: authColors.blue, fontSize: 12, fontWeight: '800' },
   successText: { color: '#15803d', fontSize: 12, lineHeight: 18, marginBottom: 10 },
   errorText: { color: '#c62828', fontSize: 12, lineHeight: 18, marginBottom: 10 },
 });

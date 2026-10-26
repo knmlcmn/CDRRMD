@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppText as Text, AppTextInput as TextInput } from '../../components/Typography';
 import { Card, DetailRow, EmptyState, ErrorMessage, PrimaryButton, RescuerScreen, rescuerColors } from '../components/RescuerScreen';
 import { loadRescuerAccounts, updateMyProfile } from '../services/rescuerService';
@@ -16,6 +17,8 @@ function formatLastLogin(value?: string | null) {
 }
 
 export default function AccountScreen({ role, onAuthError }: { role: ResponderRole; onAuthError: () => void }) {
+  const { width } = useWindowDimensions();
+  const compact = width < 720;
   const [accounts, setAccounts] = useState<RescuerAccount[]>([]);
   const [selected, setSelected] = useState<RescuerAccount | null>(null);
   const [values, setValues] = useState<EditValues>({ firstName: '', lastName: '', email: '', address: '', contactNumber: '' });
@@ -28,7 +31,11 @@ export default function AccountScreen({ role, onAuthError }: { role: ResponderRo
 
   const refresh = useCallback(async () => {
     setLoading(true);
-    try { setAccounts(await loadRescuerAccounts()); setError(''); }
+    try {
+      const nextAccounts = await loadRescuerAccounts();
+      setAccounts((current) => JSON.stringify(current) === JSON.stringify(nextAccounts) ? current : nextAccounts);
+      setError('');
+    }
     catch (caught: any) {
       if (caught?.response?.status === 401) onAuthError();
       else setError(caught?.response?.data?.message || 'Unable to load rescuer accounts.');
@@ -72,7 +79,11 @@ export default function AccountScreen({ role, onAuthError }: { role: ResponderRo
       {message ? <Text style={styles.success}>{message}</Text> : null}
       <Card>
         <View style={styles.managementHeader}><Text style={styles.title}>Rescuer Account Management</Text><TextInput value={search} onChangeText={setSearch} placeholder="Search by name, email, username, or contact" placeholderTextColor="#64748b" style={styles.input} /></View>
-        {!filtered.length ? <EmptyState loading={loading} message="No rescuer account found." /> : <ScrollView horizontal showsHorizontalScrollIndicator style={styles.tableWrap}><View style={styles.table}>
+        {!filtered.length ? <EmptyState loading={loading} message="No rescuer account found." /> : compact ? <View style={styles.accountList}>{filtered.map((account) => <TouchableOpacity accessibilityRole="button" key={account.id} onPress={() => openAccount(account)} style={[styles.accountCard, account.is_self && styles.selfRow]}>
+          <View style={styles.avatar}><MaterialCommunityIcons name="account-outline" size={22} color={rescuerColors.blue} /></View>
+          <View style={styles.accountCopy}><View style={styles.accountNameRow}><Text style={styles.accountName}>{[account.first_name, account.last_name].filter(Boolean).join(' ') || 'Rescuer'}</Text>{account.is_self ? <Text style={styles.youBadge}>You</Text> : null}</View><Text style={styles.accountMeta}>{account.rescuer_id} · {account.email || account.username || 'No email'}</Text><Text style={styles.accountMeta}>Last login: {formatLastLogin(account.last_login)}</Text></View>
+          <View style={styles.accountEnd}><Text style={[styles.presence, account.is_online && styles.online]}>{account.is_online ? 'Online' : 'Offline'}</Text><MaterialCommunityIcons name="chevron-right" size={20} color="#71869a" /></View>
+        </TouchableOpacity>)}</View> : <ScrollView horizontal showsHorizontalScrollIndicator style={styles.tableWrap}><View style={styles.table}>
           <View style={[styles.tableRow, styles.tableHead]}>{['ID', 'Name', 'Email', 'Username', 'Contact', 'Status', 'Last Login', 'Actions'].map((label, index) => <Text key={label} style={[styles.cell, index === 2 && styles.emailCell, styles.headText]}>{label}</Text>)}</View>
           {filtered.map((account, index) => <View key={account.id} style={[styles.tableRow, index % 2 === 1 && styles.altRow, account.is_self && styles.selfRow]}>
             <Text style={styles.cell}>{account.rescuer_id}{account.is_self ? '  You' : ''}</Text><Text style={styles.cell}>{[account.first_name, account.last_name].filter(Boolean).join(' ') || 'N/A'}</Text><Text style={[styles.cell, styles.emailCell]}>{account.email || 'N/A'}</Text><Text style={styles.cell}>{account.username || 'N/A'}</Text><Text style={styles.cell}>{account.contact_number || 'N/A'}</Text><View style={styles.cell}><Text style={[styles.presence, account.is_online && styles.online]}>{account.is_online ? 'Online' : 'Offline'}</Text></View><Text style={styles.cell}>{formatLastLogin(account.last_login)}</Text><View style={styles.cell}><TouchableOpacity onPress={() => openAccount(account)} style={styles.viewButton}><Text style={styles.viewText}>View</Text></TouchableOpacity></View>
@@ -127,6 +138,15 @@ const styles = StyleSheet.create({
   headText: { color: '#fff', fontWeight: '900' },
   presence: { alignSelf: 'flex-start', color: '#64748b', backgroundColor: '#e2e8f0', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 4, fontSize: 9, fontWeight: '900' },
   online: { color: '#047857', backgroundColor: '#d1fae5' },
+  accountList: { gap: 9 },
+  accountCard: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderWidth: 1, borderColor: '#d8e5ee', borderRadius: 13, backgroundColor: '#fafdff' },
+  avatar: { width: 42, height: 42, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: '#e3f1fa' },
+  accountCopy: { flex: 1, minWidth: 0 },
+  accountNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  accountName: { flexShrink: 1, color: rescuerColors.ink, fontSize: 12, fontWeight: '900' },
+  youBadge: { color: rescuerColors.blue, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: '#dcecf8', fontSize: 8, fontWeight: '900' },
+  accountMeta: { color: rescuerColors.muted, marginTop: 3, fontSize: 9, lineHeight: 13 },
+  accountEnd: { alignItems: 'flex-end', gap: 7 },
   viewButton: { alignSelf: 'flex-start', borderRadius: 6, borderWidth: 1, borderColor: '#94a3b8', paddingHorizontal: 10, paddingVertical: 6, backgroundColor: '#fff' },
   viewText: { color: rescuerColors.ink, fontSize: 10, fontWeight: '900' },
   backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(2, 6, 23, 0.68)' },

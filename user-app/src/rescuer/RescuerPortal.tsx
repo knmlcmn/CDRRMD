@@ -10,9 +10,9 @@ import AccountScreen from './screens/AccountScreen';
 import WaterLevelAlert from './components/WaterLevelAlert';
 import { loadWaterLevelSensors, sendHeartbeat } from './services/rescuerService';
 import type { ResponderRole, WaterLevelSensor } from './types';
-import { rescuerColors } from './components/RescuerScreen';
 import { MODERATE_WATER_LEVEL_THRESHOLD } from '../utils/waterLevelHazard';
 import { scopeWaterLevelSensors } from './utils/sensorScope';
+import { rescuerTheme } from './theme';
 
 type Tab = 'assignments' | 'history' | 'flood' | 'account';
 const tabs: Array<{ key: Tab; label: string; mobileLabel: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }> = [
@@ -124,28 +124,30 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
     <TypographyFamily family="Manrope">
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
       {!desktop ? <View style={styles.mobileTop}>
+        <View pointerEvents="none" style={[styles.mobilePatternArc, styles.mobilePatternTop]} />
         <View style={styles.brandWrap}>
           <Image source={require('../../assets/cdrrmd-logo.png')} style={styles.logo} />
           <View><Text style={styles.mobileBrand}>{role === 'barangay_rescuer' ? 'Barangay Rescuer' : 'CDRRMD Rescuer'}</Text><Text style={styles.portalLabel}>RESPONDER PORTAL</Text></View>
         </View>
-        <TouchableOpacity onPress={onLogout} style={styles.mobileLogout}><Text style={styles.mobileLogoutText}>Logout</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="Log out" onPress={onLogout} style={styles.mobileLogout}><MaterialCommunityIcons name="logout" size={20} color="#ffffff" /></TouchableOpacity>
       </View> : null}
       <View style={styles.layout}>
         {desktop ? <View style={styles.sidebar}>
           <View style={styles.desktopBrand}><Image source={require('../../assets/cdrrmd-logo.png')} style={styles.logo} /><View><Text style={styles.desktopBrandTitle}>CDRRMD</Text><Text style={styles.desktopBrandRole}>{role === 'barangay_rescuer' ? 'Barangay Rescuer' : 'CDRRMD Rescuer'}</Text></View></View>
           <View style={styles.sideNav}>{tabs.map((item) => {
             const active = tab === item.key;
-            return <TouchableOpacity key={item.key} onPress={() => setTab(item.key)} style={[styles.sideNavItem, active && styles.sideNavItemActive]}><MaterialCommunityIcons name={item.icon} size={20} color="#fff" /><Text style={styles.sideNavLabel}>{item.label}</Text></TouchableOpacity>;
+            return <TouchableOpacity key={item.key} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => setTab(item.key)} style={[styles.sideNavItem, active && styles.sideNavItemActive]}>{active ? <View style={styles.activeRail} /> : null}<MaterialCommunityIcons name={item.icon} size={20} color={active ? '#fff' : '#b9d4e6'} /><Text style={[styles.sideNavLabel, !active && styles.sideNavLabelIdle]}>{item.label}</Text></TouchableOpacity>;
           })}</View>
           <TouchableOpacity onPress={onLogout} style={styles.desktopLogout}><MaterialCommunityIcons name="logout" size={19} color="#fff" /><Text style={styles.sideNavLabel}>Logout</Text></TouchableOpacity>
         </View> : null}
         <View style={styles.content}>{content}</View>
       </View>
       {!desktop ? <View style={styles.tabBar}>
+        <View pointerEvents="none" style={[styles.mobilePatternArc, styles.mobilePatternBottom]} />
         {tabs.map((item) => {
           const active = tab === item.key;
           return <TouchableOpacity key={item.key} onPress={() => setTab(item.key)} style={styles.tab} accessibilityRole="button" accessibilityState={{ selected: active }}>
-            <View style={[styles.iconWrap, active && styles.iconWrapActive]}><MaterialCommunityIcons name={item.icon} size={22} color={active ? '#fff' : rescuerColors.blue} /></View>
+            <View style={[styles.iconWrap, active && styles.iconWrapActive]}><MaterialCommunityIcons name={item.icon} size={22} color={active ? '#fff' : '#c7e3f5'} /></View>
             <Text numberOfLines={1} style={[styles.tabLabel, active && styles.tabLabelActive]}>{item.mobileLabel}</Text>
           </TouchableOpacity>;
         })}
@@ -165,29 +167,33 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#ffffff' },
+  safe: { flex: 1, backgroundColor: rescuerTheme.colors.surface },
   layout: { flex: 1, flexDirection: 'row' },
   content: { flex: 1 },
-  mobileTop: { minHeight: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#cbd5e1' },
+  mobileTop: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingHorizontal: 14, paddingVertical: 9, overflow: 'hidden', backgroundColor: rescuerTheme.colors.navy900, borderBottomWidth: 1, borderBottomColor: '#315b78' },
+  mobilePatternArc: { position: 'absolute', borderWidth: 1, borderColor: 'rgba(116,187,229,0.16)' },
+  mobilePatternTop: { width: 190, height: 120, right: -55, top: -55, borderRadius: 80, transform: [{ rotate: '-12deg' }] },
+  mobilePatternBottom: { width: 230, height: 120, left: -65, bottom: -76, borderRadius: 100, transform: [{ rotate: '8deg' }] },
   brandWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  logo: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, borderColor: '#f4b400', backgroundColor: '#fff' },
-  mobileBrand: { color: '#0b2e4e', fontSize: 16, lineHeight: 18, fontWeight: '900' },
-  portalLabel: { color: '#2a5d8d', fontSize: 8, lineHeight: 10, fontWeight: '900', letterSpacing: 1.2 },
-  mobileLogout: { borderRadius: 8, borderWidth: 1, borderColor: '#cbd5e1', paddingHorizontal: 12, paddingVertical: 7, backgroundColor: '#fff' },
-  mobileLogoutText: { color: '#334155', fontSize: 12, fontWeight: '800' },
-  sidebar: { width: 228, padding: 16, backgroundColor: '#0b2e4e', borderRightWidth: 1, borderRightColor: '#334155', gap: 16 },
+  logo: { width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: rescuerTheme.colors.gold, backgroundColor: '#fff' },
+  mobileBrand: { color: '#ffffff', fontSize: 16, lineHeight: 18, fontWeight: '900' },
+  portalLabel: { color: '#b9def2', fontSize: 8, lineHeight: 10, fontWeight: '900', letterSpacing: 1.2 },
+  mobileLogout: { width: 42, height: 42, borderRadius: 13, borderWidth: 1, borderColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.08)' },
+  sidebar: { width: 236, padding: 16, backgroundColor: rescuerTheme.colors.navy900, borderRightWidth: 1, borderRightColor: '#244d6b', gap: 18 },
   desktopBrand: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 10, borderRadius: 16, borderWidth: 1, borderColor: '#486581', backgroundColor: '#163b60' },
   desktopBrandTitle: { color: '#fff', fontSize: 18, lineHeight: 21, fontWeight: '900' },
   desktopBrandRole: { color: '#cbd5e1', fontSize: 11, fontWeight: '700' },
   sideNav: { gap: 10 },
-  sideNavItem: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, borderRadius: 12 },
-  sideNavItemActive: { backgroundColor: '#2a5d8d' },
+  sideNavItem: { position: 'relative', minHeight: 50, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 13, borderRadius: 13, overflow: 'hidden' },
+  sideNavItemActive: { backgroundColor: rescuerTheme.colors.blue700 },
+  activeRail: { position: 'absolute', left: 0, top: 9, bottom: 9, width: 3, borderRadius: 3, backgroundColor: rescuerTheme.colors.gold },
   sideNavLabel: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  sideNavLabelIdle: { color: '#d7e5ef' },
   desktopLogout: { marginTop: 'auto', minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 12, borderWidth: 1, borderColor: '#486581' },
-  tabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 68, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 6, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#cbd5e1', shadowColor: '#0f172a', shadowOpacity: 0.12, shadowRadius: 7, shadowOffset: { width: 0, height: -2 }, elevation: 10 },
+  tabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 72, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 7, overflow: 'hidden', backgroundColor: rescuerTheme.colors.navy900, borderTopWidth: 1, borderTopColor: '#315b78', shadowColor: rescuerTheme.colors.navy950, shadowOpacity: 0.2, shadowRadius: 9, shadowOffset: { width: 0, height: -3 }, elevation: 10 },
   tab: { flex: 1, minHeight: 54, alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 2 },
-  iconWrap: { width: 42, height: 31, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  iconWrapActive: { backgroundColor: '#1f4e79' },
-  tabLabel: { color: rescuerColors.blue, fontSize: 9, lineHeight: 11, fontWeight: '800', textAlign: 'center' },
-  tabLabelActive: { color: '#1f4e79' },
+  iconWrap: { width: 44, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  iconWrapActive: { backgroundColor: rescuerTheme.colors.blue600, borderLeftWidth: 3, borderLeftColor: rescuerTheme.colors.gold },
+  tabLabel: { color: '#c7e3f5', fontSize: 9, lineHeight: 11, fontWeight: '800', textAlign: 'center' },
+  tabLabelActive: { color: '#ffffff' },
 });
