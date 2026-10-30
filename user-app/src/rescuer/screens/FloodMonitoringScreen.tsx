@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Animated, AppState, Easing, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { AppText as Text } from '../../components/Typography';
 import { Card, EmptyState, ErrorMessage, RescuerScreen, rescuerColors } from '../components/RescuerScreen';
 import { loadFloodReportLogs, loadWaterLevelSensors } from '../services/rescuerService';
@@ -161,7 +161,7 @@ export default function FloodMonitoringScreen({ role, barangayName, onAuthError 
   const reportRequestRef = useRef(0);
 
   const refresh = useCallback(async () => {
-    if (loadingRef.current) return;
+    if (loadingRef.current || AppState.currentState !== 'active') return;
     loadingRef.current = true;
     try {
       const nextSensors = scopeWaterLevelSensors(await loadWaterLevelSensors(), role, barangayName);
@@ -178,11 +178,12 @@ export default function FloodMonitoringScreen({ role, barangayName, onAuthError 
 
   useEffect(() => {
     void refresh();
-    const timer = setInterval(() => void refresh(), 2_000);
+    const timer = setInterval(() => void refresh(), 3_000);
     return () => clearInterval(timer);
   }, [refresh]);
 
   const refreshReports = useCallback(async () => {
+    if (AppState.currentState !== 'active') return;
     const requestId = ++reportRequestRef.current;
     setReportsLoading(true);
     try {
@@ -203,7 +204,7 @@ export default function FloodMonitoringScreen({ role, barangayName, onAuthError 
   useEffect(() => {
     void refreshReports();
     if (reportView === 'history') return undefined;
-    const timer = setInterval(() => void refreshReports(), 5_000);
+    const timer = setInterval(() => void refreshReports(), 10_000);
     return () => clearInterval(timer);
   }, [refreshReports, reportView]);
 

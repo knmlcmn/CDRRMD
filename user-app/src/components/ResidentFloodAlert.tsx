@@ -38,6 +38,7 @@ type Props = {
 
 const MODERATE_WATER_LEVEL = 40;
 const HIGH_WATER_LEVEL = 61;
+const NOTIFICATION_POLL_INTERVAL_MS = 10_000;
 
 function normalizeBarangayName(value: unknown) {
   return String(value || '').trim().toLowerCase().replace(/^barangay\s+/, '');
@@ -50,24 +51,42 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
   const suppressedAlertIdsRef = useRef(new Set<number>());
   const acknowledgedLiveKeysRef = useRef(new Set<string>());
   const latestCheckRef = useRef(0);
+  const checkInFlightRef = useRef(false);
+  const cachedNotificationsRef = useRef<FloodNotification[]>([]);
+  const lastNotificationCheckAtRef = useRef(0);
   const lastLiveKeyRef = useRef<string | null>(null);
   const consecutiveSafeReadingsRef = useRef(0);
   const warningPulse = useRef(new Animated.Value(0)).current;
 
   const checkAlerts = useCallback(async () => {
+    // A slow request must be allowed to finish. Previously, the 1.5-second
+    // timer could continuously supersede responses before any modal rendered.
+    if (checkInFlightRef.current || AppState.currentState !== 'active') return;
+    checkInFlightRef.current = true;
+    const now = Date.now();
+    const shouldRefreshNotifications = now - lastNotificationCheckAtRef.current >= NOTIFICATION_POLL_INTERVAL_MS;
+    if (shouldRefreshNotifications) lastNotificationCheckAtRef.current = now;
     // Location, polling, app-resume, and browser-focus checks can overlap. Only
     // the newest request may change alert state so an older moderate/empty
     // response can never overwrite a newer high-water response.
     const checkNumber = ++latestCheckRef.current;
     const [notificationResult, sensorResult] = await Promise.allSettled([
-      api.get('/reports/notifications/mine', {
-        params: coordinatesRef.current || undefined,
-      }),
+      shouldRefreshNotifications
+        ? api.get('/reports/notifications/mine', {
+            params: coordinatesRef.current || undefined,
+          })
+        : Promise.resolve(null),
       api.get('/flood-risk/hardware-sensors'),
     ]);
-    const notifications = notificationResult.status === 'fulfilled' && Array.isArray(notificationResult.value.data)
-      ? notificationResult.value.data as FloodNotification[]
-      : [];
+    checkInFlightRef.current = false;
+    if (
+      shouldRefreshNotifications
+      && notificationResult.status === 'fulfilled'
+      && Array.isArray(notificationResult.value?.data)
+    ) {
+      cachedNotificationsRef.current = notificationResult.value.data as FloodNotification[];
+    }
+    const notifications = cachedNotificationsRef.current;
     const matchingUnread = notifications.filter(
       (item) => String(item.category || '').toLowerCase() === 'flood_sensor'
         && !item.read_at
@@ -197,7 +216,9 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
     }
 
     startLocationAlerts().catch(() => {});
-    const timer = setInterval(() => checkAlerts().catch(() => {}), 1_500);
+    const timer = setInterval(() => checkAlerts().catch(() => {
+      checkInFlightRef.current = false;
+    }), 2_000);
     const appStateSubscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') checkAlerts().catch(() => {});
     });

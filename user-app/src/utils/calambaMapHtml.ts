@@ -1494,7 +1494,7 @@ export function buildCalambaMapHtml(
       }, 10 * 60 * 1000);
       setInterval(function() {
         if (document.visibilityState === 'visible' && Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
-      }, 2000);
+      }, 5000);
       renderIncidents();
       applyLayerVisibility();
       if (Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();

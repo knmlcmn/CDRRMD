@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native';
 import { AppText as Text } from '../components/Typography';
 import { editorial } from '../components/EditorialTheme';
 import { DashboardHeader } from '../components/DashboardHeader';
@@ -55,6 +56,7 @@ function formatDay(value: string) {
 }
 
 export default function WeatherScreen() {
+  const isFocused = useIsFocused();
   const { uiScale: scale, horizontalPadding } = useResponsiveLayout();
   const [data, setData] = useState<WeatherResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -73,6 +75,7 @@ export default function WeatherScreen() {
   }, []);
 
   useEffect(() => {
+    if (!isFocused) return undefined;
     fetchWeather();
     const timer = setInterval(() => {
       if (AppState.currentState === 'active') fetchWeather();
@@ -84,7 +87,7 @@ export default function WeatherScreen() {
       clearInterval(timer);
       subscription.remove();
     };
-  }, [fetchWeather]);
+  }, [fetchWeather, isFocused]);
 
   const activeWeatherCode = data?.current?.weather_code ?? data?.hourly?.weather_code?.[0];
   const currentTemperature = data?.current?.temperature_2m;

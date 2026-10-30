@@ -53,7 +53,6 @@ export function AuthShell({ children, title, subtitle, centerContent = false }: 
         </View>
         {children}
         </View>
-        <Text style={styles.footer}>Official CDRRMD mobile service · Authorized access only</Text>
       </View>
     </View>
   );
@@ -83,7 +82,7 @@ const styles = StyleSheet.create({
   heroFooter: { display: 'none', color: '#bcd5e5', fontSize: 8, fontWeight: '800', letterSpacing: 1.1 },
   formPane: { flex: 1, width: '100%', maxWidth: 660, alignSelf: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
   formPaneWide: { justifyContent: 'center', paddingHorizontal: 48, paddingVertical: 28 },
-  formBody: { width: '100%' },
+  formBody: { flex: 1, width: '100%', minHeight: 0 },
   formBodyCentered: { flex: 1, justifyContent: 'center' },
   formHeading: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   headingIcon: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#e3f1fa', borderWidth: 1, borderColor: '#c5dfef' },

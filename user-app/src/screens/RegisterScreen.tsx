@@ -171,7 +171,14 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
   return (
     <AuthShell title="Create a resident account" subtitle="Registration is for residents. Responder accounts remain provisioned by authorized personnel.">
       <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scroll}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          bounces={false}
+          showsVerticalScrollIndicator
+        >
           <View style={styles.form}>
             <Text style={styles.sectionLabel}>Resident information</Text>
 
@@ -267,7 +274,8 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
 
 const styles = StyleSheet.create({
   keyboard: { flex: 1 },
-  scroll: { flexGrow: 1, justifyContent: 'center', paddingBottom: 4 },
+  scrollView: { flex: 1, minHeight: 0 },
+  scroll: { flexGrow: 1, justifyContent: 'flex-start', paddingBottom: 24 },
   form: { width: '100%', padding: 18, borderRadius: 18, backgroundColor: authColors.white, borderWidth: 1, borderColor: authColors.border, shadowColor: authColors.navy, shadowOpacity: 0.07, shadowRadius: 13, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
   sectionLabel: { color: authColors.ink, fontSize: 12, fontWeight: '900', marginBottom: 10, letterSpacing: 0.25 },
   inputWrap: {

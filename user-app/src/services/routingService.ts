@@ -14,6 +14,7 @@ export type BestRoadRoute = OsrmRoute & {
 
 const OSRM_BASE_URL = 'https://router.project-osrm.org';
 const MAX_ROAD_SNAP_DISTANCE_METERS = 750;
+const ROUTING_TIMEOUT_MS = 12_000;
 
 type OsrmWaypoint = {
   distance?: number;
@@ -22,6 +23,16 @@ type OsrmWaypoint = {
 function isPracticalRoadSnap(waypoint: OsrmWaypoint | undefined) {
   const distance = Number(waypoint?.distance);
   return Number.isFinite(distance) && distance <= MAX_ROAD_SNAP_DISTANCE_METERS;
+}
+
+async function fetchRoutingResponse(url: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ROUTING_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function fetchRoadRoute(
@@ -36,7 +47,7 @@ export async function fetchRoadRoute(
     `${OSRM_BASE_URL}/route/v1/driving/${from.longitude},${from.latitude};` +
     `${to.longitude},${to.latitude}?${geometryParams}&alternatives=false&steps=false`;
 
-  const response = await fetch(url);
+  const response = await fetchRoutingResponse(url);
   if (!response.ok) {
     throw new Error(`OSRM ${response.status}`);
   }
@@ -86,7 +97,7 @@ export async function fetchBestRoadRoute(
     `${OSRM_BASE_URL}/table/v1/driving/${coordinates}` +
     `?sources=0&destinations=${destinationIndexes}&annotations=distance,duration`;
 
-  const response = await fetch(url);
+  const response = await fetchRoutingResponse(url);
   if (!response.ok) {
     throw new Error(`OSRM table ${response.status}`);
   }

@@ -346,7 +346,7 @@ function AppContent() {
     let mounted = true;
 
     async function monitorLocation() {
-      if (monitorRunningRef.current) return;
+      if (AppState.currentState !== 'active' || monitorRunningRef.current) return;
       monitorRunningRef.current = true;
       try {
         const result = await requireLiveLocation(false);
@@ -375,7 +375,7 @@ function AppContent() {
       }
     }
 
-    const interval = setInterval(monitorLocation, 10000);
+    const interval = setInterval(monitorLocation, 30000);
     const appStateSubscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') monitorLocation();
     });
@@ -486,8 +486,8 @@ function AppContent() {
       return;
     }
 
-    const ensured = await ensureAccountForSession(nextSession);
-    await activateSession(ensured.session, registrationProfile);
+    // activateSession already normalizes and persists the account.
+    await activateSession(nextSession, registrationProfile);
   }
 
   async function performLogout() {

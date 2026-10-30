@@ -15,7 +15,7 @@ const {
   findNearestAvailableEvacuationArea,
 } = require('../services/evacuationRoutingService');
 const { syncFloodSensorAlerts } = require('../services/floodSensorAlertService');
-const { isExpoPushToken, sendPendingFloodPushNotifications } = require('../services/expoPushService');
+const { isExpoPushToken } = require('../services/expoPushService');
 
 function buildReportCode(id, createdAt) {
   const year = new Date(createdAt || Date.now()).getFullYear();
@@ -1402,9 +1402,6 @@ async function registerPushToken(req, res) {
            updated_at = NOW()`,
     [userId, expoPushToken, platform],
   );
-  sendPendingFloodPushNotifications({ userId }).catch((error) => {
-    console.error('Unable to deliver pending flood push notification after device registration.', error);
-  });
   return res.json({ registered: true });
 }
 

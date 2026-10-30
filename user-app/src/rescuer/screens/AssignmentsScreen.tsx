@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { AppState, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppText as Text } from '../../components/Typography';
 import PlatformMap from '../../components/PlatformMap';
@@ -65,7 +65,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
   }, [onAuthError]);
 
   const refresh = useCallback(async () => {
-    if (loadingRef.current) return;
+    if (loadingRef.current || AppState.currentState !== 'active') return;
     loadingRef.current = true;
     try {
       const [active, weekly] = await Promise.all([loadAssignments(), loadWeeklyHistory()]);

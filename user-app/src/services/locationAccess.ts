@@ -83,6 +83,14 @@ export async function requireLiveLocation(requestPermission: boolean): Promise<L
       };
     }
 
+    // Both portals maintain a location watcher. Reuse its recent accurate fix
+    // before waking GPS and waiting for another satellite/network position.
+    const recent = await Location.getLastKnownPositionAsync({
+      maxAge: 30_000,
+      requiredAccuracy: 200,
+    }).catch(() => null);
+    if (recent) return { ok: true, location: toLiveLocation(recent) };
+
     const position = await Promise.race([
       Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,

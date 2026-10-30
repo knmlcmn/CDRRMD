@@ -54,14 +54,14 @@ function unique(values: Array<string | null | undefined>) {
   return Array.from(set);
 }
 
+const configuredApiBase = normalizeBaseHost(process.env.EXPO_PUBLIC_API_URL);
+
 function buildCandidateHosts() {
-  const envUrl = process.env.EXPO_PUBLIC_API_URL;
-  const envBase = normalizeBaseHost(envUrl);
 
   // A configured API URL is authoritative for deployed web/native builds.
   // Development host discovery is only needed when no environment URL exists.
-  if (envBase) {
-    return [envBase];
+  if (configuredApiBase) {
+    return [configuredApiBase];
   }
 
   const expoHostUri =
@@ -253,6 +253,12 @@ api.interceptors.response.use(
     const status = error?.response?.status;
     const code = String(error?.response?.data?.code || '');
 
+    if (status === 401 && code === 'TEST_ACCOUNT_EXPIRED') {
+      await clearSession();
+      authFailureHandler?.();
+      throw error;
+    }
+
     const tokenProblem =
       status === 401 &&
       (code.startsWith('AUTH_TOKEN_') || /token/i.test(String(error?.response?.data?.message || '')));
@@ -297,6 +303,10 @@ async function resolveHealthyHost() {
 }
 
 async function getHealthyHost() {
+  // Production has one authoritative API endpoint. Retrying a real network
+  // failure is useful; probing /health before every auth/profile/location call
+  // only adds another complete mobile round trip.
+  if (configuredApiBase) return activeHost;
   if (!resolvingHostPromise) {
     resolvingHostPromise = resolveHealthyHost().finally(() => {
       resolvingHostPromise = null;

@@ -35,7 +35,7 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
   const [tab, setTab] = useState<Tab>('assignments');
   const [alertSensors, setAlertSensors] = useState<WaterLevelSensor[]>([]);
   const [alertVisible, setAlertVisible] = useState(false);
-  const alertBuckets = useRef<Record<string, number>>({});
+  const alertStages = useRef<Record<string, 'moderate' | 'high'>>({});
 
   // Presence belongs to the portal, not only the Incidents tab. Keeping this
   // mounted means a rescuer remains assignable while viewing History, Flood,
@@ -43,7 +43,7 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
   useEffect(() => {
     let active = true;
     async function heartbeat() {
-      if (!active) return;
+      if (!active || AppState.currentState !== 'active') return;
       try {
         await sendHeartbeat();
       } catch (caught: any) {
@@ -67,7 +67,7 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
     let loading = false;
 
     async function checkWaterLevels() {
-      if (!active || loading) return;
+      if (!active || loading || AppState.currentState !== 'active') return;
       loading = true;
       try {
         const loaded = await loadWaterLevelSensors();
@@ -81,12 +81,12 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
         let changed = false;
 
         hazardous.forEach((sensor) => {
-          const bucket = Math.floor(sensor.waterLevelPercentage / 10) * 10;
-          if (alertBuckets.current[sensor.id] !== bucket) changed = true;
-          alertBuckets.current[sensor.id] = bucket;
+          const stage = sensor.waterLevelPercentage >= 61 ? 'high' : 'moderate';
+          if (alertStages.current[sensor.id] !== stage) changed = true;
+          alertStages.current[sensor.id] = stage;
         });
-        Object.keys(alertBuckets.current).forEach((sensorId) => {
-          if (!hazardousIds.has(sensorId)) delete alertBuckets.current[sensorId];
+        Object.keys(alertStages.current).forEach((sensorId) => {
+          if (!hazardousIds.has(sensorId)) delete alertStages.current[sensorId];
         });
 
         if (changed && hazardous.length > 0) {
@@ -101,7 +101,7 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
     }
 
     void checkWaterLevels();
-    const timer = setInterval(() => void checkWaterLevels(), 2_000);
+    const timer = setInterval(() => void checkWaterLevels(), 3_000);
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') void checkWaterLevels();
     });

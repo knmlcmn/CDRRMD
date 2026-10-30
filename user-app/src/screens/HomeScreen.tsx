@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { AppText as Text } from '../components/Typography';
 import { editorial } from '../components/EditorialTheme';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HomeFeedArtwork, type HomeFeedIconName } from '../components/HomeFeedArtwork';
 import { NotificationArtwork } from '../components/NotificationArtwork';
@@ -142,6 +142,7 @@ function publishedAt(value?: string) {
 
 export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
   const { width: screenWidth, uiScale: designScale, horizontalPadding } = useResponsiveLayout();
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [news, setNews] = useState<AnnouncementItem[]>([]);
@@ -157,6 +158,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
   const knownNotificationIds = useRef<Set<number>>(new Set());
   const notificationsLoaded = useRef(false);
   const newLabelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notificationsLoading = useRef(false);
 
   const applyNotifications = useCallback((rows: NotificationItem[]) => {
     const nextRows = Array.isArray(rows) ? rows : [];
@@ -175,8 +177,14 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
   }, []);
 
   const loadNotifications = useCallback(async () => {
-    const response = await api.get('/reports/notifications/mine');
-    applyNotifications(response.data ?? []);
+    if (notificationsLoading.current || AppState.currentState !== 'active') return;
+    notificationsLoading.current = true;
+    try {
+      const response = await api.get('/reports/notifications/mine');
+      applyNotifications(response.data ?? []);
+    } finally {
+      notificationsLoading.current = false;
+    }
   }, [applyNotifications]);
 
   const refreshWeather = useCallback(async () => {
@@ -197,8 +205,9 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
   }, [applyNotifications, refreshWeather]);
 
   useEffect(() => {
+    if (!isFocused) return undefined;
     load().catch(() => {});
-    const timer = setInterval(() => loadNotifications().catch(() => {}), 2_000);
+    const timer = setInterval(() => loadNotifications().catch(() => {}), 10_000);
     const weatherTimer = setInterval(() => {
       const browserVisible = typeof document === 'undefined' || document.visibilityState === 'visible';
       if (AppState.currentState === 'active' && browserVisible) refreshWeather().catch(() => {});
@@ -227,7 +236,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
       }
       if (newLabelTimer.current) clearTimeout(newLabelTimer.current);
     };
-  }, [load, loadNotifications, refreshWeather]);
+  }, [isFocused, load, loadNotifications, refreshWeather]);
 
   const unreadCount = useMemo(
     () => notifications.filter((item) => !item.read_at).length,

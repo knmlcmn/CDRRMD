@@ -3,6 +3,8 @@ const pool = require('../config/db');
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 const PUSH_CHANNEL_ID = 'flood-emergency-v1';
 const MAX_BATCH_SIZE = 100;
+const PUSH_RETRY_INTERVAL = '2 minutes';
+let deliveryPromise = null;
 
 function isExpoPushToken(value) {
   return /^(ExponentPushToken|ExpoPushToken)\[[A-Za-z0-9_-]+\]$/.test(String(value || '').trim());
@@ -37,8 +39,8 @@ async function postExpoMessages(messages) {
   }
 }
 
-async function sendPendingFloodPushNotifications({ userId = null } = {}) {
-  const client = await pool.connect();
+async function performPendingFloodPushDelivery({ userId = null } = {}) {
+  let client = await pool.connect();
   let lockAcquired = false;
   try {
     const lock = await client.query("SELECT pg_try_advisory_lock(hashtext('flood_push_delivery')) AS acquired");
@@ -52,12 +54,13 @@ async function sendPendingFloodPushNotifications({ userId = null } = {}) {
        JOIN user_device_push_tokens t ON t.user_id = n.user_id AND t.is_active = TRUE
        WHERE n.category = 'flood_sensor'
          AND n.push_sent_at IS NULL
+         AND (n.push_attempted_at IS NULL OR n.push_attempted_at < NOW() - $2::interval)
          AND n.created_at >= NOW() - INTERVAL '24 hours'
          AND ($1::integer IS NULL OR n.user_id = $1)
        GROUP BY n.id
        ORDER BY n.created_at
        LIMIT 100`,
-      [userId],
+      [userId, PUSH_RETRY_INTERVAL],
     );
     if (!rows.length) return { sent: 0, pending: 0 };
 
@@ -66,6 +69,14 @@ async function sendPendingFloodPushNotifications({ userId = null } = {}) {
        WHERE id = ANY($1::integer[])`,
       [rows.map((row) => row.id)],
     );
+
+    // Do not reserve one of the two production Neon connections while the
+    // external Expo request is in flight (up to 12 seconds). The attempted-at
+    // lease prevents another serverless invocation from claiming this batch.
+    await client.query("SELECT pg_advisory_unlock(hashtext('flood_push_delivery'))");
+    lockAcquired = false;
+    client.release();
+    client = null;
 
     const deliveries = rows.flatMap((notification) => notification.push_tokens
       .filter(isExpoPushToken)
@@ -107,7 +118,7 @@ async function sendPendingFloodPushNotifications({ userId = null } = {}) {
     }
 
     if (invalidTokens.size) {
-      await client.query(
+      await pool.query(
         `UPDATE user_device_push_tokens
          SET is_active = FALSE, updated_at = NOW()
          WHERE expo_push_token = ANY($1::varchar[])`,
@@ -117,7 +128,7 @@ async function sendPendingFloodPushNotifications({ userId = null } = {}) {
 
     const successfulIds = Array.from(successfulNotificationIds);
     if (successfulIds.length) {
-      await client.query(
+      await pool.query(
         `UPDATE user_notifications
          SET push_sent_at = NOW(), push_error = NULL
          WHERE id = ANY($1::integer[])`,
@@ -126,16 +137,28 @@ async function sendPendingFloodPushNotifications({ userId = null } = {}) {
     }
     for (const [notificationId, pushError] of failedByNotification) {
       if (successfulNotificationIds.has(notificationId)) continue;
-      await client.query(
+      await pool.query(
         'UPDATE user_notifications SET push_error = $2 WHERE id = $1',
         [notificationId, pushError],
       );
     }
     return { sent: successfulIds.length, pending: rows.length - successfulIds.length };
   } finally {
-    if (lockAcquired) await client.query("SELECT pg_advisory_unlock(hashtext('flood_push_delivery'))").catch(() => {});
-    client.release();
+    if (client) {
+      if (lockAcquired) await client.query("SELECT pg_advisory_unlock(hashtext('flood_push_delivery'))").catch(() => {});
+      client.release();
+    }
   }
+}
+
+async function sendPendingFloodPushNotifications(options = {}) {
+  if (!deliveryPromise) {
+    deliveryPromise = performPendingFloodPushDelivery(options)
+      .finally(() => {
+        deliveryPromise = null;
+      });
+  }
+  return deliveryPromise;
 }
 
 module.exports = { isExpoPushToken, sendPendingFloodPushNotifications, PUSH_CHANNEL_ID };

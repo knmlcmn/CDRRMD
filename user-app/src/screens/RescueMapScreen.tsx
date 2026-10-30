@@ -16,7 +16,6 @@ import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import PlatformMap from '../components/PlatformMap';
-import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import { api, assignAuthBarangayFromLocation, setApiAuthorizationToken } from '../services/api';
 import { fetchBestRoadRoute, fetchRoadRoute } from '../services/routingService';
@@ -24,6 +23,7 @@ import { loadSession } from '../services/session';
 import { MAX_MAP_CONTENT_WIDTH, useResponsiveLayout } from '../utils/responsive';
 import { keepIfEqual } from '../utils/stableData';
 import { buildHardwareFloodRuntimeScript } from '../utils/waterLevelHazard';
+import { requireLiveLocation } from '../services/locationAccess';
 
 type Coordinate = { latitude: number; longitude: number };
 type EvacuationArea = {
@@ -394,6 +394,7 @@ function buildLeafletHtml(
       var legendControl = null;
       var legendToggleControl = null;
       var weatherTimelineData = null;
+      var weatherTimelineLoading = false;
       var weatherTimeframe = 'hour_0';
       var forecastTimebar = null;
 
@@ -557,6 +558,7 @@ function buildLeafletHtml(
       var userLayer = L.layerGroup();
       var routeLayer = L.layerGroup();
       var hardwareClimateByBarangay = {};
+      var rainImpactLoading = false;
       var hardwareClimateGeoJson = null;
 
       var cityWindSpeedKph=8,cityWindDirectionDegrees=225;
@@ -736,8 +738,9 @@ function buildLeafletHtml(
         track.appendChild(labels);track.appendChild(range);forecastTimebar.appendChild(track);var summary=document.createElement('div');summary.className='forecast-time-summary';forecastTimebar.appendChild(summary);map.getContainer().appendChild(forecastTimebar);updateForecastTimebar();
       }
       function loadWeatherTimeline(){
-        if(!data.windDataUrl)return;
-        fetch(data.windDataUrl).then(function(response){return response.ok?response.json():null;}).then(function(weather){if(!weather||!weather.frames)return;weatherTimelineData=weather;ensureForecastTimebar();applyWeatherTimeframe('hour_0');}).catch(function(){});
+        if(!data.windDataUrl||weatherTimelineData||weatherTimelineLoading)return;
+        weatherTimelineLoading=true;
+        fetch(data.windDataUrl).then(function(response){return response.ok?response.json():null;}).then(function(weather){if(!weather||!weather.frames)return;weatherTimelineData=weather;ensureForecastTimebar();applyWeatherTimeframe('hour_0');}).catch(function(){}).finally(function(){weatherTimelineLoading=false;});
       }
 
       function ensureRainCanvas(){
@@ -755,10 +758,11 @@ function buildLeafletHtml(
         var features=hardwareClimateGeoJson.features.filter(function(feature){var props=feature&&feature.properties?feature.properties:{};var key=normalizeHardwareBarangayName(props.barangay_name||props.barangayName||props.name);var reading=hardwareClimateByBarangay[key];var value=metric==='temperature'?reading&&reading.temperatureCelsius:reading&&reading.humidityPercentage;return value!=null&&Number.isFinite(Number(value));});
         L.geoJSON({type:'FeatureCollection',features:features},{interactive:false,style:function(feature){var props=feature&&feature.properties?feature.properties:{};var key=normalizeHardwareBarangayName(props.barangay_name||props.barangayName||props.name);var reading=hardwareClimateByBarangay[key]||{};var value=metric==='temperature'?reading.temperatureCelsius:reading.humidityPercentage;var color=scalarColor(Number(value));return{color:'transparent',weight:0,fill:true,fillColor:'rgb('+color[0]+','+color[1]+','+color[2]+')',fillOpacity:.58};},onEachFeature:function(_feature,layer){if(typeof layer.bringToBack==='function')layer.bringToBack();}}).addTo(hardwareClimateLayer);
       }
-      function updateRainEffectVisibility(){ensureRainCanvas();if(!rainCanvas)return;var enabled=Boolean(visibility.rainOverlay);rainCanvas.style.display=enabled?'block':'none';if(!enabled){if(rainCtx)rainCtx.clearRect(0,0,rainCanvas.width,rainCanvas.height);return;}renderRainAccumulationSurface();}
+      function updateRainEffectVisibility(){var enabled=Boolean(visibility.rainOverlay);if(enabled)ensureRainCanvas();if(!rainCanvas)return;rainCanvas.style.display=enabled?'block':'none';if(!enabled){if(rainCtx)rainCtx.clearRect(0,0,rainCanvas.width,rainCanvas.height);return;}renderRainAccumulationSurface();}
       function loadRainImpact(){
-        if(!data.rainImpactUrl)return;
-        fetch(data.rainImpactUrl).then(function(response){return response.ok?response.json():null;}).then(function(payload){var weather=payload&&payload.cityWeather?payload.cityWeather:{};var amount=Number(weather.rainIntensityMmPerHour);if(Number.isFinite(amount)&&!weatherTimelineData)rainAmountMm=amount;hardwareClimateByBarangay={};(Array.isArray(payload&&payload.barangayImpacts)?payload.barangayImpacts:[]).forEach(function(item){var key=normalizeHardwareBarangayName(item&&item.barangayName);if(key)hardwareClimateByBarangay[key]={temperatureCelsius:item.temperatureCelsius,humidityPercentage:item.humidityPercentage};});hardwareClimateGeoJson=payload&&payload.barangayOverlay&&Array.isArray(payload.barangayOverlay.features)?payload.barangayOverlay:null;renderHardwareClimateLayer();updateRainEffectVisibility();}).catch(function(){});
+        if(!data.rainImpactUrl||rainImpactLoading||hardwareClimateGeoJson)return;
+        rainImpactLoading=true;
+        fetch(data.rainImpactUrl).then(function(response){return response.ok?response.json():null;}).then(function(payload){var weather=payload&&payload.cityWeather?payload.cityWeather:{};var amount=Number(weather.rainIntensityMmPerHour);if(Number.isFinite(amount)&&!weatherTimelineData)rainAmountMm=amount;hardwareClimateByBarangay={};(Array.isArray(payload&&payload.barangayImpacts)?payload.barangayImpacts:[]).forEach(function(item){var key=normalizeHardwareBarangayName(item&&item.barangayName);if(key)hardwareClimateByBarangay[key]={temperatureCelsius:item.temperatureCelsius,humidityPercentage:item.humidityPercentage};});hardwareClimateGeoJson=payload&&payload.barangayOverlay&&Array.isArray(payload.barangayOverlay.features)?payload.barangayOverlay:null;renderHardwareClimateLayer();updateRainEffectVisibility();}).catch(function(){}).finally(function(){rainImpactLoading=false;});
       }
       var windColorStops = [
         { value: 0, color: [82, 111, 208, 218] }, { value: 5, color: [45, 174, 224, 224] },
@@ -839,9 +843,9 @@ function buildLeafletHtml(
       }
 
       function updateWindEffectVisibility() {
-        ensureWindCanvas();
-        if (!windCanvas) return;
         var enabled=Boolean(visibility.windOverlay);
+        if (enabled) ensureWindCanvas();
+        if (!windCanvas) return;
         windCanvas.style.display=enabled?'block':'none';
         if (!enabled) { if (windCtx) windCtx.clearRect(0,0,windCanvas.width,windCanvas.height); if (windAnimationFrame) { cancelAnimationFrame(windAnimationFrame); windAnimationFrame=null; } return; }
         renderWindBackground();
@@ -1227,6 +1231,9 @@ function buildLeafletHtml(
                 visibility[key] = !Boolean(visibility[key]);
               }
               normalizeDataLayerVisibility();
+              if (Boolean(visibility.rainOverlay)) { loadWeatherTimeline(); loadRainImpact(); }
+              if (Boolean(visibility.windOverlay)) loadWeatherTimeline();
+              if (Boolean(visibility.temperatureOverlay) || Boolean(visibility.humidityOverlay)) loadRainImpact();
               refreshLayerTiles();
               applyLayerVisibility();
               updateForecastTimebar();
@@ -1332,10 +1339,8 @@ function buildLeafletHtml(
       if (Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
       setInterval(function() {
         if (document.visibilityState === 'visible' && Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
-      }, 2000);
-      loadOsmWaterways();
-      loadWeatherTimeline();
-      loadRainImpact();
+      }, 5000);
+      window.setTimeout(loadOsmWaterways, 1200);
       renderBoundary();
       renderLayerControl();
       applyLayerVisibility();
@@ -1469,11 +1474,14 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       userMarker: true,
       route: true,
     };
-    let reportBarangay = '';
-    try {
-      const response = await assignAuthBarangayFromLocation(userLocation.latitude, userLocation.longitude);
-      reportBarangay = String(response.data?.barangayName || '').trim();
-    } catch {
+    const barangayRequest = assignAuthBarangayFromLocation(userLocation.latitude, userLocation.longitude)
+      .then((response) => String(response.data?.barangayName || '').trim())
+      .catch(() => '');
+    const areasRequest = evacuationAreas.length > 0
+      ? Promise.resolve(evacuationAreas)
+      : loadEvacuationAreas(true);
+    let [reportBarangay, latestAreas] = await Promise.all([barangayRequest, areasRequest]);
+    if (!reportBarangay) {
       // Test mode can use its configured session barangay; production must use
       // the exact barangay that contains the submitted location.
       if (testModeEnabled) {
@@ -1486,7 +1494,6 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       return;
     }
     setRescueBarangay(reportBarangay);
-    const latestAreas = await loadEvacuationAreas(true);
     if (!latestAreas.some((area) => !isAreaFull(area))) {
       showNotice('No available evacuation area', 'All evacuation centers are currently full. Please try again shortly.');
       return;
@@ -1514,7 +1521,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     } finally {
       setRoutingRecommendation(false);
     }
-  }, [loadEvacuationAreas, showNotice, userLocation]);
+  }, [evacuationAreas, loadEvacuationAreas, showNotice, testModeEnabled, userLocation]);
 
   useEffect(() => {
     if (!floodAlertRescueRequest || !userLocation
@@ -1562,27 +1569,16 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
   useEffect(() => {
     async function bootstrap() {
       setLoading(true);
-      await loadEvacuationAreas(true);
-
-      try {
-        const permission = await Location.requestForegroundPermissionsAsync();
-        if (permission.status === 'granted') {
-          const position = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-          });
-          setUserLocation({
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-          });
-        } else {
-          setUserLocation({ latitude: 14.2128, longitude: 121.1671 });
-        }
-      } catch {
+      const [, locationResult] = await Promise.allSettled([
+        loadEvacuationAreas(true),
+        requireLiveLocation(false),
+        loadRecentRescueRecords(),
+      ]);
+      if (locationResult.status === 'fulfilled' && locationResult.value.ok) {
+        setUserLocation(locationResult.value.location);
+      } else {
         setUserLocation({ latitude: 14.2128, longitude: 121.1671 });
       }
-
-      await loadRecentRescueRecords();
-
       setLoading(false);
     }
 
@@ -1903,7 +1899,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
         <Text style={st.pageTitle}>Request Rescue</Text>
         {/* Fullscreen map modal */}
-        <Modal visible={isMapFullscreen} animationType="fade" statusBarTranslucent onRequestClose={() => setIsMapFullscreen(false)}>
+        {isMapFullscreen ? <Modal visible animationType="fade" statusBarTranslucent onRequestClose={() => setIsMapFullscreen(false)}>
           <View style={{ flex: 1, backgroundColor: '#000' }}>
             <PlatformMap style={{ flex: 1 }} html={mapHtml} baseUrl={apiBaseUrl} onMessage={handleMapMessage} />
             {/* Exit fullscreen — bottom-right */}
@@ -1915,10 +1911,10 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
               <MaterialCommunityIcons name="fullscreen-exit" size={22} color="#fff" />
             </TouchableOpacity>
           </View>
-        </Modal>
+        </Modal> : null}
 
         <View style={st.mapContainer}>
-          <PlatformMap style={st.map} html={mapHtml} baseUrl={apiBaseUrl} onMessage={handleMapMessage} />
+          {!isMapFullscreen ? <PlatformMap style={st.map} html={mapHtml} baseUrl={apiBaseUrl} onMessage={handleMapMessage} /> : null}
           {/* Fullscreen enter — bottom-right */}
           <TouchableOpacity
             style={st.fsEnterBtn}
