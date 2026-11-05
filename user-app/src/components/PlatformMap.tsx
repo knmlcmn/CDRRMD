@@ -7,6 +7,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
+import { markInitializationEnd, markInitializationStart } from '../utils/performanceDiagnostics';
 
 type PlatformMapProps = {
   html: string;
@@ -29,6 +30,7 @@ export default function PlatformMap({
   const webViewRef = useRef<WebView>(null);
   const lastPostedMessageRef = useRef('');
   const initialHtmlRef = useRef(html);
+  const initializationMarkerRef = useRef(markInitializationStart('PlatformMap/WebView'));
   const renderedHtml = preserveState ? initialHtmlRef.current : html;
   const nativeSource = useMemo(
     () => (baseUrl ? { html: renderedHtml, baseUrl } : { html: renderedHtml }),
@@ -80,6 +82,12 @@ export default function PlatformMap({
     onMessage?.(event.nativeEvent.data);
   };
 
+  const handleLoaded = () => {
+    markInitializationEnd(initializationMarkerRef.current);
+    initializationMarkerRef.current = null;
+    postUpdate(true);
+  };
+
   if (Platform.OS === 'web') {
     return (
       <View style={[styles.container, style]}>
@@ -88,7 +96,7 @@ export default function PlatformMap({
           title="Rescue Map"
           srcDoc={renderedHtml}
           allow="geolocation"
-          onLoad={() => postUpdate(true)}
+          onLoad={handleLoaded}
           style={{
             width: '100%',
             height: '100%',
@@ -113,7 +121,7 @@ export default function PlatformMap({
         setBuiltInZoomControls={false}
         mixedContentMode="always"
         onMessage={handleNativeMessage}
-        onLoadEnd={() => postUpdate(true)}
+        onLoadEnd={handleLoaded}
         style={styles.webView}
       />
     </View>

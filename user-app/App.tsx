@@ -46,6 +46,12 @@ import {
   subscribeToPushTokenChanges,
   unregisterResidentPushNotifications,
 } from './src/services/pushNotifications';
+import {
+  logRuntimeDiagnostics,
+  markNavigationSettled,
+  markNavigationStart,
+  startJsStallMonitor,
+} from './src/utils/performanceDiagnostics';
 
 function isBlank(value?: string | null) {
   return !String(value ?? '').trim();
@@ -215,7 +221,10 @@ function UserTabBar({ state, navigation }: BottomTabBarProps) {
                 target: route.key,
                 canPreventDefault: true,
               });
-              if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
+              if (!focused && !event.defaultPrevented) {
+                markNavigationStart(route.name);
+                navigation.navigate(route.name);
+              }
             }}
           />
         );
@@ -244,6 +253,11 @@ function AppContent() {
   const [floodAlertRescueRequest, setFloodAlertRescueRequest] = useState<{ notificationId: number | null; requestedAt: number } | null>(null);
   const [locationChecking, setLocationChecking] = useState(false);
   const [locationGate, setLocationGate] = useState<{ message: string; activeSession: boolean } | null>(null);
+
+  useEffect(() => {
+    logRuntimeDiagnostics();
+    return startJsStallMonitor();
+  }, []);
   const [logoutConfirmationVisible, setLogoutConfirmationVisible] = useState(false);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const sessionRef = useRef<SessionData | null>(null);
@@ -617,7 +631,13 @@ function AppContent() {
 
   return (
     <View style={styles.appRoot}>
-      <NavigationContainer ref={navigationRef}>
+      <NavigationContainer
+        ref={navigationRef}
+        onStateChange={() => {
+          const routeName = navigationRef.getCurrentRoute()?.name;
+          if (routeName) markNavigationSettled(routeName);
+        }}
+      >
         <ResidentFloodAlert
           barangayName={session.user.barangayName ?? ''}
           onTestAccountRemoved={() => void performLogout()}

@@ -2,6 +2,7 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 import { NativeModules, Platform } from 'react-native';
 import { clearSession, loadSession, saveSession, SessionData } from './session';
+import { beginApiRequest, endApiRequest } from '../utils/performanceDiagnostics';
 
 function parseHost(value?: string | null) {
   // Accept either full URL or host:port values and normalize to host only.
@@ -123,6 +124,22 @@ export const api = axios.create({
   baseURL: `${baseHost}/api`,
   timeout: 15000,
 });
+
+api.interceptors.request.use((config) => {
+  (config as any).__performanceMarker = beginApiRequest(config.method, config.url);
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => {
+    endApiRequest((response.config as any).__performanceMarker, response.status, false);
+    return response;
+  },
+  (error) => {
+    endApiRequest((error?.config as any)?.__performanceMarker, error?.response?.status ?? null, true);
+    throw error;
+  },
+);
 
 const pendingGetRequests = new Map<string, Promise<unknown>>();
 const originalGet = api.get.bind(api);
