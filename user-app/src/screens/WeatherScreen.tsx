@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
+  FlatList,
   ImageBackground,
   ScrollView,
   StyleSheet,
@@ -46,6 +47,42 @@ type WeatherResponse = {
     precipitation_probability_max?: number[];
   };
 };
+
+type HourlyForecastRow = {
+  key: string;
+  timeLabel: string;
+  condition: string;
+  artworkName: ReturnType<typeof weatherIconFromCode>;
+  windLabel: string;
+  rainLabel: string;
+};
+
+const HourlyForecastCard = memo(function HourlyForecastCard({
+  item,
+  scale,
+}: {
+  item: HourlyForecastRow;
+  scale: number;
+}) {
+  return (
+    <View style={[st.hourCard, {
+      width: 68 * scale,
+      padding: 8 * scale,
+      marginRight: 5 * scale,
+      borderRadius: 8 * scale,
+    }]}>
+      <Text style={[st.hourTime, { fontSize: 6 * scale }]}>{item.timeLabel}</Text>
+      <View style={[st.hourCondition, { marginTop: 4 * scale }]}>
+        <WeatherConditionArtwork name={item.artworkName} scale={1.3 * scale} />
+      </View>
+      <Text style={[st.hourText, { fontSize: 6 * scale, marginTop: 3 * scale }]} numberOfLines={1}>
+        {item.condition}
+      </Text>
+      <Text style={[st.hourText, { fontSize: 5.5 * scale, marginTop: 4 * scale }]}>{item.windLabel}</Text>
+      <Text style={[st.hourText, { fontSize: 5.5 * scale }]}>{item.rainLabel}</Text>
+    </View>
+  );
+});
 
 function formatHour(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -95,13 +132,34 @@ export default function WeatherScreen() {
 
   const hourlyRows = useMemo(() => {
     const hourly = data?.hourly;
-    return (hourly?.time ?? []).slice(0, 168).map((time, index) => ({
-      time,
-      wind: hourly?.wind_speed_10m?.[index],
-      rain: hourly?.precipitation?.[index],
-      code: hourly?.weather_code?.[index],
-    }));
+    return (hourly?.time ?? []).slice(0, 168).map((time, index) => {
+      const code = hourly?.weather_code?.[index];
+      const wind = hourly?.wind_speed_10m?.[index];
+      const rain = hourly?.precipitation?.[index];
+      return {
+        key: `${time}-${index}`,
+        timeLabel: formatHour(time),
+        condition: getWeatherVisualByCode(code).condition,
+        artworkName: weatherIconFromCode(code),
+        windLabel: `Wind ${wind ?? '--'} km/h`,
+        rainLabel: `Rain ${rain ?? '--'} mm`,
+      };
+    });
   }, [data?.hourly]);
+
+  const hourlyCardExtent = 73 * scale;
+  const renderHourlyCard = useCallback(
+    ({ item }: { item: HourlyForecastRow }) => <HourlyForecastCard item={item} scale={scale} />,
+    [scale],
+  );
+  const getHourlyItemLayout = useCallback(
+    (_data: ArrayLike<HourlyForecastRow> | null | undefined, index: number) => ({
+      length: hourlyCardExtent,
+      offset: hourlyCardExtent * index,
+      index,
+    }),
+    [hourlyCardExtent],
+  );
 
   const dailyRows = useMemo(() => {
     const daily = data?.daily;
@@ -199,26 +257,19 @@ export default function WeatherScreen() {
           {hourlyRows.length > 0 ? (
             <>
               <Text style={[st.sectionTitle, { fontSize: 10 * scale, marginTop: 9 * scale, marginBottom: 4 * scale }]}>Hourly Wind and Rain</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 8 * scale }}>
-                {hourlyRows.map((hour) => (
-                  <View key={hour.time} style={[st.hourCard, {
-                    width: 68 * scale,
-                    padding: 8 * scale,
-                    marginRight: 5 * scale,
-                    borderRadius: 8 * scale,
-                  }]}>
-                    <Text style={[st.hourTime, { fontSize: 6 * scale }]}>{formatHour(hour.time)}</Text>
-                    <View style={[st.hourCondition, { marginTop: 4 * scale }]}>
-                      <WeatherConditionArtwork name={weatherIconFromCode(hour.code)} scale={1.3 * scale} />
-                    </View>
-                    <Text style={[st.hourText, { fontSize: 6 * scale, marginTop: 3 * scale }]} numberOfLines={1}>
-                      {getWeatherVisualByCode(hour.code).condition}
-                    </Text>
-                    <Text style={[st.hourText, { fontSize: 5.5 * scale, marginTop: 4 * scale }]}>Wind {hour.wind ?? '--'} km/h</Text>
-                    <Text style={[st.hourText, { fontSize: 5.5 * scale }]}>Rain {hour.rain ?? '--'} mm</Text>
-                  </View>
-                ))}
-              </ScrollView>
+              <FlatList
+                horizontal
+                data={hourlyRows}
+                renderItem={renderHourlyCard}
+                keyExtractor={(item) => item.key}
+                getItemLayout={getHourlyItemLayout}
+                initialNumToRender={6}
+                maxToRenderPerBatch={6}
+                windowSize={5}
+                removeClippedSubviews
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 8 * scale }}
+              />
             </>
           ) : null}
 
