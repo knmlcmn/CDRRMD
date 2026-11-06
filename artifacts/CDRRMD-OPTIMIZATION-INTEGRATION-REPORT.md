@@ -107,3 +107,73 @@ The following staging changes were not integrated because they alter business be
 ## Next recommended optimization
 
 Run an instrumented physical-device session that records WebView process memory, JS/UI frame timing, evacuation endpoint request counts, and OSRM request counts while repeatedly entering/leaving Request Rescue and completing a representative rescue form. If parity holds, evaluate a narrowly scoped polling cadence change separately, with freshness acceptance criteria defined before implementation.
+
+## Rescuer Portal and backend efficiency pass
+
+### Investigation findings
+
+- The portal shell and Flood Monitoring screen already share one reference-counted water-sensor poller. A second Firebase/hardware polling loop was not found.
+- Assignments polling already has an in-flight guard, retains its five-second cadence, and loads active assignments plus weekly history concurrently.
+- Responder GPS publishing and portal presence heartbeat are separate 15-second responsibilities. Both update presence, but safely coalescing them would require waiting or a freshness window that can change heartbeat timing during a hung request or tab transition.
+- Assignment and new-assignment OSRM effects ignored stale results but did not abort superseded network requests.
+- The regular assignment map remained mounted underneath the fullscreen map.
+- The new-assignment map rebuilt its complete HTML string for every GPS/route update even though `PlatformMap` already preserves its initial document and accepts live update messages.
+- The backend location endpoint intentionally holds an atomic transaction across assignment locks, pickup, capacity validation, rerouting, status logs, and notifications. The staging rewrite changes sequencing and fallback parameters, so it is not parity-safe.
+- The production PostgreSQL pool is already bounded and environment-configurable (`2` connections on Vercel by default, `10` elsewhere), with configurable idle and connection timeouts.
+
+### Optimizations integrated
+
+- Assignment-route and new-assignment-route effects now pass `AbortSignal` to the existing routing service and abort only superseded/unmounted requests. Trigger dependencies, OSRM inputs, fallback display, and refresh frequency are unchanged.
+- The selected new-assignment lookup is memoized across GPS-only renders.
+- The new-assignment map uses a stable initial HTML document; live responder position and route changes continue through the existing `rescue-map-update` message.
+- The regular map WebView unmounts while its fullscreen replacement is active and remounts from current React state when fullscreen closes.
+- Added offline backend contract tests that guard atomic responder transitions, cross-barangay fallback, presence rules, and pool configuration. Backend runtime implementation and API contracts were not changed.
+
+### Optimizations blocked
+
+- Staging route-distance/time throttling is **BLOCKED** because it suppresses some production route refreshes and changes data freshness.
+- Heartbeat/GPS request coalescing is **BLOCKED** because a hung GPS request can delay presence heartbeat, while a time-window alternative changes freshness after leaving Assignments.
+- Moving OSRM/capacity preparation outside the backend location transaction is **BLOCKED** because it changes assignment/capacity sequencing and cross-barangay fallback behavior.
+- Combining active assignments and weekly history into a new endpoint is **BLOCKED** because it changes the existing API contract.
+- Caching assignment or history responses is **BLOCKED** because equivalent five-second freshness was not proven.
+- Pool instrumentation from staging was not integrated: it adds observability, not a measured pool-pressure reduction, and depends on additional staging-only modules.
+
+### Files modified in this pass
+
+- `user-app/src/rescuer/screens/AssignmentsScreen.tsx`
+- `backend/package.json`
+- `backend/tests/rescuerProductionContracts.test.js`
+- `artifacts/CDRRMD-OPTIMIZATION-INTEGRATION-REPORT.md`
+
+### Validation
+
+- Mobile offline tests: **15/15 PASS**.
+- Backend offline contract tests: **3/3 PASS**.
+- TypeScript compilation: **PASS**.
+- Existing rescue routing regression tests: **PASS**.
+- Rescuer source lifecycle checks: **PASS** (regular map excluded during fullscreen; both route effects abort on cleanup).
+- Backend JavaScript syntax checks: **PASS**.
+- Source diff check against the preserved production baseline: **PASS**.
+- No polling interval, API path, authentication/permission check, assignment query, location update, status transition, notification write, or database pool runtime setting changed.
+
+### Functional parity
+
+- Barangay assignment and CDRRMD backup escalation remain unchanged.
+- Rescuer occupied/available selection and the 45-second online eligibility rule remain unchanged.
+- Pickup, reroute, in-progress, arrival, and resolved transitions remain unchanged.
+- Barangay Portal arrival confirmation remains unchanged.
+- GPS watcher, 10-second web location refresh, 15-second server location refresh, 15-second portal heartbeat, and five-second assignment/history refresh remain unchanged.
+- Notification behavior, API response shapes, authentication, permissions, evacuation eligibility, and cross-barangay fallback remain unchanged.
+
+### Measured results and expected effects
+
+- Measured here: test outcomes, compilation, syntax validation, and source-level request/lifecycle assertions only.
+- Expected but not device-measured: fewer obsolete OSRM requests completing, one fewer retained WebView during fullscreen, and less repeated HTML-string generation during GPS updates.
+- No latency, memory, battery, database-load, or frame-rate improvement is claimed without controlled device/backend measurements.
+
+### Remaining risks and staging readiness
+
+- Abort effectiveness depends on the platform fetch implementation; stale results remain guarded even if transport cancellation is delayed.
+- Closing fullscreen recreates the regular map document and may reset transient Leaflet-only viewport/popup state; assignment, route, and location state are retained in React.
+- Static backend contract tests do not replace database-backed integration tests.
+- The source is ready for a controlled staging APK test cycle, but no APK was built or installed in this pass. Device testing should verify assignment alerts, dispatch, live GPS routing, automatic pickup, evacuation reroute, fullscreen transitions, arrival confirmation, and notification delivery before promotion.

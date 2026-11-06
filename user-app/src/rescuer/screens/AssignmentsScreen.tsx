@@ -178,14 +178,25 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     if (!location || !destination) {
       setRoute({ routeCoordinates: [], distanceKm: null, etaMinutes: null });
-      return () => { active = false; };
+      return () => {
+        active = false;
+        controller.abort();
+      };
     }
-    fetchRoadRoute(location, destination, true)
+    fetchRoadRoute(location, destination, true, 1, controller.signal)
       .then((result) => { if (active) setRoute(result); })
-      .catch(() => { if (active) setRoute({ routeCoordinates: [location, destination], distanceKm: null, etaMinutes: null }); });
-    return () => { active = false; };
+      .catch((caught: any) => {
+        if (active && caught?.name !== 'AbortError') {
+          setRoute({ routeCoordinates: [location, destination], distanceKm: null, etaMinutes: null });
+        }
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [destination, location]);
 
   const buildAssignmentMapHtml = useCallback((fullscreen: boolean) => buildCalambaMapHtml(
@@ -265,7 +276,10 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
     recenterRequestId,
   }), [destination, incidentPoints, location, recenterRequestId, role, route.routeCoordinates, selected]);
 
-  const newAssignment = assignments.find((item) => !item.responder_acknowledged_at && item.backup_request_id !== dismissedAlertId) || null;
+  const newAssignment = useMemo(
+    () => assignments.find((item) => !item.responder_acknowledged_at && item.backup_request_id !== dismissedAlertId) || null,
+    [assignments, dismissedAlertId],
+  );
   const alertDestination = useMemo<Coordinate | null>(() => {
     if (!newAssignment) return null;
     const latitude = Number(newAssignment.reported_latitude ?? newAssignment.latitude);
@@ -275,14 +289,25 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     if (!location || !alertDestination) {
       setAlertRoute({ routeCoordinates: [], distanceKm: null, etaMinutes: null });
-      return () => { active = false; };
+      return () => {
+        active = false;
+        controller.abort();
+      };
     }
-    fetchRoadRoute(location, alertDestination, true)
+    fetchRoadRoute(location, alertDestination, true, 1, controller.signal)
       .then((result) => { if (active) setAlertRoute(result); })
-      .catch(() => { if (active) setAlertRoute({ routeCoordinates: [location, alertDestination], distanceKm: null, etaMinutes: null }); });
-    return () => { active = false; };
+      .catch((caught: any) => {
+        if (active && caught?.name !== 'AbortError') {
+          setAlertRoute({ routeCoordinates: [location, alertDestination], distanceKm: null, etaMinutes: null });
+        }
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [alertDestination, location]);
 
   const focusKey = selected ? `${selected.backup_request_id}:${Boolean(selected.responder_acknowledged_at)}:${Boolean(selected.picked_up_at)}:${selected.evacuation_area_id || ''}` : '';
@@ -302,7 +327,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
   }, [focusKey, location]);
 
   const alertMapHtml = useMemo(() => buildCalambaMapHtml(
-    [], location, alertRoute.routeCoordinates, alertDestination,
+    [], initialMapLocation, [], alertDestination,
     newAssignment?.report_code || null,
     alertDestination && newAssignment ? [{ reportCode: newAssignment.report_code, ...alertDestination, status: 'pending', reportType: 'rescue' }] : [],
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/flood-risk/calamba/barangays`,
@@ -318,7 +343,20 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
       showForecastTimeline: false,
       showForecastLayers: false,
     },
-  ), [alertDestination, alertRoute.routeCoordinates, location, newAssignment, role]);
+  ), [alertDestination, initialMapLocation, newAssignment, role]);
+
+  const alertMapUpdate = useMemo(() => newAssignment ? ({
+    type: 'rescue-map-update',
+    responderLocation: location,
+    routeCoordinates: alertRoute.routeCoordinates,
+    incidentLocation: alertDestination,
+    selectedReportCode: newAssignment.report_code,
+    incidentPoints: alertDestination
+      ? [{ reportCode: newAssignment.report_code, ...alertDestination, status: 'pending', reportType: 'rescue' }]
+      : [],
+    pickedUp: false,
+    responderKind: role === 'barangay_rescuer' ? 'barangay' : 'cddrmd',
+  }) : null, [alertDestination, alertRoute.routeCoordinates, location, newAssignment, role]);
 
   async function dispatch(item: Assignment) {
     if (busy || !locationRef.current) return;
@@ -346,12 +384,12 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
         <View style={styles.statusItem}><MaterialCommunityIcons name="radio-tower" size={20} color={rescuerColors.blue} /><View><Text style={styles.statusLabel}>ASSIGNMENTS</Text><Text style={styles.statusValue}>{assignments.length} active</Text></View></View>
       </View>
       <View style={styles.mapCard}>
-        {areasLoaded && location ? <PlatformMap
+        {!mapFullscreen && areasLoaded && location ? <PlatformMap
           html={mapHtml}
           baseUrl={mapBaseUrl}
           preserveState
           updateMessage={mapUpdate}
-        /> : <EmptyState loading message={areasLoaded ? 'Waiting for your current location…' : 'Loading rescue map…'} />}
+        /> : mapFullscreen ? <View style={styles.mapPlaceholder} /> : <EmptyState loading message={areasLoaded ? 'Waiting for your current location…' : 'Loading rescue map…'} />}
         <TouchableOpacity accessibilityLabel="Open map full screen" onPress={() => { setForecastOverlayVisible(false); setMapFullscreen(true); }} style={styles.fullscreenButton}>
           <MaterialCommunityIcons name="fullscreen" size={22} color="#ffffff" />
         </TouchableOpacity>
@@ -417,7 +455,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
             <DetailRow label="Barangay" value={newAssignment.assigned_barangay} />
             <DetailRow label="Evacuation" value={newAssignment.evacuation_area_name || 'Nearest available center'} />
             <DetailRow label="Shortest route" value={alertRoute.distanceKm != null && alertRoute.etaMinutes != null ? `${alertRoute.distanceKm.toFixed(2)} km · about ${alertRoute.etaMinutes} min` : 'Calculating…'} />
-            {location && alertDestination ? <View style={styles.alertMap}><PlatformMap key={newAssignment.backup_request_id} html={alertMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={{ type: 'rescue-map-update', responderLocation: location, routeCoordinates: alertRoute.routeCoordinates, incidentLocation: alertDestination, selectedReportCode: newAssignment.report_code, incidentPoints: [{ reportCode: newAssignment.report_code, ...alertDestination, status: 'pending', reportType: 'rescue' }], pickedUp: false, responderKind: role === 'barangay_rescuer' ? 'barangay' : 'cddrmd' }} /></View> : <View style={styles.alertMap}><EmptyState loading message="Waiting for GPS…" /></View>}
+            {location && alertDestination ? <View style={styles.alertMap}><PlatformMap key={newAssignment.backup_request_id} html={alertMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={alertMapUpdate} /></View> : <View style={styles.alertMap}><EmptyState loading message="Waiting for GPS…" /></View>}
             <Text style={styles.modalCode}>{newAssignment.report_code}</Text>
             <View style={styles.modalActions}>
               <PrimaryButton disabled={busy || !location} label={busy ? 'Confirming…' : location ? 'Confirm Dispatch' : 'Waiting for GPS…'} onPress={() => void dispatch(newAssignment)} />
@@ -440,6 +478,7 @@ const styles = StyleSheet.create({
   statusLabel: { color: rescuerColors.muted, fontSize: 8, lineHeight: 11, fontWeight: '900', letterSpacing: 0.8 },
   statusValue: { color: rescuerColors.ink, fontSize: 12, lineHeight: 16, fontWeight: '900' },
   mapCard: { height: 370, overflow: 'hidden', borderRadius: 18, borderWidth: 1, borderColor: rescuerColors.border, backgroundColor: '#dbe5eb', shadowColor: '#0b2e4e', shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  mapPlaceholder: { flex: 1, backgroundColor: '#dbe5eb' },
   fullscreenButton: { position: 'absolute', right: 12, bottom: 12, width: 42, height: 42, borderRadius: 9, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(18,49,75,0.94)', alignItems: 'center', justifyContent: 'center' },
   fullscreenMap: { flex: 1, backgroundColor: '#0f172a' },
   fullscreenClose: { position: 'absolute', right: 14, bottom: 14, width: 46, height: 46, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)', backgroundColor: 'rgba(18,49,75,0.96)', alignItems: 'center', justifyContent: 'center' },
