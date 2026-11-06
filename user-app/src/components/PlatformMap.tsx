@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   Platform,
   StyleProp,
@@ -18,7 +18,7 @@ type PlatformMapProps = {
   updateMessage?: object | null;
 };
 
-export default function PlatformMap({
+function PlatformMap({
   html,
   baseUrl,
   style,
@@ -127,6 +127,8 @@ export default function PlatformMap({
     </View>
   );
 }
+
+export default memo(PlatformMap);
 
 const styles = StyleSheet.create({
   container: {

@@ -14,7 +14,7 @@ import { AppText as Text, AppTextInput as TextInput } from '../components/Typogr
 import { DashboardHeader } from '../components/DashboardHeader';
 import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import PlatformMap from '../components/PlatformMap';
 import * as ImagePicker from 'expo-image-picker';
 import { api, assignAuthBarangayFromLocation, setApiAuthorizationToken } from '../services/api';
@@ -24,6 +24,7 @@ import { MAX_MAP_CONTENT_WIDTH, useResponsiveLayout } from '../utils/responsive'
 import { keepIfEqual } from '../utils/stableData';
 import { buildHardwareFloodRuntimeScript } from '../utils/waterLevelHazard';
 import { requireLiveLocation } from '../services/locationAccess';
+import { createSingleFlight } from '../utils/singleFlight';
 
 type Coordinate = { latitude: number; longitude: number };
 type EvacuationArea = {
@@ -1365,6 +1366,7 @@ function buildLeafletHtml(
 export default function RescueMapScreen({ testModeEnabled = false, floodAlertRescueRequest = null }: Props) {
   const { showNotice, noticeModal } = useNoticeModal();
   const navigation = useNavigation<any>();
+  const isScreenFocused = useIsFocused();
   const { isSmall, horizontalPadding, uiScale } = useResponsiveLayout(MAX_MAP_CONTENT_WIDTH);
   const [userLocation, setUserLocation] = useState<Coordinate | null>(null);
   const [requestStarted, setRequestStarted] = useState(false);
@@ -1398,10 +1400,11 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
   });
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const recordSyncInFlightRef = useRef(false);
+  const [evacuationLoad] = useState(() => createSingleFlight<EvacuationArea[]>());
   const appliedRoadPlanAreaIdRef = useRef<EvacuationArea['id'] | null>(null);
   const handledFloodAlertRequestRef = useRef<number | null>(null);
 
-  const loadEvacuationAreas = useCallback(async (updateMap = true) => {
+  const fetchEvacuationAreas = useCallback(async (updateMap = true) => {
     try {
       const areasResult = await api.get('/content/evacuation-areas').then((res) => res.data);
       if (!Array.isArray(areasResult) || areasResult.length === 0) {
@@ -1456,6 +1459,15 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       return [];
     }
   }, []);
+
+  const loadEvacuationAreas = useCallback((updateMap = true, coalesce = true) => {
+    const load = () => fetchEvacuationAreas(updateMap);
+    return coalesce ? evacuationLoad.run(load) : load();
+  }, [evacuationLoad, fetchEvacuationAreas]);
+
+  useEffect(() => {
+    if (!isScreenFocused) setIsMapFullscreen(false);
+  }, [isScreenFocused]);
 
   const beginRescueRequest = useCallback(async () => {
     if (!userLocation) {
@@ -1632,12 +1644,13 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     }
 
     let active = true;
+    const controller = new AbortController();
     setRoutingRecommendation(true);
 
     fetchRoadRoute(userLocation, {
       latitude: selectedArea.latitude,
       longitude: selectedArea.longitude,
-    }, true, 3)
+    }, true, 3, controller.signal)
       .then((road) => {
         if (!active) {
           return;
@@ -1670,6 +1683,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
 
     return () => {
       active = false;
+      controller.abort();
     };
   }, [requestStarted, selectedArea?.id, selectedArea?.latitude, selectedArea?.longitude, showNotice, userLocation]);
 
@@ -1722,7 +1736,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     }
   }
 
-  async function handleMapMessage(data: string) {
+  const handleMapMessage = useCallback((data: string) => {
     try {
       const payload = JSON.parse(data) as {
         type?: string;
@@ -1740,7 +1754,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     } catch {
       // Ignore malformed messages from the map.
     }
-  }
+  }, []);
 
   async function handleSubmitRescue() {
     const hasVerifiedAlertProof = Number.isInteger(floodAlertNotificationId);
@@ -1748,7 +1762,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       return;
     }
 
-    const latestAreas = await loadEvacuationAreas(true);
+    const latestAreas = await loadEvacuationAreas(true, false);
     const refreshedSelected = latestAreas.find((area) => area.id === selectedArea.id) || selectedArea;
 
     const hasLocalCapacity = latestAreas.some((area) =>
@@ -1840,7 +1854,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       if (errorCode === 'NO_AVAILABLE_EVACUATION_AREA' && userLocation) {
         setRoutingRecommendation(true);
         try {
-          const refreshedAreas = await loadEvacuationAreas(true);
+          const refreshedAreas = await loadEvacuationAreas(true, false);
           const replacementPlan = await resolveBestRoadPlan(userLocation, refreshedAreas, rescueBarangay, peopleCount);
           if (replacementPlan) {
             applyRoadPlan(replacementPlan);
@@ -1899,7 +1913,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
         <Text style={st.pageTitle}>Request Rescue</Text>
         {/* Fullscreen map modal */}
-        {isMapFullscreen ? <Modal visible animationType="fade" statusBarTranslucent onRequestClose={() => setIsMapFullscreen(false)}>
+        {isScreenFocused && isMapFullscreen ? <Modal visible animationType="fade" statusBarTranslucent onRequestClose={() => setIsMapFullscreen(false)}>
           <View style={{ flex: 1, backgroundColor: '#000' }}>
             <PlatformMap style={{ flex: 1 }} html={mapHtml} baseUrl={apiBaseUrl} onMessage={handleMapMessage} />
             {/* Exit fullscreen — bottom-right */}
@@ -1914,7 +1928,9 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
         </Modal> : null}
 
         <View style={st.mapContainer}>
-          {!isMapFullscreen ? <PlatformMap style={st.map} html={mapHtml} baseUrl={apiBaseUrl} onMessage={handleMapMessage} /> : null}
+          {isScreenFocused && !isMapFullscreen
+            ? <PlatformMap style={st.map} html={mapHtml} baseUrl={apiBaseUrl} onMessage={handleMapMessage} />
+            : <View style={st.map} />}
           {/* Fullscreen enter — bottom-right */}
           <TouchableOpacity
             style={st.fsEnterBtn}

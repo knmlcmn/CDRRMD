@@ -25,13 +25,17 @@ function isPracticalRoadSnap(waypoint: OsrmWaypoint | undefined) {
   return Number.isFinite(distance) && distance <= MAX_ROAD_SNAP_DISTANCE_METERS;
 }
 
-async function fetchRoutingResponse(url: string) {
+async function fetchRoutingResponse(url: string, externalSignal?: AbortSignal) {
   const controller = new AbortController();
+  const abortFromExternalSignal = () => controller.abort();
+  if (externalSignal?.aborted) controller.abort();
+  externalSignal?.addEventListener('abort', abortFromExternalSignal, { once: true });
   const timeout = setTimeout(() => controller.abort(), ROUTING_TIMEOUT_MS);
   try {
     return await fetch(url, { signal: controller.signal });
   } finally {
     clearTimeout(timeout);
+    externalSignal?.removeEventListener('abort', abortFromExternalSignal);
   }
 }
 
@@ -40,6 +44,7 @@ export async function fetchRoadRoute(
   to: Coordinate,
   includeGeometry: boolean,
   minEtaMinutes = 1,
+  signal?: AbortSignal,
 ): Promise<OsrmRoute> {
   // Geometry is optional so screens can request lighter responses when paths are not needed.
   const geometryParams = includeGeometry ? 'overview=full&geometries=geojson' : 'overview=false';
@@ -47,7 +52,7 @@ export async function fetchRoadRoute(
     `${OSRM_BASE_URL}/route/v1/driving/${from.longitude},${from.latitude};` +
     `${to.longitude},${to.latitude}?${geometryParams}&alternatives=false&steps=false`;
 
-  const response = await fetchRoutingResponse(url);
+  const response = await fetchRoutingResponse(url, signal);
   if (!response.ok) {
     throw new Error(`OSRM ${response.status}`);
   }
@@ -84,6 +89,7 @@ export async function fetchBestRoadRoute(
   from: Coordinate,
   destinations: RoadRouteDestination[],
   minEtaMinutes = 1,
+  signal?: AbortSignal,
 ): Promise<BestRoadRoute | null> {
   if (destinations.length === 0) {
     return null;
@@ -97,7 +103,7 @@ export async function fetchBestRoadRoute(
     `${OSRM_BASE_URL}/table/v1/driving/${coordinates}` +
     `?sources=0&destinations=${destinationIndexes}&annotations=distance,duration`;
 
-  const response = await fetchRoutingResponse(url);
+  const response = await fetchRoutingResponse(url, signal);
   if (!response.ok) {
     throw new Error(`OSRM table ${response.status}`);
   }
@@ -146,7 +152,7 @@ export async function fetchBestRoadRoute(
     return null;
   }
 
-  const route = await fetchRoadRoute(from, best.destination, true, minEtaMinutes);
+  const route = await fetchRoadRoute(from, best.destination, true, minEtaMinutes, signal);
   if (route.routeCoordinates.length < 2) {
     return null;
   }
