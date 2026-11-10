@@ -22,8 +22,8 @@ Set these environment variables in Vercel:
 - `NODE_ENV=production`
 - `SEED_DEFAULT_ACCOUNTS` should remain unset/false in production
 - `DB_SSL=true` when required by the provider
-- Leave `INITIALIZE_DATABASE_ON_COLD_START` unset. Database migrations now run
-  once during the Vercel build, before the new serverless deployment becomes active.
+- The serverless entrypoint does not initialize or migrate the database during
+  request cold starts.
 
 Do not use the local `backend/.env` in production.
 
@@ -37,13 +37,15 @@ address as `SMTP_USER`, and a Google App Password as `SMTP_PASS`. Never use the
 normal Gmail password or expose any SMTP/JWT/OTP secret to the `user-app`
 project as an `EXPO_PUBLIC_*` variable.
 
-The backend's `vercel-build` script applies idempotent schema updates on every
-deployment. A migration failure stops the deployment instead of publishing API
-code that is incompatible with the current database. Normal API cold starts do
-not run migrations, so request latency remains low.
+The backend's `vercel-build` script validates deployment configuration without
+connecting to or modifying the database. Database initialization and migrations
+must be run separately with `npm run migrate` only during an explicitly
+authorized database-change procedure. That command can perform schema and data
+repairs, so take a current backup and review the migration impact before running
+it. Normal Vercel builds and API cold starts do not run migrations.
 
-The same build validates the production database, authentication, OTP, email,
-and CORS configuration before migration. After deployment, open
+The same build validates that database, authentication, OTP, email, and CORS
+settings are present, without opening a database connection. After deployment, open
 `https://YOUR-BACKEND.vercel.app/api/ready`; every item under `configuration`
 must be `true` before testing registration.
 

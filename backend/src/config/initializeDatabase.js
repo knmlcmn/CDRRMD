@@ -3,9 +3,9 @@ const initDb = require('./initDb');
 let initializationPromise;
 
 /**
- * Run idempotent schema setup once per Node process. This works for both the
- * local server and Vercel cold starts, where app.listen() is not responsible
- * for application startup.
+ * Run schema setup once per Node process when explicitly requested by the
+ * local server or migration command. The Vercel request entrypoint does not
+ * call this function.
  */
 function initializeDatabase() {
   if (!initializationPromise) {

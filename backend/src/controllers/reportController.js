@@ -159,7 +159,6 @@ async function createReport(req, res) {
     imageBase64,
     fullName,
     contactNumber,
-    testModeBypassServiceArea,
     floodAlertNotificationId,
   } = req.body || {};
 
@@ -248,20 +247,11 @@ async function createReport(req, res) {
     return res.status(404).json({ message: 'User not found.' });
   }
 
-  const serviceAreaBypassEnabled =
-    normalizedType === 'rescue' &&
-    testModeBypassServiceArea === true;
   const locationBarangay = resolveBarangayAtLocation(lat, lon);
-  const supportedLocationBarangay = isSupportedBarangay(locationBarangay) ? locationBarangay : null;
-  const nearestTestBarangay = serviceAreaBypassEnabled
-    ? resolveNearbyBarangayAtLocation(lat, lon, FLOOD_ALERT_BARANGAYS, Number.POSITIVE_INFINITY)?.name
-    : null;
-  // Test mode uses the account's configured test barangay so that the mobile
-  // recommendation and server-side barangay-only center rule stay aligned.
-  const configuredTestBarangay = serviceAreaBypassEnabled && isSupportedBarangay(user.barangay_name)
-    ? user.barangay_name
-    : null;
-  const serviceAreaBarangay = supportedLocationBarangay || configuredTestBarangay || nearestTestBarangay || null;
+  // Rescue jurisdiction always comes from the submitted GPS coordinates.
+  // Never allow an untrusted request field or stored profile barangay to
+  // substitute for authoritative boundary validation.
+  const serviceAreaBarangay = isSupportedBarangay(locationBarangay) ? locationBarangay : null;
   if (!serviceAreaBarangay) {
     return res.status(422).json({
       message: 'This location is outside the supported barangay jurisdiction. The report cannot be submitted.',
