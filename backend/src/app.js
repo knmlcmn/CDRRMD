@@ -159,6 +159,7 @@ app.use((err, req, res, next) => {
   if (err?.status) {
     return res.status(err.status).json({
       ...(err.code ? { code: err.code } : {}),
+      ...(err.field ? { field: err.field } : {}),
       message: err.message,
     });
   }

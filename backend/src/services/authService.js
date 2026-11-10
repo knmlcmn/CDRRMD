@@ -14,6 +14,7 @@ const { SUPPORTED_BARANGAYS: RESIDENT_BARANGAYS, normalizeBarangayName } = requi
 const { resolveBarangayAtLocation } = require('./barangayBoundaryService');
 const emailOtpService = require('./emailOtpService');
 const { sendAccountCredentialsEmail } = require('./emailService');
+const { validateProfileUpdate } = require('./profileValidation');
 
 const ACCOUNT_ROLES = Object.freeze({
   ADM: 'admin',
@@ -51,6 +52,12 @@ async function persistRefreshToken(client, userId, refreshToken) {
 
 async function register(payload) {
   const { username, email, password, firstName, lastName, address, houseNumber, streetAddress, barangayName, contactNumber, otp } = payload || {};
+  const normalizedFirstName = String(firstName ?? '').trim();
+  const normalizedLastName = String(lastName ?? '').trim();
+
+  if (!normalizedFirstName || !normalizedLastName) {
+    throw httpError(400, 'First name and last name are required.');
+  }
 
   if (!email || !password) {
     throw httpError(400, 'Email and password are required.');
@@ -95,8 +102,8 @@ async function register(payload) {
   const user = await userModel.createUser({
     username: finalUsername,
     email: trimmedEmail,
-    firstName: String(firstName || '').trim() || null,
-    lastName: String(lastName || '').trim() || null,
+    firstName: normalizedFirstName,
+    lastName: normalizedLastName,
     address: finalAddress,
     contactNumber: normalizedContactNumber || null,
     passwordHash,
@@ -308,15 +315,25 @@ async function updateMe(userId, payload) {
     throw httpError(401, 'Invalid token payload.');
   }
 
-  const { firstName, lastName, email, address, contactNumber, profileImage } = payload || {};
+  const currentUser = await userModel.findPublicUserById(userId);
+  if (!currentUser) {
+    throw httpError(404, 'User not found.');
+  }
+
+  const { profile, errors, isValid } = validateProfileUpdate(payload, currentUser);
+  if (!isValid) {
+    const field = Object.keys(errors)[0];
+    const error = httpError(400, errors[field], 'PROFILE_VALIDATION_FAILED');
+    error.field = field;
+    throw error;
+  }
+
+  const { profileImage } = payload || {};
   const nextProfileImage = profileImage === undefined ? undefined : String(profileImage).trim();
   if (nextProfileImage !== undefined && (!/^data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=]+$/i.test(nextProfileImage) || nextProfileImage.length > 4 * 1024 * 1024)) {
     throw httpError(400, 'Please provide a valid profile image smaller than 3 MB.');
   }
-  const nextEmail = String(email || '').trim().toLowerCase() || null;
-  if (nextEmail && !nextEmail.includes('@')) {
-    throw httpError(400, 'Please provide a valid email address.');
-  }
+  const nextEmail = profile.email;
 
   if (nextEmail) {
     const duplicate = await userModel.findDuplicateEmailForUser(nextEmail, userId);
@@ -325,16 +342,12 @@ async function updateMe(userId, payload) {
     }
   }
 
-  const currentUser = await userModel.findPublicUserById(userId);
-  if (!currentUser) {
-    throw httpError(404, 'User not found.');
-  }
   const user = await userModel.updateMyProfile(userId, {
-    firstName: String(firstName || '').trim() || null,
-    lastName: String(lastName || '').trim() || null,
+    firstName: profile.firstName,
+    lastName: profile.lastName,
     email: nextEmail,
-    address: String(address || '').trim() || null,
-    contactNumber: String(contactNumber || '').trim() || null,
+    address: profile.address,
+    contactNumber: profile.contactNumber,
     profileImage: nextProfileImage,
   });
 
