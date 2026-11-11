@@ -1,21 +1,29 @@
 import { InteractionManager } from 'react-native';
 import * as Updates from 'expo-updates';
+import {
+  beginPerformanceStage,
+  configurePerformanceDiagnostics,
+  emitPerformanceEvent,
+  endPerformanceStage,
+  isPerformanceDiagnosticsEnabled,
+  performanceNow,
+} from './performanceDiagnosticsCore';
 
 const diagnosticsEnabled = __DEV__ || process.env.EXPO_PUBLIC_PERFORMANCE_DIAGNOSTICS === 'true';
+configurePerformanceDiagnostics(diagnosticsEnabled);
 const navigationStarts = new Map<string, number>();
 let activeApiRequests = 0;
 let maximumApiConcurrency = 0;
 
 function now() {
-  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+  return performanceNow();
 }
 
 function emit(event: string, details: Record<string, string | number | boolean | null>) {
-  if (!diagnosticsEnabled) return;
-  // Do not pass request data, credentials, coordinates, user identifiers, or
-  // query values to this function. Production telemetry is explicitly opt-in.
-  console.info(`[performance] ${event}`, details);
+  emitPerformanceEvent(event, details);
 }
+
+export { beginPerformanceStage, endPerformanceStage };
 
 export function logRuntimeDiagnostics() {
   emit('runtime', {
@@ -27,7 +35,7 @@ export function logRuntimeDiagnostics() {
 }
 
 export function startJsStallMonitor() {
-  if (!diagnosticsEnabled) return () => {};
+  if (!isPerformanceDiagnosticsEnabled()) return () => {};
   const intervalMs = 1_000;
   let expectedAt = Date.now() + intervalMs;
   const timer = setInterval(() => {

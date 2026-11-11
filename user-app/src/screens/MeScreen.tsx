@@ -9,6 +9,7 @@ import { AppProfile, getAccountById, updateAccountProfile } from '../services/ap
 import { putAuthMe } from '../services/api';
 import { useResponsiveLayout } from '../utils/responsive';
 import * as ImagePicker from 'expo-image-picker';
+import { ProfileField, ProfileValidationErrors, validateEditableProfile } from '../utils/profileValidation';
 
 type Props = {
   appUserId: string;
@@ -34,6 +35,7 @@ export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
   const [isEditing, setIsEditing] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [isProfileImageViewerOpen, setIsProfileImageViewerOpen] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<ProfileValidationErrors>({});
 
   useEffect(() => {
     if (!barangayName) return;
@@ -65,6 +67,9 @@ export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
 
   function onChange<K extends keyof AppProfile>(field: K, value: AppProfile[K]) {
     setDraftProfile((prev) => ({ ...prev, [field]: value }));
+    if (field in validationErrors) {
+      setValidationErrors((current) => ({ ...current, [field]: undefined }));
+    }
   }
 
   async function onSaveProfile() {
@@ -72,18 +77,27 @@ export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
       return;
     }
 
+    const validation = validateEditableProfile(draftProfile);
+    setValidationErrors(validation.errors);
+    if (!validation.isValid) return;
+
+    const nextProfile = { ...draftProfile, ...validation.profile };
+
     setSaving(true);
     try {
-      await putAuthMe({
-        firstName: draftProfile.firstName,
-        lastName: draftProfile.lastName,
-        email: draftProfile.email,
-        address: draftProfile.address,
-        contactNumber: draftProfile.contactNumber,
-      });
-      await updateAccountProfile(appUserId, draftProfile);
-      setProfile(draftProfile);
+      await putAuthMe(validation.profile);
+      await updateAccountProfile(appUserId, nextProfile);
+      setProfile(nextProfile);
+      setDraftProfile(nextProfile);
       setIsEditing(false);
+    } catch (error: any) {
+      const field = error?.response?.data?.field as ProfileField | undefined;
+      const message = error?.response?.data?.message;
+      if (field && field in validation.profile && typeof message === 'string') {
+        setValidationErrors((current) => ({ ...current, [field]: message }));
+      } else {
+        Alert.alert('Could not update profile', message || 'Please check your connection and try again.');
+      }
     } finally {
       setSaving(false);
     }
@@ -91,11 +105,13 @@ export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
 
   function onStartEdit() {
     setDraftProfile(profile);
+    setValidationErrors({});
     setIsEditing(true);
   }
 
   function onCancelEdit() {
     setDraftProfile(profile);
+    setValidationErrors({});
     setIsEditing(false);
   }
 
@@ -227,29 +243,44 @@ export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
             </View>
 
             {/* First Name */}
-            <View style={st.inputRow}>
-              <MaterialCommunityIcons name="account-outline" size={18} color="#64748b" />
-              <TextInput style={st.input} value={draftProfile.firstName} onChangeText={(t) => onChange('firstName', t)} placeholder="First Name" placeholderTextColor="#94a3b8" />
+            <View style={st.inputGroup}>
+              <View style={[st.inputRow, validationErrors.firstName && st.inputRowError]}>
+                <MaterialCommunityIcons name="account-outline" size={18} color="#64748b" />
+                <TextInput style={st.input} value={draftProfile.firstName} onChangeText={(t) => onChange('firstName', t)} placeholder="First Name *" placeholderTextColor="#94a3b8" />
+              </View>
+              {validationErrors.firstName ? <Text style={st.fieldError}>{validationErrors.firstName}</Text> : null}
             </View>
             {/* Last Name */}
-            <View style={st.inputRow}>
-              <MaterialCommunityIcons name="account-outline" size={18} color="#64748b" />
-              <TextInput style={st.input} value={draftProfile.lastName} onChangeText={(t) => onChange('lastName', t)} placeholder="Last Name" placeholderTextColor="#94a3b8" />
+            <View style={st.inputGroup}>
+              <View style={[st.inputRow, validationErrors.lastName && st.inputRowError]}>
+                <MaterialCommunityIcons name="account-outline" size={18} color="#64748b" />
+                <TextInput style={st.input} value={draftProfile.lastName} onChangeText={(t) => onChange('lastName', t)} placeholder="Last Name *" placeholderTextColor="#94a3b8" />
+              </View>
+              {validationErrors.lastName ? <Text style={st.fieldError}>{validationErrors.lastName}</Text> : null}
             </View>
             {/* Email */}
-            <View style={st.inputRow}>
-              <MaterialCommunityIcons name="email-outline" size={18} color="#64748b" />
-              <TextInput style={st.input} value={draftProfile.email} onChangeText={(t) => onChange('email', t)} placeholder="Email" keyboardType="email-address" placeholderTextColor="#94a3b8" />
+            <View style={st.inputGroup}>
+              <View style={[st.inputRow, validationErrors.email && st.inputRowError]}>
+                <MaterialCommunityIcons name="email-outline" size={18} color="#64748b" />
+                <TextInput style={st.input} value={draftProfile.email} onChangeText={(t) => onChange('email', t)} placeholder="Email *" keyboardType="email-address" autoCapitalize="none" placeholderTextColor="#94a3b8" />
+              </View>
+              {validationErrors.email ? <Text style={st.fieldError}>{validationErrors.email}</Text> : null}
             </View>
             {/* Address */}
-            <View style={st.inputRow}>
-              <MaterialCommunityIcons name="map-marker-outline" size={18} color="#64748b" />
-              <TextInput style={st.input} value={draftProfile.address} onChangeText={(t) => onChange('address', t)} placeholder="Address" placeholderTextColor="#94a3b8" />
+            <View style={st.inputGroup}>
+              <View style={[st.inputRow, validationErrors.address && st.inputRowError]}>
+                <MaterialCommunityIcons name="map-marker-outline" size={18} color="#64748b" />
+                <TextInput style={st.input} value={draftProfile.address} onChangeText={(t) => onChange('address', t)} placeholder="Address *" placeholderTextColor="#94a3b8" />
+              </View>
+              {validationErrors.address ? <Text style={st.fieldError}>{validationErrors.address}</Text> : null}
             </View>
             {/* Contact */}
-            <View style={st.inputRow}>
-              <MaterialCommunityIcons name="phone-outline" size={18} color="#64748b" />
-              <TextInput style={st.input} value={draftProfile.contactNumber} onChangeText={(t) => onChange('contactNumber', t)} placeholder="Contact Number" keyboardType="phone-pad" placeholderTextColor="#94a3b8" />
+            <View style={st.inputGroup}>
+              <View style={[st.inputRow, validationErrors.contactNumber && st.inputRowError]}>
+                <MaterialCommunityIcons name="phone-outline" size={18} color="#64748b" />
+                <TextInput style={st.input} value={draftProfile.contactNumber} onChangeText={(t) => onChange('contactNumber', t)} placeholder="Contact Number (optional)" keyboardType="phone-pad" placeholderTextColor="#94a3b8" />
+              </View>
+              {validationErrors.contactNumber ? <Text style={st.fieldError}>{validationErrors.contactNumber}</Text> : null}
             </View>
 
             <View style={st.editActionsRow}>
@@ -372,8 +403,11 @@ const st = StyleSheet.create({
 
   inputRow: {
     borderWidth: 1, borderColor: editorial.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
-    flexDirection: 'row', alignItems: 'center', marginBottom: 10,
+    flexDirection: 'row', alignItems: 'center',
   },
+  inputGroup: { marginBottom: 10 },
+  inputRowError: { borderColor: '#dc2626' },
+  fieldError: { color: '#b91c1c', fontSize: 12, marginTop: 4, marginLeft: 4 },
   input: { flex: 1, marginLeft: 8, color: editorial.ink, fontSize: 14 },
 
   saveBtn: {

@@ -11,6 +11,10 @@ import { buildCalambaMapHtml } from '../utils/rescuerMapHtml';
 import { Card, DetailRow, EmptyState, ErrorMessage, PrimaryButton, RescuerScreen, rescuerColors } from '../components/RescuerScreen';
 import { acknowledgeAssignment, loadAssignments, loadWeeklyHistory, updateResponderLocation } from '../services/rescuerService';
 import type { Assignment, AssignmentHistory, Coordinate, ResponderRole } from '../types';
+import {
+  createAssignmentScreenRequestScope,
+  shouldRefreshAssignmentHistory,
+} from '../utils/assignmentHistoryPolicy';
 
 type Props = { role: ResponderRole; onAuthError: () => void };
 type RouteData = { routeCoordinates: Coordinate[]; distanceKm: number | null; etaMinutes: number | null };
@@ -50,7 +54,12 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dismissedAlertId, setDismissedAlertId] = useState<number | null>(null);
-  const loadingRef = useRef(false);
+  const activeRequestRef = useRef<Promise<void> | null>(null);
+  const historyRequestRef = useRef<Promise<void> | null>(null);
+  const activeRefreshQueuedRef = useRef(false);
+  const historyRefreshQueuedRef = useRef(false);
+  const activeSnapshotRef = useRef<Assignment[] | null>(null);
+  const [requestScope] = useState(() => createAssignmentScreenRequestScope());
   const locationRef = useRef<Coordinate | null>(null);
   const initialLocationFocusedRef = useRef(false);
   const lastFocusedAssignmentRef = useRef('');
@@ -64,28 +73,92 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
     else setError(errorMessage(caught, fallback));
   }, [onAuthError]);
 
-  const refresh = useCallback(async () => {
-    if (loadingRef.current || AppState.currentState !== 'active') return;
-    loadingRef.current = true;
-    try {
-      const [active, weekly] = await Promise.all([loadAssignments(), loadWeeklyHistory()]);
-      setAssignments((current) => sameRecords(current, active) ? current : active);
-      setHistory((current) => sameRecords(current, weekly) ? current : weekly);
-      setSelectedId((current) => active.some((item) => item.backup_request_id === current) ? current : active[0]?.backup_request_id ?? null);
-      setError('');
-    } catch (caught) {
-      handleApiError(caught, 'Failed to load assigned incidents.');
-    } finally {
-      loadingRef.current = false;
-      setLoading(false);
+  const refreshHistory = useCallback((ensureAfterCurrent = false): Promise<void> => {
+    if (AppState.currentState !== 'active') return Promise.resolve();
+    if (historyRequestRef.current) {
+      if (ensureAfterCurrent) historyRefreshQueuedRef.current = true;
+      return historyRequestRef.current;
     }
-  }, [handleApiError]);
+    const generation = requestScope.capture();
+    const request = loadWeeklyHistory()
+      .then((weekly) => {
+        if (!requestScope.isCurrent(generation)) return;
+        setHistory((current) => sameRecords(current, weekly) ? current : weekly);
+      })
+      .catch((caught) => {
+        if (requestScope.isCurrent(generation)) {
+          handleApiError(caught, 'Failed to load this week\'s assignment history.');
+        }
+      })
+      .finally(() => {
+        if (historyRequestRef.current === request) historyRequestRef.current = null;
+        if (historyRefreshQueuedRef.current) {
+          historyRefreshQueuedRef.current = false;
+          if (requestScope.isCurrent(generation)) void refreshHistory();
+        }
+      });
+    historyRequestRef.current = request;
+    return request;
+  }, [handleApiError, requestScope]);
+
+  const refreshActive = useCallback((ensureAfterCurrent = false): Promise<void> => {
+    if (AppState.currentState !== 'active') return Promise.resolve();
+    if (activeRequestRef.current) {
+      if (ensureAfterCurrent) activeRefreshQueuedRef.current = true;
+      return activeRequestRef.current;
+    }
+    const generation = requestScope.capture();
+    const request = loadAssignments()
+      .then((active) => {
+        if (!requestScope.isCurrent(generation)) return;
+        const historyChanged = shouldRefreshAssignmentHistory(activeSnapshotRef.current, active);
+        activeSnapshotRef.current = active;
+        setAssignments((current) => sameRecords(current, active) ? current : active);
+        setSelectedId((current) => active.some((item) => item.backup_request_id === current) ? current : active[0]?.backup_request_id ?? null);
+        setError('');
+        if (historyChanged) void refreshHistory(true);
+      })
+      .catch((caught) => {
+        if (requestScope.isCurrent(generation)) {
+          handleApiError(caught, 'Failed to load assigned incidents.');
+        }
+      })
+      .finally(() => {
+        if (activeRequestRef.current === request) activeRequestRef.current = null;
+        if (requestScope.isCurrent(generation)) setLoading(false);
+        if (activeRefreshQueuedRef.current) {
+          activeRefreshQueuedRef.current = false;
+          if (requestScope.isCurrent(generation)) void refreshActive();
+        }
+      });
+    activeRequestRef.current = request;
+    return request;
+  }, [handleApiError, refreshHistory, requestScope]);
+
+  const refreshAll = useCallback(async (ensureAfterCurrent = false) => {
+    if (AppState.currentState !== 'active') return;
+    await Promise.all([
+      refreshActive(ensureAfterCurrent),
+      refreshHistory(ensureAfterCurrent),
+    ]);
+  }, [refreshActive, refreshHistory]);
 
   useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), 5000);
-    return () => clearInterval(timer);
-  }, [refresh]);
+    requestScope.activate();
+    setLoading(true);
+    void refreshAll(true);
+    const timer = setInterval(() => void refreshActive(), 5000);
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshAll(true);
+    });
+    return () => {
+      requestScope.invalidate();
+      activeRefreshQueuedRef.current = false;
+      historyRefreshQueuedRef.current = false;
+      clearInterval(timer);
+      appStateSubscription.remove();
+    };
+  }, [refreshActive, refreshAll, requestScope]);
 
   useEffect(() => {
     api.get<EvacuationAreaItem[]>('/content/evacuation-areas')
@@ -113,7 +186,8 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
         const { data } = await updateResponderLocation(nextLocation.latitude, nextLocation.longitude);
         if (!active) return;
         if (data.rerouted) setNotice(`Route updated to ${data.evacuationAreaName || 'the nearest available evacuation center'}.`);
-        if (data.rerouted || data.pickupConfirmed) void refresh();
+        if (data.pickupConfirmed) void refreshAll(true);
+        else if (data.rerouted) void refreshActive();
       } catch (caught) {
         if (active) handleApiError(caught, 'Unable to update your live responder location.');
       } finally {
@@ -163,7 +237,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
       clearInterval(serverTimer);
       watcher?.remove();
     };
-  }, [handleApiError, refresh]);
+  }, [handleApiError, refreshActive, refreshAll]);
 
   const selected = useMemo(
     () => assignments.find((item) => item.backup_request_id === selectedId) || assignments[0] || null,
@@ -364,7 +438,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
     try {
       await acknowledgeAssignment(item.backup_request_id);
       setDismissedAlertId(null);
-      await refresh();
+      await refreshAll(true);
     } catch (caught) {
       handleApiError(caught, 'Unable to confirm this rescue dispatch.');
     } finally {
@@ -374,7 +448,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
 
   const subtitle = role === 'barangay_rescuer' ? 'Barangay incidents and live routing' : 'CDRRMD backup incidents and live routing';
   return (
-    <RescuerScreen title={role === 'barangay_rescuer' ? 'Barangay Rescue Assignments' : 'CDRRMD Backup Assignments'} subtitle={subtitle} refreshing={loading} onRefresh={() => void refresh()}>
+    <RescuerScreen title={role === 'barangay_rescuer' ? 'Barangay Rescue Assignments' : 'CDRRMD Backup Assignments'} subtitle={subtitle} refreshing={loading} onRefresh={() => { setLoading(true); void refreshAll(true); }}>
       <ErrorMessage message={error} />
       <ErrorMessage message={locationError} />
       {notice ? <Text style={styles.notice}>{notice}</Text> : null}

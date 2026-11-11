@@ -1,80 +1,80 @@
 {
-  "expo": {
-    "name": "CDRRMD",
-    "slug": "user-app",
-    "version": "1.0.3",
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
-    "updates": {
-      "url": "https://u.expo.dev/5bfee76a-32ab-4691-a88f-98236817fba8",
-      "enabled": true,
-      "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0
-    },
-    "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
-    "ios": {
-      "supportsTablet": true
-    },
-    "android": {
-      "package": "ph.gov.calambacity.cdrrmd",
-      "versionCode": 7,
-      "googleServicesFile": "./google-services.json",
-      "blockedPermissions": [
-        "android.permission.RECORD_AUDIO"
-      ],
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
-      },
-      "predictiveBackGestureEnabled": false,
-      "permissions": [
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION"
-      ]
-    },
-    "web": {
-      "favicon": "./assets/favicon.png",
-      "bundler": "metro"
-    },
-    "plugins": [
-      "expo-font",
-      [
-        "expo-notifications",
-        {
-          "color": "#ef2b20",
-          "defaultChannel": "flood-emergency-v1"
-        }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Allow CDRRMD to access your photos so you can choose an image.",
-          "cameraPermission": "Allow CDRRMD to use your camera to capture the current situation.",
-          "microphonePermission": false
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationWhenInUsePermission": "Allow CDRRMD to use your live location for safety features and automatic barangay assignment."
-        }
-      ]
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "5bfee76a-32ab-4691-a88f-98236817fba8"
-      }
-    },
-    "owner": "polmokmoktomi"
-  }
+    "expo":  {
+                 "name":  "CDRRMD",
+                 "slug":  "user-app",
+                 "version":  "1.0.4",
+                 "runtimeVersion":  {
+                                        "policy":  "appVersion"
+                                    },
+                 "updates":  {
+                                 "url":  "https://u.expo.dev/5bfee76a-32ab-4691-a88f-98236817fba8",
+                                 "enabled":  true,
+                                 "checkAutomatically":  "ON_LOAD",
+                                 "fallbackToCacheTimeout":  0
+                             },
+                 "orientation":  "portrait",
+                 "icon":  "./assets/icon.png",
+                 "userInterfaceStyle":  "light",
+                 "splash":  {
+                                "image":  "./assets/splash-icon.png",
+                                "resizeMode":  "contain",
+                                "backgroundColor":  "#ffffff"
+                            },
+                 "ios":  {
+                             "supportsTablet":  true
+                         },
+                 "android":  {
+                                 "package":  "ph.gov.calambacity.cdrrmd",
+                                 "versionCode":  10,
+                                 "googleServicesFile":  "./google-services.json",
+                                 "blockedPermissions":  [
+                                                            "android.permission.RECORD_AUDIO"
+                                                        ],
+                                 "adaptiveIcon":  {
+                                                      "backgroundColor":  "#E6F4FE",
+                                                      "foregroundImage":  "./assets/android-icon-foreground.png",
+                                                      "backgroundImage":  "./assets/android-icon-background.png",
+                                                      "monochromeImage":  "./assets/android-icon-monochrome.png"
+                                                  },
+                                 "predictiveBackGestureEnabled":  false,
+                                 "permissions":  [
+                                                     "android.permission.ACCESS_COARSE_LOCATION",
+                                                     "android.permission.ACCESS_FINE_LOCATION"
+                                                 ]
+                             },
+                 "web":  {
+                             "favicon":  "./assets/favicon.png",
+                             "bundler":  "metro"
+                         },
+                 "plugins":  [
+                                 "expo-font",
+                                 [
+                                     "expo-notifications",
+                                     {
+                                         "color":  "#ef2b20",
+                                         "defaultChannel":  "flood-emergency-v1"
+                                     }
+                                 ],
+                                 [
+                                     "expo-image-picker",
+                                     {
+                                         "photosPermission":  "Allow CDRRMD to access your photos so you can choose an image.",
+                                         "cameraPermission":  "Allow CDRRMD to use your camera to capture the current situation.",
+                                         "microphonePermission":  false
+                                     }
+                                 ],
+                                 [
+                                     "expo-location",
+                                     {
+                                         "locationWhenInUsePermission":  "Allow CDRRMD to use your live location for safety features and automatic barangay assignment."
+                                     }
+                                 ]
+                             ],
+                 "extra":  {
+                               "eas":  {
+                                           "projectId":  "5bfee76a-32ab-4691-a88f-98236817fba8"
+                                       }
+                           },
+                 "owner":  "polmokmoktomi"
+             }
 }

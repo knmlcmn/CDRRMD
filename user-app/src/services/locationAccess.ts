@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import * as Location from 'expo-location';
+import { beginPerformanceStage, endPerformanceStage } from '../utils/performanceDiagnosticsCore';
 
 export type LiveLocation = { latitude: number; longitude: number };
 export type LiveLocationSubscription = { remove: () => void };
@@ -17,10 +18,18 @@ function toLiveLocation(position: Location.LocationObject): LiveLocation {
   };
 }
 
-function timeoutAfter(ms: number) {
-  return new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('LOCATION_TIMEOUT')), ms);
-  });
+async function withLocationTimeout<T>(request: Promise<T>, ms: number) {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      request,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('LOCATION_TIMEOUT')), ms);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 function permissionMessage(canAskAgain: boolean) {
@@ -67,15 +76,19 @@ export async function requireLiveLocation(requestPermission: boolean): Promise<L
       return await requestWebLocation();
     }
 
+    const permissionMarker = beginPerformanceStage('location-permission-readiness');
     const permission = requestPermission
       ? await Location.requestForegroundPermissionsAsync()
       : await Location.getForegroundPermissionsAsync();
+    endPerformanceStage(permissionMarker, { success: permission.status === 'granted' });
 
     if (permission.status !== 'granted') {
       return { ok: false, message: permissionMessage(permission.canAskAgain) };
     }
 
+    const servicesMarker = beginPerformanceStage('location-services-readiness');
     const servicesEnabled = await Location.hasServicesEnabledAsync();
+    endPerformanceStage(servicesMarker, { success: servicesEnabled });
     if (!servicesEnabled) {
       return {
         ok: false,
@@ -85,19 +98,29 @@ export async function requireLiveLocation(requestPermission: boolean): Promise<L
 
     // Both portals maintain a location watcher. Reuse its recent accurate fix
     // before waking GPS and waiting for another satellite/network position.
+    const cacheMarker = beginPerformanceStage('location-cache-readiness');
     const recent = await Location.getLastKnownPositionAsync({
       maxAge: 30_000,
       requiredAccuracy: 200,
     }).catch(() => null);
+    endPerformanceStage(cacheMarker, { success: Boolean(recent) });
     if (recent) return { ok: true, location: toLiveLocation(recent) };
 
-    const position = await Promise.race([
-      Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-        mayShowUserSettingsDialog: true,
-      }),
-      timeoutAfter(LOCATION_TIMEOUT_MS),
-    ]);
+    const currentMarker = beginPerformanceStage('location-current-position');
+    let position: Location.LocationObject;
+    try {
+      position = await withLocationTimeout(
+        Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          mayShowUserSettingsDialog: true,
+        }),
+        LOCATION_TIMEOUT_MS,
+      );
+      endPerformanceStage(currentMarker);
+    } catch (error) {
+      endPerformanceStage(currentMarker, { success: false });
+      throw error;
+    }
 
     return { ok: true, location: toLiveLocation(position) };
   } catch (error: any) {

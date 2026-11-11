@@ -2,6 +2,7 @@ import axios from 'axios';
 import Constants from 'expo-constants';
 import { NativeModules, Platform } from 'react-native';
 import { clearSession, loadSession, saveSession, SessionData } from './session';
+import { isCurrentAuthRequest } from './authRequestPolicy';
 import { beginApiRequest, endApiRequest } from '../utils/performanceDiagnostics';
 
 function parseHost(value?: string | null) {
@@ -153,11 +154,16 @@ function stableRequestValue(value: unknown) {
 // Share an in-flight response between simultaneous identical reads. This does
 // not cache completed responses or delay subsequent rescue/notification polls.
 api.get = ((url: string, config?: Parameters<typeof originalGet>[1]) => {
+  // A caller-owned signal defines a distinct lifecycle. Sharing that promise
+  // would let cancelling an obsolete SOS attempt also cancel its replacement.
+  if (config?.signal) return originalGet(url, config);
   const headers = config?.headers as Record<string, unknown> | undefined;
   const explicitAuthorization = String(headers?.Authorization || headers?.authorization || '');
+  const cacheControl = String(headers?.['Cache-Control'] || headers?.['cache-control'] || '');
   const key = [
     authRequestGeneration,
     explicitAuthorization,
+    cacheControl,
     config?.baseURL || api.defaults.baseURL || '',
     url,
     stableRequestValue(config?.params),
@@ -172,6 +178,7 @@ api.get = ((url: string, config?: Parameters<typeof originalGet>[1]) => {
 }) as typeof api.get;
 
 let refreshingPromise: Promise<SessionData | null> | null = null;
+let refreshingGeneration: number | null = null;
 let authFailureHandler: (() => void) | null = null;
 
 export function setApiAuthorizationToken(token: string | null) {
@@ -190,18 +197,22 @@ export function setAuthFailureHandler(handler: (() => void) | null) {
   authFailureHandler = handler;
 }
 
-async function refreshAccessToken() {
-  if (refreshingPromise) {
+async function refreshAccessToken(requestGeneration: number) {
+  if (refreshingPromise && refreshingGeneration === requestGeneration) {
     // Deduplicate concurrent refresh attempts triggered by multiple requests.
     return refreshingPromise;
   }
 
-  refreshingPromise = (async () => {
+  const refreshGeneration = requestGeneration;
+  const request = (async () => {
     const current = await loadSession();
+    if (refreshGeneration !== authRequestGeneration) return null;
     const refreshToken = String(current?.refreshToken || '').trim();
     if (!current || !refreshToken) {
-      await clearSession();
-      authFailureHandler?.();
+      if (refreshGeneration === authRequestGeneration) {
+        await clearSession();
+        authFailureHandler?.();
+      }
       return null;
     }
 
@@ -220,22 +231,40 @@ async function refreshAccessToken() {
       throw new Error('Missing access token in refresh response.');
     }
 
-    await saveSession(nextSession);
+    // A logout or account switch happened while refresh was in flight. Never
+    // allow that stale response to resurrect the previous authenticated user.
+    if (refreshGeneration !== authRequestGeneration) return null;
+
+    const saved = await saveSession(nextSession, () => refreshGeneration === authRequestGeneration);
+    if (!saved || refreshGeneration !== authRequestGeneration) return null;
     return nextSession;
   })()
     .catch(async () => {
-      await clearSession();
-      authFailureHandler?.();
+      if (refreshGeneration === authRequestGeneration) {
+        await clearSession();
+        authFailureHandler?.();
+      }
       return null;
     })
     .finally(() => {
-      refreshingPromise = null;
+      if (refreshingPromise === request) {
+        refreshingPromise = null;
+        refreshingGeneration = null;
+      }
     });
 
-  return refreshingPromise;
+  refreshingPromise = request;
+  refreshingGeneration = refreshGeneration;
+  return request;
 }
 
 api.interceptors.request.use(async (config) => {
+  const authConfig = config as any;
+  // Keep the original generation through retries. A delayed request from a
+  // logged-out resident must never become a request owned by a new rescuer.
+  if (typeof authConfig.__authRequestGeneration !== 'number') {
+    authConfig.__authRequestGeneration = authRequestGeneration;
+  }
   const headers = config.headers as Record<string, string> | undefined;
   const token =
     headers?.Authorization ||
@@ -248,6 +277,7 @@ api.interceptors.request.use(async (config) => {
       nextHeaders.Authorization = `Bearer ${session.token}`;
       config.headers = nextHeaders as any;
       setApiAuthorizationToken(session.token);
+      authConfig.__authRequestGeneration = authRequestGeneration;
     }
   }
 
@@ -259,7 +289,13 @@ api.interceptors.response.use(
   async (error) => {
     const original = error?.config || {};
 
-    if (isConnectivityError(error) && !original.__hostRetried) {
+    // Responses from a logged-out or replaced account must not retry, refresh,
+    // or clear the new account's session.
+    if (!isCurrentAuthRequest(original.__authRequestGeneration, authRequestGeneration)) {
+      throw error;
+    }
+
+    if (isConnectivityError(error) && !original.__hostRetried && !configuredApiBase) {
       original.__hostRetried = true;
       const nextHost = await resolveHealthyHost();
       setApiHost(nextHost);
@@ -279,12 +315,13 @@ api.interceptors.response.use(
     const tokenProblem =
       status === 401 &&
       (code.startsWith('AUTH_TOKEN_') || /token/i.test(String(error?.response?.data?.message || '')));
-    if (!tokenProblem || original.__retried) {
+    if (!tokenProblem || original.__retried || original.__skipAuthRefresh) {
       throw error;
     }
 
-    const refreshedSession = await refreshAccessToken();
+    const refreshedSession = await refreshAccessToken(original.__authRequestGeneration);
     if (!refreshedSession?.token) {
+      if (!isCurrentAuthRequest(original.__authRequestGeneration, authRequestGeneration)) throw error;
       await clearSession();
       authFailureHandler?.();
       throw error;
@@ -343,9 +380,11 @@ type PublicAuthPath =
 export async function postAuth(path: PublicAuthPath, payload: unknown) {
   const host = await getHealthyHost();
   const timeout = path === '/auth/register' ? 30000 : 15000;
+  const marker = beginApiRequest('POST', path);
 
   try {
     const response = await axios.post(`${host}/api${path}`, payload, { timeout });
+    endApiRequest(marker, response.status, false);
     setApiHost(host);
 
     if (response.data?.token) {
@@ -354,17 +393,32 @@ export async function postAuth(path: PublicAuthPath, payload: unknown) {
     return response;
   } catch (error) {
     if (!isConnectivityError(error)) {
+      endApiRequest(marker, (error as any)?.response?.status ?? null, true);
       throw error;
     }
 
-    const nextHost = await resolveHealthyHost();
-    const response = await axios.post(`${nextHost}/api${path}`, payload, { timeout });
-    setApiHost(nextHost);
-
-    if (response.data?.token) {
-      setApiAuthorizationToken(response.data.token);
+    // Deployed builds have one authoritative backend. Probing and retrying the
+    // same Vercel host turned a 15-second failure into a hidden ~35-second wait.
+    // Surface the bounded error and let the user choose a visible retry.
+    if (configuredApiBase) {
+      endApiRequest(marker, (error as any)?.response?.status ?? null, true);
+      throw error;
     }
-    return response;
+
+    try {
+      const nextHost = await resolveHealthyHost();
+      const response = await axios.post(`${nextHost}/api${path}`, payload, { timeout });
+      endApiRequest(marker, response.status, false);
+      setApiHost(nextHost);
+
+      if (response.data?.token) {
+        setApiAuthorizationToken(response.data.token);
+      }
+      return response;
+    } catch (retryError) {
+      endApiRequest(marker, (retryError as any)?.response?.status ?? null, true);
+      throw retryError;
+    }
   }
 }
 
@@ -412,21 +466,25 @@ export async function putAuthMe(payload: {
   }
 }
 
-export async function assignAuthBarangayFromLocation(latitude: number, longitude: number) {
+export async function assignAuthBarangayFromLocation(
+  latitude: number,
+  longitude: number,
+  signal?: AbortSignal,
+) {
   const host = await getHealthyHost();
   const payload = { latitude, longitude };
 
   try {
-    const response = await api.put('/auth/location-barangay', payload);
+    const response = await api.put('/auth/location-barangay', payload, { signal });
     setApiHost(host);
     return response;
   } catch (error) {
-    if (!isConnectivityError(error)) {
+    if (signal?.aborted || configuredApiBase || !isConnectivityError(error)) {
       throw error;
     }
 
     const nextHost = await resolveHealthyHost();
     setApiHost(nextHost);
-    return api.put('/auth/location-barangay', payload);
+    return api.put('/auth/location-barangay', payload, { signal });
   }
 }

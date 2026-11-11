@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AppState, Image, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { AppState, Image, InteractionManager, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText as Text, TypographyFamily } from '../components/Typography';
@@ -13,16 +13,9 @@ import { subscribeToWaterLevelSensors } from './services/waterSensorMonitor';
 import type { ResponderRole, WaterLevelSensor } from './types';
 import { MODERATE_WATER_LEVEL_THRESHOLD } from '../utils/waterLevelHazard';
 import { scopeWaterLevelSensors } from './utils/sensorScope';
+import { getRescuerTabItems, type RescuerTab } from './utils/rescuerTabBar';
 import { rescuerTheme } from './theme';
-import { markNavigationSettled, markNavigationStart } from '../utils/performanceDiagnostics';
-
-type Tab = 'assignments' | 'history' | 'flood' | 'account';
-const tabs: Array<{ key: Tab; label: string; mobileLabel: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }> = [
-  { key: 'assignments', label: 'Incident Reports', mobileLabel: 'Incidents', icon: 'alert-outline' },
-  { key: 'history', label: 'History', mobileLabel: 'History', icon: 'history' },
-  { key: 'flood', label: 'Flood Monitoring', mobileLabel: 'Flood', icon: 'water-outline' },
-  { key: 'account', label: 'Account', mobileLabel: 'Account', icon: 'account-outline' },
-];
+import { beginPerformanceStage, endPerformanceStage, markNavigationSettled, markNavigationStart } from '../utils/performanceDiagnostics';
 
 type Props = {
   role: ResponderRole;
@@ -34,16 +27,29 @@ type Props = {
 export default function RescuerPortal({ role, barangayName, onLogout, onAuthError }: Props) {
   const { width } = useWindowDimensions();
   const desktop = width >= 820;
-  const [tab, setTab] = useState<Tab>('assignments');
+  const [tab, setTab] = useState<RescuerTab>('assignments');
   const [alertSensors, setAlertSensors] = useState<WaterLevelSensor[]>([]);
   const [alertVisible, setAlertVisible] = useState(false);
   const alertStages = useRef<Record<string, 'moderate' | 'high'>>({});
+  const readinessMarker = useRef(beginPerformanceStage('rescuer-portal-ready'));
+
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      endPerformanceStage(readinessMarker.current);
+      readinessMarker.current = null;
+    });
+    return () => {
+      task.cancel();
+      endPerformanceStage(readinessMarker.current, { success: false });
+      readinessMarker.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     markNavigationSettled(`rescuer:${tab}`);
   }, [tab]);
 
-  function navigateToTab(nextTab: Tab) {
+  function navigateToTab(nextTab: RescuerTab) {
     if (nextTab === tab) return;
     markNavigationStart(`rescuer:${nextTab}`);
     setTab(nextTab);
@@ -59,7 +65,7 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
       try {
         await sendHeartbeat();
       } catch (caught: any) {
-        if (caught?.response?.status === 401) onAuthError();
+        if (active && caught?.response?.status === 401) onAuthError();
       }
     }
     void heartbeat();
@@ -108,7 +114,7 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
         }
       },
       (caught: any) => {
-        if (caught?.response?.status === 401) onAuthError();
+        if (active && caught?.response?.status === 401) onAuthError();
       },
     );
     return () => {
@@ -124,6 +130,7 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
       : tab === 'account'
         ? <AccountScreen role={role} onAuthError={onAuthError} />
         : <AssignmentsScreen role={role} onAuthError={onAuthError} />;
+  const tabItems = getRescuerTabItems(tab);
 
   return (
     <TypographyFamily family="Manrope">
@@ -139,9 +146,8 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
       <View style={styles.layout}>
         {desktop ? <View style={styles.sidebar}>
           <View style={styles.desktopBrand}><Image source={require('../../assets/cdrrmd-logo.png')} style={styles.logo} /><View><Text style={styles.desktopBrandTitle}>CDRRMD</Text><Text style={styles.desktopBrandRole}>{role === 'barangay_rescuer' ? 'Barangay Rescuer' : 'CDRRMD Rescuer'}</Text></View></View>
-          <View style={styles.sideNav}>{tabs.map((item) => {
-            const active = tab === item.key;
-            return <TouchableOpacity key={item.key} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => navigateToTab(item.key)} style={[styles.sideNavItem, active && styles.sideNavItemActive]}>{active ? <View style={styles.activeRail} /> : null}<MaterialCommunityIcons name={item.icon} size={20} color={active ? '#fff' : '#b9d4e6'} /><Text style={[styles.sideNavLabel, !active && styles.sideNavLabelIdle]}>{item.label}</Text></TouchableOpacity>;
+          <View style={styles.sideNav}>{tabItems.map((item) => {
+            return <TouchableOpacity key={item.key} accessibilityRole="tab" accessibilityState={{ selected: item.active }} onPress={() => navigateToTab(item.key)} style={[styles.sideNavItem, item.active && styles.sideNavItemActive]}>{item.active ? <View style={styles.activeRail} /> : null}<MaterialCommunityIcons key={item.iconRenderKey} name={item.icon} size={20} color={item.active ? '#fff' : '#b9d4e6'} /><Text style={[styles.sideNavLabel, !item.active && styles.sideNavLabelIdle]}>{item.label}</Text></TouchableOpacity>;
           })}</View>
           <TouchableOpacity onPress={onLogout} style={styles.desktopLogout}><MaterialCommunityIcons name="logout" size={19} color="#fff" /><Text style={styles.sideNavLabel}>Logout</Text></TouchableOpacity>
         </View> : null}
@@ -149,11 +155,10 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
       </View>
       {!desktop ? <View style={styles.tabBar}>
         <View pointerEvents="none" style={[styles.mobilePatternArc, styles.mobilePatternBottom]} />
-        {tabs.map((item) => {
-          const active = tab === item.key;
-          return <TouchableOpacity key={item.key} onPress={() => navigateToTab(item.key)} style={styles.tab} accessibilityRole="button" accessibilityState={{ selected: active }}>
-            <View style={[styles.iconWrap, active && styles.iconWrapActive]}><MaterialCommunityIcons name={item.icon} size={22} color={active ? '#fff' : '#c7e3f5'} /></View>
-            <Text numberOfLines={1} style={[styles.tabLabel, active && styles.tabLabelActive]}>{item.mobileLabel}</Text>
+        {tabItems.map((item) => {
+          return <TouchableOpacity key={item.key} onPress={() => navigateToTab(item.key)} style={styles.tab} accessibilityRole="tab" accessibilityState={{ selected: item.active }}>
+            <View style={[styles.iconWrap, item.active && styles.iconWrapActive]}><MaterialCommunityIcons key={item.iconRenderKey} name={item.icon} size={22} color={item.active ? '#fff' : '#c7e3f5'} /></View>
+            <Text numberOfLines={1} style={[styles.tabLabel, item.active && styles.tabLabelActive]}>{item.mobileLabel}</Text>
           </TouchableOpacity>;
         })}
       </View> : null}
@@ -197,7 +202,7 @@ const styles = StyleSheet.create({
   desktopLogout: { marginTop: 'auto', minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 12, borderWidth: 1, borderColor: '#486581' },
   tabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 72, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 7, overflow: 'hidden', backgroundColor: rescuerTheme.colors.navy900, borderTopWidth: 1, borderTopColor: '#315b78', shadowColor: rescuerTheme.colors.navy950, shadowOpacity: 0.2, shadowRadius: 9, shadowOffset: { width: 0, height: -3 }, elevation: 10 },
   tab: { flex: 1, minHeight: 54, alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 2 },
-  iconWrap: { width: 44, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  iconWrap: { width: 44, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   iconWrapActive: { backgroundColor: rescuerTheme.colors.blue600, borderLeftWidth: 3, borderLeftColor: rescuerTheme.colors.gold },
   tabLabel: { color: '#c7e3f5', fontSize: 9, lineHeight: 11, fontWeight: '800', textAlign: 'center' },
   tabLabelActive: { color: '#ffffff' },

@@ -19,34 +19,16 @@ import {
   weatherAdvice,
   weatherIconFromCode,
 } from '../components/WeatherMetricArtwork';
-import { getCityForecastWeather } from '../services/weatherService';
+import {
+  getCityForecastWeather,
+  getCityWeatherSnapshot,
+  type CityWeatherSnapshot,
+} from '../services/weatherService';
 import { getWeatherVisualByCode } from '../utils/weatherVisual';
 import { useResponsiveLayout } from '../utils/responsive';
 import { keepIfEqual } from '../utils/stableData';
 
-type WeatherResponse = {
-  current?: {
-    time?: string;
-    temperature_2m?: number;
-    relative_humidity_2m?: number;
-    wind_speed_10m?: number;
-    weather_code?: number;
-  };
-  hourly?: {
-    time?: string[];
-    wind_speed_10m?: number[];
-    weather_code?: number[];
-    precipitation?: number[];
-    precipitation_probability?: number[];
-  };
-  daily?: {
-    time?: string[];
-    weather_code?: number[];
-    wind_speed_10m_max?: number[];
-    precipitation_sum?: number[];
-    precipitation_probability_max?: number[];
-  };
-};
+type WeatherResponse = CityWeatherSnapshot;
 
 type HourlyForecastRow = {
   key: string;
@@ -95,11 +77,14 @@ function formatDay(value: string) {
 export default function WeatherScreen() {
   const isFocused = useIsFocused();
   const { uiScale: scale, horizontalPadding } = useResponsiveLayout();
-  const [data, setData] = useState<WeatherResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [initialSnapshot] = useState(() => getCityWeatherSnapshot());
+  const [data, setData] = useState<WeatherResponse | null>(() => initialSnapshot.data);
+  const [loading, setLoading] = useState(() => !initialSnapshot.data);
   const [hasError, setHasError] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchWeather = useCallback(async () => {
+    setRefreshing(true);
     try {
       const next = await getCityForecastWeather();
       if (next) setData((current) => keepIfEqual(current, next));
@@ -108,6 +93,7 @@ export default function WeatherScreen() {
       setHasError(true);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -194,6 +180,16 @@ export default function WeatherScreen() {
   return (
     <View style={st.root}>
       <DashboardHeader />
+
+      {hasError ? (
+        <View style={st.staleBanner}>
+          <Text style={st.staleText}>Showing the last available forecast. Live refresh failed.</Text>
+        </View>
+      ) : refreshing ? (
+        <View style={st.staleBanner}>
+          <Text style={st.staleText}>Refreshing weather in the background…</Text>
+        </View>
+      ) : null}
 
       <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
         <ImageBackground
@@ -307,6 +303,8 @@ const st = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: editorial.background, paddingHorizontal: 24 },
   errorTitle: { color: '#181818', fontSize: 18, fontWeight: '800', marginTop: 12 },
   errorBody: { color: '#585858', fontSize: 14, textAlign: 'center', marginTop: 6 },
+  staleBanner: { backgroundColor: '#eef6fb', borderBottomWidth: 1, borderBottomColor: '#c8dce8', paddingHorizontal: 14, paddingVertical: 6 },
+  staleText: { color: '#36576d', fontSize: 11, textAlign: 'center', fontWeight: '600' },
   scrollContent: { flexGrow: 1, width: '100%', backgroundColor: editorial.background },
   hero: { width: '100%', maxWidth: 720, alignSelf: 'center', backgroundColor: editorial.surface, flexDirection: 'row', marginTop: 10, borderRadius: 14, overflow: 'hidden' },
   heroBackgroundImage: { opacity: 0.48 },

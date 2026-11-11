@@ -1,8 +1,40 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fetchBestRoadRoute, fetchRoadRoute } from '../src/services/routingService.ts';
+import { fetchBestRoadRoute, fetchBestRoadRouteProgressively, fetchRoadRoute } from '../src/services/routingService.ts';
 
 const originalFetch = globalThis.fetch;
+
+test('one eligible destination bypasses the OSRM table and requests its route directly', async () => {
+  const urls: string[] = [];
+  globalThis.fetch = (async (input) => {
+    urls.push(String(input));
+    return {
+      ok: true,
+      json: async () => ({
+        routes: [{
+          distance: 2_000,
+          duration: 300,
+          geometry: { coordinates: [[121.1, 14.2], [121.2, 14.3]] },
+        }],
+        waypoints: [{ distance: 0 }, { distance: 0 }],
+      }),
+    } as Response;
+  }) as typeof fetch;
+
+  try {
+    const result = await fetchBestRoadRoute(
+      { latitude: 14.2, longitude: 121.1 },
+      [{ id: 'only-center', latitude: 14.3, longitude: 121.2 }],
+      3,
+    );
+    assert.equal(result?.destinationId, 'only-center');
+    assert.equal(urls.length, 1);
+    assert.match(urls[0], /\/route\/v1\/driving\//);
+    assert.doesNotMatch(urls[0], /\/table\/v1\/driving\//);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test('best-road selection still uses the shortest reachable OSRM table distance', async () => {
   let calls = 0;
@@ -46,6 +78,53 @@ test('best-road selection still uses the shortest reachable OSRM table distance'
     assert.equal(result?.distanceKm, 2);
     assert.equal(result?.etaMinutes, 5);
     assert.equal(calls, 2, 'one table request and one selected-route request are expected');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('routing evaluates later eligible centers in the same bounded OSRM table request', async () => {
+  const urls: string[] = [];
+  globalThis.fetch = (async (input) => {
+    const url = String(input);
+    urls.push(url);
+    if (url.includes('/table/')) {
+      return {
+        ok: true,
+        json: async () => ({
+          code: 'Ok',
+          distances: [[null, null, null, 4_000]],
+          durations: [[null, null, null, 600]],
+          sources: [{ distance: 0 }],
+          destinations: [{ distance: 0 }, { distance: 0 }, { distance: 0 }, { distance: 0 }],
+        }),
+      } as Response;
+    }
+    return {
+      ok: true,
+      json: async () => ({
+        routes: [{ distance: 4_000, duration: 600, geometry: { coordinates: [[121.1, 14.2], [121.4, 14.4]] } }],
+        waypoints: [{ distance: 0 }, { distance: 0 }],
+      }),
+    } as Response;
+  }) as typeof fetch;
+
+  try {
+    const result = await fetchBestRoadRouteProgressively(
+      { latitude: 14.2, longitude: 121.1 },
+      [
+        { id: 'one', latitude: 14.21, longitude: 121.11 },
+        { id: 'two', latitude: 14.22, longitude: 121.12 },
+        { id: 'three', latitude: 14.23, longitude: 121.13 },
+        { id: 'reachable-fourth', latitude: 14.4, longitude: 121.4 },
+      ],
+      3,
+      3,
+    );
+    assert.equal(result?.destinationId, 'reachable-fourth');
+    assert.equal(urls.length, 2);
+    assert.match(urls[0], /\/table\/v1\/driving\//);
+    assert.match(urls[1], /\/route\/v1\/driving\//);
   } finally {
     globalThis.fetch = originalFetch;
   }

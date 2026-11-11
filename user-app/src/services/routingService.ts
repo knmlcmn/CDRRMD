@@ -1,3 +1,5 @@
+import { beginPerformanceStage, endPerformanceStage } from '../utils/performanceDiagnosticsCore.ts';
+
 type Coordinate = { latitude: number; longitude: number };
 
 type OsrmRoute = {
@@ -14,7 +16,8 @@ export type BestRoadRoute = OsrmRoute & {
 
 const OSRM_BASE_URL = 'https://router.project-osrm.org';
 const MAX_ROAD_SNAP_DISTANCE_METERS = 750;
-const ROUTING_TIMEOUT_MS = 12_000;
+const ROUTING_TIMEOUT_MS = 10_000;
+const ROUTING_SELECTION_TIMEOUT_MS = 15_000;
 
 type OsrmWaypoint = {
   distance?: number;
@@ -23,6 +26,11 @@ type OsrmWaypoint = {
 function isPracticalRoadSnap(waypoint: OsrmWaypoint | undefined) {
   const distance = Number(waypoint?.distance);
   return Number.isFinite(distance) && distance <= MAX_ROAD_SNAP_DISTANCE_METERS;
+}
+
+function isUnreachableRouteError(error: unknown) {
+  const message = String((error as { message?: string })?.message || '');
+  return message === 'No route' || message === 'Route geometry unavailable';
 }
 
 async function fetchRoutingResponse(url: string, externalSignal?: AbortSignal) {
@@ -52,12 +60,21 @@ export async function fetchRoadRoute(
     `${OSRM_BASE_URL}/route/v1/driving/${from.longitude},${from.latitude};` +
     `${to.longitude},${to.latitude}?${geometryParams}&alternatives=false&steps=false`;
 
-  const response = await fetchRoutingResponse(url, signal);
+  const requestMarker = beginPerformanceStage('osrm-route-request');
+  let response: Response;
+  try {
+    response = await fetchRoutingResponse(url, signal);
+    endPerformanceStage(requestMarker, { success: response.ok });
+  } catch (error) {
+    endPerformanceStage(requestMarker, { success: false });
+    throw error;
+  }
   if (!response.ok) {
     throw new Error(`OSRM ${response.status}`);
   }
 
-  const data = (await response.json()) as {
+  const parseMarker = beginPerformanceStage('osrm-route-json-parse');
+  const data = (await response.json().finally(() => endPerformanceStage(parseMarker))) as {
     routes?: Array<{ distance?: number; duration?: number; geometry?: { coordinates?: number[][] } }>;
     waypoints?: OsrmWaypoint[];
   };
@@ -95,6 +112,22 @@ export async function fetchBestRoadRoute(
     return null;
   }
 
+  // Once jurisdiction/capacity filtering leaves a single eligible center,
+  // skip the redundant table lookup and request its verified geometry once.
+  if (destinations.length === 1) {
+    const destination = destinations[0];
+    try {
+      const route = await fetchRoadRoute(from, destination, true, minEtaMinutes, signal);
+      return {
+        ...route,
+        destinationId: destination.id,
+      };
+    } catch (error) {
+      if (isUnreachableRouteError(error)) return null;
+      throw error;
+    }
+  }
+
   const coordinates = [from, ...destinations]
     .map((point) => `${point.longitude},${point.latitude}`)
     .join(';');
@@ -103,12 +136,23 @@ export async function fetchBestRoadRoute(
     `${OSRM_BASE_URL}/table/v1/driving/${coordinates}` +
     `?sources=0&destinations=${destinationIndexes}&annotations=distance,duration`;
 
-  const response = await fetchRoutingResponse(url, signal);
+  const requestMarker = beginPerformanceStage('osrm-table-request');
+  let response: Response;
+  try {
+    response = await fetchRoutingResponse(url, signal);
+    endPerformanceStage(requestMarker, { success: response.ok, candidateCount: destinations.length });
+  } catch (error) {
+    endPerformanceStage(requestMarker, { success: false, candidateCount: destinations.length });
+    throw error;
+  }
   if (!response.ok) {
     throw new Error(`OSRM table ${response.status}`);
   }
 
-  const data = (await response.json()) as {
+  const parseMarker = beginPerformanceStage('osrm-table-json-parse');
+  const data = (await response.json().finally(() => endPerformanceStage(parseMarker, {
+    candidateCount: destinations.length,
+  }))) as {
     code?: string;
     distances?: Array<Array<number | null>>;
     durations?: Array<Array<number | null>>;
@@ -147,18 +191,47 @@ export async function fetchBestRoadRoute(
         first.durationSeconds - second.durationSeconds,
     );
 
-  const best = reachable[0];
-  if (!best) {
-    return null;
+  for (const candidate of reachable) {
+    try {
+      const route = await fetchRoadRoute(from, candidate.destination, true, minEtaMinutes, signal);
+      return {
+        ...route,
+        destinationId: candidate.destination.id,
+      };
+    } catch (error) {
+      if (!isUnreachableRouteError(error)) throw error;
+    }
   }
+  return null;
+}
 
-  const route = await fetchRoadRoute(from, best.destination, true, minEtaMinutes, signal);
-  if (route.routeCoordinates.length < 2) {
-    return null;
+/**
+ * Selects across every eligible center in one OSRM table operation and bounds
+ * the table + geometry sequence with a shared deadline. The former sequential
+ * three-center batching multiplied the per-request timeout into minutes.
+ */
+export async function fetchBestRoadRouteProgressively(
+  from: Coordinate,
+  orderedDestinations: RoadRouteDestination[],
+  _batchSize = 3,
+  minEtaMinutes = 1,
+  signal?: AbortSignal,
+): Promise<BestRoadRoute | null> {
+  if (orderedDestinations.length === 0) return null;
+  const controller = new AbortController();
+  const abortFromExternalSignal = () => controller.abort();
+  if (signal?.aborted) controller.abort();
+  signal?.addEventListener('abort', abortFromExternalSignal, { once: true });
+  const timeout = setTimeout(() => controller.abort(), ROUTING_SELECTION_TIMEOUT_MS);
+  try {
+    return await fetchBestRoadRoute(
+      from,
+      orderedDestinations,
+      minEtaMinutes,
+      controller.signal,
+    );
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener('abort', abortFromExternalSignal);
   }
-
-  return {
-    ...route,
-    destinationId: best.destination.id,
-  };
 }

@@ -13,6 +13,7 @@ import { AuthShell, authColors } from '../components/AuthShell';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { postAuth } from '../services/api';
 import { SessionData } from '../services/session';
+import { beginPerformanceStage, endPerformanceStage } from '../utils/performanceDiagnostics';
 
 type Props = {
   onLoginSuccess: (session: SessionData) => Promise<void>;
@@ -36,6 +37,8 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPa
 
     setLoading(true);
     setError(null);
+    const marker = beginPerformanceStage('authentication-to-screen');
+    const requestMarker = beginPerformanceStage('authentication-request');
     try {
       const normalizedIdentifier = identifier.trim();
       const isEmail = normalizedIdentifier.includes('@');
@@ -45,14 +48,21 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPa
         ...(isEmail ? { email: loginIdentifier } : { accountId: loginIdentifier }),
         password,
       });
+      endPerformanceStage(requestMarker);
+      const roleMarker = beginPerformanceStage('authentication-role-validation');
       const nextSession = res.data as SessionData;
       const allowedRole = ['user', 'rescuer', 'barangay_rescuer'].includes(nextSession?.user?.role || '');
+      endPerformanceStage(roleMarker, { success: Boolean(nextSession?.user && allowedRole) });
       if (!nextSession?.user || !allowedRole) {
+        endPerformanceStage(marker, { success: false });
         setError('This account cannot use the CDRRMD app.');
         return;
       }
       await onLoginSuccess(nextSession);
+      endPerformanceStage(marker);
     } catch (err: any) {
+      endPerformanceStage(requestMarker, { success: false });
+      endPerformanceStage(marker, { success: false });
       if (err?.code === 'ECONNABORTED' || err?.message?.toLowerCase?.().includes('network')) {
         setError('Cannot reach the server. Check your connection and try again.');
       } else {
