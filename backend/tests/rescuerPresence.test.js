@@ -122,11 +122,41 @@ test('Admin Dashboard and Incident Monitoring both enforce online gating and avo
   const root = path.resolve(__dirname, '../..');
   for (const relativePath of ['admin-web/src/pages/DashboardPage.tsx', 'admin-web/src/pages/MonitoringPage.tsx']) {
     const source = fs.readFileSync(path.join(root, relativePath), 'utf8');
-    assert.match(source, /\.filter\(\(rescuer\) => rescuer\.is_online\)/, `${relativePath} must filter offline responders`);
-    assert.match(source, /cityRescuers\.find\(\(rescuer\) => rescuer\.is_online/, `${relativePath} must gate assigned responder location`);
+    assert.match(source, /isLiveResponderAccount\(rescuer, presenceNow\)/, `${relativePath} must filter offline or stale responders`);
+    assert.match(source, /liveResponderCoordinate\(liveResponder, presenceNow\)/, `${relativePath} must gate assigned responder location`);
   }
   const monitoring = fs.readFileSync(path.join(root, 'admin-web/src/pages/MonitoringPage.tsx'), 'utf8');
   assert.doesNotMatch(monitoring, /current_latitude \?\? selectedReport\?\.rescuer_latitude/);
+});
+
+test('all web live-responder map paths expire cached coordinates and clear failed feeds', () => {
+  const root = path.resolve(__dirname, '../..');
+  const helper = fs.readFileSync(path.join(root, 'admin-web/src/services/liveResponderPresence.ts'), 'utf8');
+  const dashboard = fs.readFileSync(path.join(root, 'admin-web/src/pages/DashboardPage.tsx'), 'utf8');
+  const monitoring = fs.readFileSync(path.join(root, 'admin-web/src/pages/MonitoringPage.tsx'), 'utf8');
+  const barangayMonitoring = fs.readFileSync(path.join(root, 'admin-web/src/barangay/pages/MonitoringPage.tsx'), 'utf8');
+  const mapHtml = fs.readFileSync(path.join(root, 'admin-web/src/utils/calambaMapHtml.ts'), 'utf8');
+
+  assert.match(helper, /responder\?\.is_online === true/);
+  assert.match(helper, /ageMs >= -RESPONDER_FUTURE_TOLERANCE_MS/);
+  assert.match(helper, /ageMs <= RESPONDER_PRESENCE_TTL_MS/);
+  assert.match(dashboard, /catch \(err: unknown\) \{\s+setCityRescuers\(\[\]\)/);
+  assert.match(monitoring, /catch \(err: unknown\) \{\s+setCityRescuers\(\[\]\)/);
+  assert.match(barangayMonitoring, /isLiveResponderAccount\(rescuer, presenceNow\)/);
+  assert.match(barangayMonitoring, /hasFreshResponderCoordinates\(candidate, presenceNow\)/);
+  assert.match(barangayMonitoring, /else \{\s+setReports\(\[\]\);/);
+  assert.match(mapHtml, /responderFleetLayer\.clearLayers\(\)/);
+  assert.match(mapHtml, /point\.isOnline !== true/);
+  assert.match(mapHtml, /locationAgeMs < -5000 \|\| locationAgeMs > 45000/);
+});
+
+test('localhost builds never silently fall through to the production API', () => {
+  const apiClient = fs.readFileSync(
+    path.resolve(__dirname, '../../admin-web/src/services/apiClient.ts'),
+    'utf8',
+  );
+  assert.match(apiClient, /\['localhost', '127\.0\.0\.1', '::1', '\[::1\]'\]\.includes\(window\.location\.hostname\)/);
+  assert.match(apiClient, /import\.meta\.env\.PROD && !isLocalBrowser/);
 });
 
 test('portal-level GPS survives tab switching without duplicate screen-level tracking', () => {

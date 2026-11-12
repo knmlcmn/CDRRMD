@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/apiClient';
 import { fetchRoadRoute } from '../services/roadRouting';
+import { isLiveResponderAccount, liveResponderCoordinate } from '../services/liveResponderPresence';
 import AdminShell from '../components/AdminShell';
 import { d } from '../adminDesign';
 import type {
@@ -116,6 +117,12 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
   const mapFrameRef = useRef<HTMLIFrameElement | null>(null);
   const lastFocusedRescue = useRef('');
   const [mapReady, setMapReady] = useState(false);
+  const [presenceNow, setPresenceNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setPresenceNow(Date.now()), 5_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const loadFeed = useCallback(async (showLoading = true) => {
     if (routineLoadInFlightRef.current) return;
@@ -140,6 +147,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
         ...(Array.isArray(barangayResponderResponse.data) ? barangayResponderResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'barangay' as const })),
       ]);
     } catch (err: unknown) {
+      setCityRescuers([]);
       const apiError = err as { response?: { status?: number; data?: { message?: string } } };
       if (apiError.response?.status === 401) {
         onAuthError();
@@ -251,12 +259,10 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     .find((report) => report.id === mapFocusedReportId) || null, [activeMissionReports, mapFocusedReportId]);
 
   const responderLocation = useMemo<Coordinate | null>(() => {
-    const liveResponder = cityRescuers.find((rescuer) => rescuer.is_online
+    const liveResponder = cityRescuers.find((rescuer) => isLiveResponderAccount(rescuer, presenceNow)
       && Number(rescuer.id) === Number(selectedMapReport?.assigned_rescuer_id));
-    const latitude = Number(liveResponder?.current_latitude);
-    const longitude = Number(liveResponder?.current_longitude);
-    return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
-  }, [cityRescuers, selectedMapReport?.assigned_rescuer_id]);
+    return liveResponderCoordinate(liveResponder, presenceNow);
+  }, [cityRescuers, presenceNow, selectedMapReport?.assigned_rescuer_id]);
 
   const residentLocation = useMemo<Coordinate | null>(() => {
     const latitude = Number(selectedMapReport?.latitude);
@@ -288,7 +294,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
   }, [responderLocation, routeDestination]);
 
   const responderPoints = useMemo(() => cityRescuers
-    .filter((rescuer) => rescuer.is_online)
+    .filter((rescuer) => isLiveResponderAccount(rescuer, presenceNow))
     .map((rescuer) => {
       const activeAssignment = activeMissionReports.find((report) => Number(report.assigned_rescuer_id) === Number(rescuer.id));
       return {
@@ -302,9 +308,11 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
         activeReportCode: activeAssignment?.report_code || null,
         barangayName: rescuer.barangay_name || null,
         kind: rescuer.kind,
+        isOnline: true,
+        locationUpdatedAt: rescuer.location_updated_at,
       };
     })
-    .filter((rescuer) => Number.isFinite(rescuer.latitude) && Number.isFinite(rescuer.longitude)), [activeMissionReports, cityRescuers]);
+    .filter((rescuer) => Number.isFinite(rescuer.latitude) && Number.isFinite(rescuer.longitude)), [activeMissionReports, cityRescuers, presenceNow]);
 
   const mapHtml = useMemo(
     () => buildMapHtml(

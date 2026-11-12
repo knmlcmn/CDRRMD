@@ -2280,6 +2280,9 @@ export function buildCalambaMapHtml(
       function renderResponderFleet(extendInitialBounds) {
         responderFleetLayer.clearLayers();
         (payload.responderPoints || []).forEach(function(point) {
+          var locationUpdatedAt = Date.parse(String(point.locationUpdatedAt || ''));
+          var locationAgeMs = Date.now() - locationUpdatedAt;
+          if (point.isOnline !== true || !Number.isFinite(locationUpdatedAt) || locationAgeMs < -5000 || locationAgeMs > 45000) return;
           if (payload.responderLocation && String(point.id) === String(payload.selectedResponderId || '')) return;
           var latitude = Number(point.latitude);
           var longitude = Number(point.longitude);

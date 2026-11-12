@@ -1,8 +1,11 @@
 import axios from 'axios';
 
+const isLocalBrowser = typeof window !== 'undefined'
+  && ['localhost', '127.0.0.1', '::1', '[::1]'].includes(window.location.hostname);
+
 export const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
-  (import.meta.env.PROD
+  (import.meta.env.PROD && !isLocalBrowser
     ? 'https://cdrrmd-backend.vercel.app/api'
     : 'http://localhost:4000/api');
 const ADMIN_TOKEN_KEY = 'admin_token';
