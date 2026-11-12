@@ -1,0 +1,16 @@
+# Local dependencies, generated output, and database backups
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+.vercel/
+database-backups/
+
+# Local-only configuration and logs
+.env
+.env.local
+.env.*
+*.log
+*.tmp
+*.temp

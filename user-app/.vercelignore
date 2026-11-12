@@ -1,0 +1,28 @@
+# Local dependencies and generated Expo/web output
+node_modules/
+dist/
+dist-android-*/
+build/
+coverage/
+.expo/
+.cache/
+.metro-cache/
+.vercel/
+.gradle/
+android/.gradle/
+android/app/build/
+
+# Android packages and local release evidence
+*.apk
+*.aab
+apk-backup/
+*.before-*.json
+v*-*-log.txt
+
+# Local-only configuration and logs
+.env
+.env.local
+.env.*
+*.log
+*.tmp
+*.temp

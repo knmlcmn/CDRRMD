@@ -8,9 +8,23 @@ coverage/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+*.log
+*.tmp
+*.temp
+.cache/
+.metro-cache/
 .vercel/
 .expo
 database-backups/
+
+# Generated Android release and audit outputs. Keep evidence locally, but do
+# not add APKs, exported bundles, device logs, or config snapshots to Git.
+*.apk
+*.aab
+/user-app/dist-android-*/
+/user-app/apk-backup/
+/user-app/*.before-*.json
+/user-app/v*-*-log.txt
 
 .vercel
 .env*

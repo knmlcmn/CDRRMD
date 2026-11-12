@@ -1,0 +1,14 @@
+# Local dependencies and generated web output
+node_modules/
+dist/
+coverage/
+.cache/
+.vercel/
+
+# Local-only configuration and logs
+.env
+.env.local
+.env.*
+*.log
+*.tmp
+*.temp

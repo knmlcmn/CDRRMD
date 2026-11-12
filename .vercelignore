@@ -14,6 +14,18 @@ android/.gradle/
 android/app/build/
 dist/
 build/
+coverage/
+.cache/
+.metro-cache/
+*.log
+*.tmp
+*.temp
+
+# Android-only staging and release evidence
+user-app/dist-android-*/
+user-app/apk-backup/
+user-app/*.before-*.json
+user-app/v*-*-log.txt
 
 # Git and local files
 .git/
