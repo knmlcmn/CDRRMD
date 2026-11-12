@@ -573,6 +573,7 @@ export function buildCalambaMapHtml(
       var cityAlertControl = null;
       var legendVisible = false;
       var legendControl = null;
+      var legendContentNode = null;
       var legendToggleControl = null;
       var lastLegendUpdatedAt = null;
       var latestBarangayGeoJsonData = null;
@@ -582,6 +583,12 @@ export function buildCalambaMapHtml(
       var pendingFocusFit = Boolean(jurisdictionBarangayKey);
       var lastRecenterRequestId = 0;
       var barangayLayerByKey = {};
+      var barangayBoundaryScopeKey = null;
+      var incidentMarkerByKey = {};
+      var residentRouteMarker = null;
+      var destinationRouteMarker = null;
+      var responderRouteMarker = null;
+      var responderRouteLine = null;
       var shorelinePolyline = [
         [14.254, 121.217],
         [14.239, 121.218],
@@ -1865,25 +1872,27 @@ export function buildCalambaMapHtml(
           legendToggleControl.addTo(map);
         }
 
-        if (legendControl) {
+        if (legendVisible) {
+          var wrap = L.DomUtil.create('div');
+          wrap.innerHTML = buildLegendHtml();
+          var nextContent = wrap.firstChild;
+          if (legendControl && legendContentNode && nextContent) {
+            legendContentNode.className = nextContent.className;
+            legendContentNode.innerHTML = nextContent.innerHTML;
+          } else {
+            legendControl = L.control({ position: 'bottomleft' });
+            legendControl.onAdd = function() {
+              legendContentNode = nextContent || L.DomUtil.create('div', 'map-legend');
+              L.DomEvent.disableClickPropagation(legendContentNode);
+              L.DomEvent.disableScrollPropagation(legendContentNode);
+              return legendContentNode;
+            };
+            legendControl.addTo(map);
+          }
+        } else if (legendControl) {
           map.removeControl(legendControl);
           legendControl = null;
-        }
-
-        if (legendVisible) {
-          legendControl = L.control({ position: 'bottomleft' });
-          legendControl.onAdd = function() {
-            var wrap = L.DomUtil.create('div');
-            wrap.innerHTML = buildLegendHtml();
-            var first = wrap.firstChild;
-            if (first) {
-              L.DomEvent.disableClickPropagation(first);
-              L.DomEvent.disableScrollPropagation(first);
-              return first;
-            }
-            return L.DomUtil.create('div', 'map-legend');
-          };
-          legendControl.addTo(map);
+          legendContentNode = null;
         }
       }
 
@@ -1996,8 +2005,6 @@ export function buildCalambaMapHtml(
       }
 
       function renderBarangayBoundaryLayer() {
-        barangayBoundaryLayer.clearLayers();
-        barangayLayerByKey = {};
         var source = latestBarangayGeoJsonData || barangayBoundaryGeoJsonData;
         if (!source) {
           return;
@@ -2013,6 +2020,42 @@ export function buildCalambaMapHtml(
             return normalizeBarangayName(props.barangay_name || props.barangayName || props.name) === boundaryScopeKey;
           })
           : [];
+
+        var nextFeatureByKey = {};
+        filteredFeatures.forEach(function(feature) {
+          var props = feature && feature.properties ? feature.properties : {};
+          var key = normalizeBarangayName(props.barangay_name || props.barangayName || props.name);
+          if (key) nextFeatureByKey[key] = feature;
+        });
+        var existingKeys = Object.keys(barangayLayerByKey).sort();
+        var nextKeys = Object.keys(nextFeatureByKey).sort();
+        var scopeSignature = boundaryScopeKey || '__all__';
+        var canUpdateInPlace = barangayBoundaryScopeKey === scopeSignature
+          && existingKeys.length === nextKeys.length
+          && existingKeys.every(function(key, index) { return key === nextKeys[index]; });
+
+        if (canUpdateInPlace) {
+          nextKeys.forEach(function(key) {
+            var feature = nextFeatureByKey[key];
+            var layer = barangayLayerByKey[key];
+            var props = feature && feature.properties ? feature.properties : {};
+            var weatherImpact = weatherImpactByBarangay[key] || null;
+            layer.feature = feature;
+            if (typeof layer.setStyle === 'function') layer.setStyle(resolveBarangayBoundaryStyle(feature));
+            if (!isScalarWeatherVisible() && !Boolean(visibility.windOverlay)) {
+              var popupHtml = buildBoundaryPopupHtml(props, weatherImpact);
+              if (layer.getPopup && layer.getPopup()) layer.setPopupContent(popupHtml);
+              else layer.bindPopup(popupHtml);
+            } else if (layer.getPopup && layer.getPopup()) {
+              layer.unbindPopup();
+            }
+          });
+          return;
+        }
+
+        barangayBoundaryLayer.clearLayers();
+        barangayLayerByKey = {};
+        barangayBoundaryScopeKey = scopeSignature;
 
         var nextSource = {
           type: 'FeatureCollection',
@@ -2303,7 +2346,7 @@ export function buildCalambaMapHtml(
       }
 
       function renderIncidents() {
-        incidentLayer.clearLayers();
+        var nextKeys = {};
         (payload.incidentPoints || []).forEach(function(point) {
           if ((payload.pickedUp || (payload.mapBehavior && payload.mapBehavior.pickedUp)) && point.reportCode === payload.selectedReportCode) {
             return;
@@ -2313,12 +2356,26 @@ export function buildCalambaMapHtml(
           if (!Number.isFinite(lat) || !Number.isFinite(lon) || !inCalamba(lat, lon)) {
             return;
           }
+          var key = String(point.reportCode || (lat + ':' + lon));
+          nextKeys[key] = true;
           fitBounds.extend([lat, lon]);
-          L.marker([lat, lon], { icon: residentPinIcon }).addTo(incidentLayer).bindPopup(
+          var popupHtml =
             '<strong>' + (point.reportCode || 'Incident') + '</strong><br/>' +
             'Type: ' + (point.reportType || 'incident') + '<br/>' +
-            'Status: ' + (point.status || 'pending')
-          );
+            'Status: ' + (point.status || 'pending');
+          var marker = incidentMarkerByKey[key];
+          if (!marker) {
+            marker = L.marker([lat, lon], { icon: residentPinIcon }).addTo(incidentLayer).bindPopup(popupHtml);
+            incidentMarkerByKey[key] = marker;
+          } else {
+            marker.setLatLng([lat, lon]);
+            marker.setPopupContent(popupHtml);
+          }
+        });
+        Object.keys(incidentMarkerByKey).forEach(function(key) {
+          if (nextKeys[key]) return;
+          incidentLayer.removeLayer(incidentMarkerByKey[key]);
+          delete incidentMarkerByKey[key];
         });
       }
 
@@ -2485,18 +2542,34 @@ export function buildCalambaMapHtml(
       }
 
       function renderResponderRoute(extendInitialBounds) {
-        responderRouteLayer.clearLayers();
         var pickedUp = Boolean(payload.pickedUp || (payload.mapBehavior && payload.mapBehavior.pickedUp));
         if (!pickedUp && payload.incidentLocation && inCalamba(Number(payload.incidentLocation.latitude), Number(payload.incidentLocation.longitude))) {
           if (extendInitialBounds) fitBounds.extend([payload.incidentLocation.latitude, payload.incidentLocation.longitude]);
-          L.marker([payload.incidentLocation.latitude, payload.incidentLocation.longitude], { icon: residentPinIcon, zIndexOffset: 1000 })
-            .addTo(responderRouteLayer).bindPopup('<strong>Resident location</strong><br/>' + (payload.selectedReportCode || 'Rescue report'));
+          var residentPopup = '<strong>Resident location</strong><br/>' + (payload.selectedReportCode || 'Rescue report');
+          if (!residentRouteMarker) {
+            residentRouteMarker = L.marker([payload.incidentLocation.latitude, payload.incidentLocation.longitude], { icon: residentPinIcon, zIndexOffset: 1000 })
+              .addTo(responderRouteLayer).bindPopup(residentPopup);
+          } else {
+            residentRouteMarker.setLatLng([payload.incidentLocation.latitude, payload.incidentLocation.longitude]);
+            residentRouteMarker.setPopupContent(residentPopup);
+          }
+        } else if (residentRouteMarker) {
+          responderRouteLayer.removeLayer(residentRouteMarker);
+          residentRouteMarker = null;
         }
         if (pickedUp && payload.routeDestination && inCalamba(Number(payload.routeDestination.latitude), Number(payload.routeDestination.longitude))) {
           if (extendInitialBounds) fitBounds.extend([payload.routeDestination.latitude, payload.routeDestination.longitude]);
-          L.marker([payload.routeDestination.latitude, payload.routeDestination.longitude], { icon: areaPinIcon, zIndexOffset: 1050 })
-            .addTo(responderRouteLayer)
-            .bindPopup('<strong>Destination evacuation center</strong><br/>' + escapeHtml(payload.evacuationAreaName || 'Assigned evacuation center'));
+          var destinationPopup = '<strong>Destination evacuation center</strong><br/>' + escapeHtml(payload.evacuationAreaName || 'Assigned evacuation center');
+          if (!destinationRouteMarker) {
+            destinationRouteMarker = L.marker([payload.routeDestination.latitude, payload.routeDestination.longitude], { icon: areaPinIcon, zIndexOffset: 1050 })
+              .addTo(responderRouteLayer).bindPopup(destinationPopup);
+          } else {
+            destinationRouteMarker.setLatLng([payload.routeDestination.latitude, payload.routeDestination.longitude]);
+            destinationRouteMarker.setPopupContent(destinationPopup);
+          }
+        } else if (destinationRouteMarker) {
+          responderRouteLayer.removeLayer(destinationRouteMarker);
+          destinationRouteMarker = null;
         }
 
         if (payload.responderLocation
@@ -2518,20 +2591,42 @@ export function buildCalambaMapHtml(
                 popupAnchor: [0, -19],
               })
             : mapPersonIcon(responderIconName, responderColor, 24);
-          L.marker([payload.responderLocation.latitude, payload.responderLocation.longitude], { icon: responderIcon, zIndexOffset: 1100 })
-            .addTo(responderRouteLayer).bindPopup(pickedUp
-              ? '<strong>Responder and resident together</strong><br/>En route to the evacuation center'
-              : '<strong>' + escapeHtml(payload.responderLabel || 'Closest responder base') + '</strong>');
+          var responderPopup = pickedUp
+            ? '<strong>Responder and resident together</strong><br/>En route to the evacuation center'
+            : '<strong>' + escapeHtml(payload.responderLabel || 'Closest responder base') + '</strong>';
+          var responderIconKey = String(responderKind || 'default') + ':' + String(pickedUp);
+          if (!responderRouteMarker) {
+            responderRouteMarker = L.marker([payload.responderLocation.latitude, payload.responderLocation.longitude], { icon: responderIcon, zIndexOffset: 1100 })
+              .addTo(responderRouteLayer).bindPopup(responderPopup);
+            responderRouteMarker._cddrmdIconKey = responderIconKey;
+          } else {
+            responderRouteMarker.setLatLng([payload.responderLocation.latitude, payload.responderLocation.longitude]);
+            responderRouteMarker.setPopupContent(responderPopup);
+            if (responderRouteMarker._cddrmdIconKey !== responderIconKey) {
+              responderRouteMarker.setIcon(responderIcon);
+              responderRouteMarker._cddrmdIconKey = responderIconKey;
+            }
+          }
+        } else if (responderRouteMarker) {
+          responderRouteLayer.removeLayer(responderRouteMarker);
+          responderRouteMarker = null;
         }
 
+        var hasRouteLine = false;
         if ((payload.routeCoordinates || []).length > 1) {
           var line = payload.routeCoordinates
             .map(function(point) { return [Number(point.latitude), Number(point.longitude)]; })
             .filter(function(point) { return Number.isFinite(point[0]) && Number.isFinite(point[1]) && inCalamba(point[0], point[1]); });
           if (line.length > 1) {
+            hasRouteLine = true;
             if (extendInitialBounds) line.forEach(function(p) { fitBounds.extend(p); });
-            L.polyline(line, { color: '#22c55e', weight: 6, opacity: 0.8 }).addTo(responderRouteLayer);
+            if (responderRouteLine) responderRouteLine.setLatLngs(line);
+            else responderRouteLine = L.polyline(line, { color: '#22c55e', weight: 6, opacity: 0.8 }).addTo(responderRouteLayer);
           }
+        }
+        if (!hasRouteLine && responderRouteLine) {
+          responderRouteLayer.removeLayer(responderRouteLine);
+          responderRouteLine = null;
         }
       }
 

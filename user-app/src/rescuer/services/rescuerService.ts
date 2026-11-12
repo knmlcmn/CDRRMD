@@ -1,5 +1,7 @@
+import { AppState } from 'react-native';
 import { api } from '../../services/api';
 import type { Assignment, AssignmentHistory, FloodReportLogPage, RescuerAccount, WaterLevelSensor } from '../types';
+import { createHeartbeatDispatcher } from './heartbeatDispatcher';
 
 export async function loadAssignments() {
   const { data } = await api.get<Assignment[]>('/rescuers/incidents/mine');
@@ -32,8 +34,13 @@ export function acknowledgeAssignment(backupRequestId: number) {
   return api.patch(`/backup-requests/${backupRequestId}/respond`);
 }
 
+const heartbeatDispatcher = createHeartbeatDispatcher(
+  () => api.post('/rescuers/presence/heartbeat'),
+  () => AppState.currentState === 'active',
+);
+
 export function sendHeartbeat() {
-  return api.post('/rescuers/presence/heartbeat');
+  return heartbeatDispatcher.trigger();
 }
 
 export function updateResponderLocation(latitude: number, longitude: number) {

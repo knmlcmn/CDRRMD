@@ -5,6 +5,7 @@ import { AppText as Text } from '../../components/Typography';
 import PlatformMap from '../../components/PlatformMap';
 import { api } from '../../services/api';
 import { fetchRoadRoute } from '../../services/routingService';
+import { shouldRefreshRoute, type PreviousRouteRefresh } from '../../services/routeRefreshPolicy';
 import type { EvacuationAreaItem } from '../../types';
 import { buildCalambaMapHtml } from '../utils/rescuerMapHtml';
 import { Card, DetailRow, EmptyState, ErrorMessage, PrimaryButton, RescuerScreen, rescuerColors } from '../components/RescuerScreen';
@@ -24,6 +25,9 @@ type Props = {
   presenceRevision: number;
 };
 type RouteData = { routeCoordinates: Coordinate[]; distanceKm: number | null; etaMinutes: number | null };
+type RouteRequest = { controller: AbortController };
+
+const EMPTY_ROUTE: RouteData = { routeCoordinates: [], distanceKm: null, etaMinutes: null };
 
 function errorMessage(error: any, fallback: string) {
   return error?.response?.data?.message || error?.message || fallback;
@@ -73,6 +77,10 @@ export default function AssignmentsScreen({
   const initialLocationFocusedRef = useRef(false);
   const lastFocusedAssignmentRef = useRef('');
   const initialMapLocationRef = useRef<Coordinate | null>(null);
+  const routeRefreshRef = useRef<PreviousRouteRefresh | null>(null);
+  const routeRequestRef = useRef<RouteRequest | null>(null);
+  const alertRouteRefreshRef = useRef<PreviousRouteRefresh | null>(null);
+  const alertRouteRequestRef = useRef<RouteRequest | null>(null);
   if (!initialMapLocationRef.current && location) initialMapLocationRef.current = location;
   const initialMapLocation = initialMapLocationRef.current;
   const mapBaseUrl = String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '');
@@ -191,28 +199,47 @@ export default function AssignmentsScreen({
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
   }, [selected]);
 
+  const routeRefreshKey = selected && destination
+    ? [
+        selected.backup_request_id,
+        Boolean(selected.responder_acknowledged_at),
+        Boolean(selected.picked_up_at),
+        destination.latitude,
+        destination.longitude,
+      ].join(':')
+    : '';
+
   useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
     if (!location || !destination) {
-      setRoute({ routeCoordinates: [], distanceKm: null, etaMinutes: null });
-      return () => {
-        active = false;
-        controller.abort();
-      };
+      routeRequestRef.current?.controller.abort();
+      routeRequestRef.current = null;
+      routeRefreshRef.current = null;
+      setRoute((current) => current === EMPTY_ROUTE ? current : EMPTY_ROUTE);
+      return;
     }
+    const previous = routeRefreshRef.current;
+    const refreshNow = Date.now();
+    if (!shouldRefreshRoute({ previous, key: routeRefreshKey, location, now: refreshNow })) return;
+
+    const keyChanged = previous?.key !== routeRefreshKey;
+    routeRefreshRef.current = { key: routeRefreshKey, location, refreshedAt: refreshNow };
+    routeRequestRef.current?.controller.abort();
+    const controller = new AbortController();
+    routeRequestRef.current = { controller };
+    if (keyChanged) setRoute(EMPTY_ROUTE);
+
     fetchRoadRoute(location, destination, true, 1, controller.signal)
-      .then((result) => { if (active) setRoute(result); })
+      .then((result) => {
+        if (!controller.signal.aborted && routeRequestRef.current?.controller === controller) setRoute(result);
+      })
       .catch((caught: any) => {
-        if (active && caught?.name !== 'AbortError') {
-          setRoute({ routeCoordinates: [location, destination], distanceKm: null, etaMinutes: null });
-        }
+        if (controller.signal.aborted || caught?.name === 'AbortError') return;
+        if (routeRequestRef.current?.controller !== controller) return;
+        setRoute((current) => current.routeCoordinates.length > 1
+          ? current
+          : { routeCoordinates: [location, destination], distanceKm: null, etaMinutes: null });
       });
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [destination, location]);
+  }, [destination, location, routeRefreshKey]);
 
   const buildAssignmentMapHtml = useCallback((fullscreen: boolean) => buildCalambaMapHtml(
     areas,
@@ -302,28 +329,46 @@ export default function AssignmentsScreen({
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
   }, [newAssignment]);
 
+  const alertRouteRefreshKey = newAssignment && alertDestination
+    ? `${newAssignment.backup_request_id}:${alertDestination.latitude}:${alertDestination.longitude}`
+    : '';
+
   useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
     if (!location || !alertDestination) {
-      setAlertRoute({ routeCoordinates: [], distanceKm: null, etaMinutes: null });
-      return () => {
-        active = false;
-        controller.abort();
-      };
+      alertRouteRequestRef.current?.controller.abort();
+      alertRouteRequestRef.current = null;
+      alertRouteRefreshRef.current = null;
+      setAlertRoute((current) => current === EMPTY_ROUTE ? current : EMPTY_ROUTE);
+      return;
     }
+    const previous = alertRouteRefreshRef.current;
+    const refreshNow = Date.now();
+    if (!shouldRefreshRoute({ previous, key: alertRouteRefreshKey, location, now: refreshNow })) return;
+
+    const keyChanged = previous?.key !== alertRouteRefreshKey;
+    alertRouteRefreshRef.current = { key: alertRouteRefreshKey, location, refreshedAt: refreshNow };
+    alertRouteRequestRef.current?.controller.abort();
+    const controller = new AbortController();
+    alertRouteRequestRef.current = { controller };
+    if (keyChanged) setAlertRoute(EMPTY_ROUTE);
+
     fetchRoadRoute(location, alertDestination, true, 1, controller.signal)
-      .then((result) => { if (active) setAlertRoute(result); })
+      .then((result) => {
+        if (!controller.signal.aborted && alertRouteRequestRef.current?.controller === controller) setAlertRoute(result);
+      })
       .catch((caught: any) => {
-        if (active && caught?.name !== 'AbortError') {
-          setAlertRoute({ routeCoordinates: [location, alertDestination], distanceKm: null, etaMinutes: null });
-        }
+        if (controller.signal.aborted || caught?.name === 'AbortError') return;
+        if (alertRouteRequestRef.current?.controller !== controller) return;
+        setAlertRoute((current) => current.routeCoordinates.length > 1
+          ? current
+          : { routeCoordinates: [location, alertDestination], distanceKm: null, etaMinutes: null });
       });
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [alertDestination, location]);
+  }, [alertDestination, alertRouteRefreshKey, location]);
+
+  useEffect(() => () => {
+    routeRequestRef.current?.controller.abort();
+    alertRouteRequestRef.current?.controller.abort();
+  }, []);
 
   const focusKey = selected ? `${selected.backup_request_id}:${Boolean(selected.responder_acknowledged_at)}:${Boolean(selected.picked_up_at)}:${selected.evacuation_area_id || ''}` : '';
   useEffect(() => {
