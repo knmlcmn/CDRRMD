@@ -40,8 +40,16 @@ function issueTokens(user) {
     barangayName: user.barangay_name || null,
   };
 
-  const token = jwt.sign(payload, ACCESS_SECRET, { expiresIn: ACCESS_EXPIRES_IN });
-  const refreshToken = jwt.sign(payload, REFRESH_SECRET, { expiresIn: REFRESH_EXPIRES_IN });
+  const refreshToken = jwt.sign(
+    { ...payload, jti: crypto.randomUUID() },
+    REFRESH_SECRET,
+    { expiresIn: REFRESH_EXPIRES_IN },
+  );
+  const token = jwt.sign(
+    { ...payload, sessionHash: hashRefreshToken(refreshToken) },
+    ACCESS_SECRET,
+    { expiresIn: ACCESS_EXPIRES_IN },
+  );
 
   return { token, refreshToken };
 }

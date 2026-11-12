@@ -1,18 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { AppState, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppText as Text } from '../../components/Typography';
 import PlatformMap from '../../components/PlatformMap';
 import { api } from '../../services/api';
-import { requireLiveLocation, watchLiveLocation, type LiveLocationSubscription } from '../../services/locationAccess';
 import { fetchRoadRoute } from '../../services/routingService';
 import type { EvacuationAreaItem } from '../../types';
 import { buildCalambaMapHtml } from '../utils/rescuerMapHtml';
 import { Card, DetailRow, EmptyState, ErrorMessage, PrimaryButton, RescuerScreen, rescuerColors } from '../components/RescuerScreen';
-import { acknowledgeAssignment, loadAssignments, loadWeeklyHistory, updateResponderLocation } from '../services/rescuerService';
+import { acknowledgeAssignment, loadAssignments, loadWeeklyHistory } from '../services/rescuerService';
 import type { Assignment, AssignmentHistory, Coordinate, ResponderRole } from '../types';
 
-type Props = { role: ResponderRole; onAuthError: () => void };
+type Props = {
+  role: ResponderRole;
+  onAuthError: () => void;
+  location: Coordinate | null;
+  locationError: string;
+  presenceNotice: string;
+  presenceRevision: number;
+};
 type RouteData = { routeCoordinates: Coordinate[]; distanceKm: number | null; etaMinutes: number | null };
 
 function errorMessage(error: any, fallback: string) {
@@ -32,26 +38,29 @@ function sameRecords<T>(current: T[], next: T[]) {
   return JSON.stringify(current) === JSON.stringify(next);
 }
 
-export default function AssignmentsScreen({ role, onAuthError }: Props) {
+export default function AssignmentsScreen({
+  role,
+  onAuthError,
+  location,
+  locationError,
+  presenceNotice,
+  presenceRevision,
+}: Props) {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [history, setHistory] = useState<AssignmentHistory[]>([]);
   const [areas, setAreas] = useState<EvacuationAreaItem[]>([]);
   const [areasLoaded, setAreasLoaded] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [location, setLocation] = useState<Coordinate | null>(null);
   const [route, setRoute] = useState<RouteData>({ routeCoordinates: [], distanceKm: null, etaMinutes: null });
   const [alertRoute, setAlertRoute] = useState<RouteData>({ routeCoordinates: [], distanceKm: null, etaMinutes: null });
   const [recenterRequestId, setRecenterRequestId] = useState(0);
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const [forecastOverlayVisible, setForecastOverlayVisible] = useState(false);
   const [error, setError] = useState('');
-  const [locationError, setLocationError] = useState('');
-  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dismissedAlertId, setDismissedAlertId] = useState<number | null>(null);
   const loadingRef = useRef(false);
-  const locationRef = useRef<Coordinate | null>(null);
   const initialLocationFocusedRef = useRef(false);
   const lastFocusedAssignmentRef = useRef('');
   const initialMapLocationRef = useRef<Coordinate | null>(null);
@@ -88,82 +97,15 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
   }, [refresh]);
 
   useEffect(() => {
+    if (presenceRevision > 0) void refresh();
+  }, [presenceRevision, refresh]);
+
+  useEffect(() => {
     api.get<EvacuationAreaItem[]>('/content/evacuation-areas')
       .then(({ data }) => setAreas(Array.isArray(data) ? data : []))
       .catch((caught) => handleApiError(caught, 'Failed to load evacuation areas.'))
       .finally(() => setAreasLoaded(true));
   }, [handleApiError]);
-
-  useEffect(() => {
-    let active = true;
-    let locationBusy = false;
-    let watcher: LiveLocationSubscription | null = null;
-
-    async function publishLocation(nextLocation: Coordinate) {
-      if (!active) return;
-      const previous = locationRef.current;
-      locationRef.current = nextLocation;
-      if (!previous || previous.latitude !== nextLocation.latitude || previous.longitude !== nextLocation.longitude) {
-        setLocation(nextLocation);
-      }
-      setLocationError('');
-      if (locationBusy) return;
-      locationBusy = true;
-      try {
-        const { data } = await updateResponderLocation(nextLocation.latitude, nextLocation.longitude);
-        if (!active) return;
-        if (data.rerouted) setNotice(`Route updated to ${data.evacuationAreaName || 'the nearest available evacuation center'}.`);
-        if (data.rerouted || data.pickupConfirmed) void refresh();
-      } catch (caught) {
-        if (active) handleApiError(caught, 'Unable to update your live responder location.');
-      } finally {
-        locationBusy = false;
-      }
-    }
-
-    async function updateLocation(requestPermission: boolean) {
-      try {
-        const result = await requireLiveLocation(requestPermission);
-        if (!active) return;
-        if (!result.ok) {
-          // A temporary follow-up timeout must not invalidate a location that
-          // is already visible on the map and usable for dispatch.
-          if (!locationRef.current) setLocationError(result.message);
-          else await publishLocation(locationRef.current);
-          return;
-        }
-        await publishLocation(result.location);
-      } catch (caught) {
-        if (active && !locationRef.current) handleApiError(caught, 'Unable to update your live responder location.');
-      }
-    }
-
-    async function startTracking() {
-      await updateLocation(true);
-      if (!active || Platform.OS === 'web') return;
-      try {
-        watcher = await watchLiveLocation((nextLocation) => { void publishLocation(nextLocation); });
-      } catch (caught) {
-        if (active && !locationRef.current) handleApiError(caught, 'Unable to start live responder location tracking.');
-      }
-    }
-
-    void startTracking();
-    const webTimer = Platform.OS === 'web'
-      ? setInterval(() => void updateLocation(false), 10000)
-      : null;
-    // Refresh the server timestamp even while the responder is stationary and
-    // Android therefore has no new distance-based watcher event to deliver.
-    const serverTimer = setInterval(() => {
-      if (locationRef.current) void publishLocation(locationRef.current);
-    }, 15000);
-    return () => {
-      active = false;
-      if (webTimer) clearInterval(webTimer);
-      clearInterval(serverTimer);
-      watcher?.remove();
-    };
-  }, [handleApiError, refresh]);
 
   const selected = useMemo(
     () => assignments.find((item) => item.backup_request_id === selectedId) || assignments[0] || null,
@@ -321,7 +263,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
   ), [alertDestination, alertRoute.routeCoordinates, location, newAssignment, role]);
 
   async function dispatch(item: Assignment) {
-    if (busy || !locationRef.current) return;
+    if (busy || !location) return;
     setBusy(true);
     try {
       await acknowledgeAssignment(item.backup_request_id);
@@ -339,7 +281,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
     <RescuerScreen title={role === 'barangay_rescuer' ? 'Barangay Rescue Assignments' : 'CDRRMD Backup Assignments'} subtitle={subtitle} refreshing={loading} onRefresh={() => void refresh()}>
       <ErrorMessage message={error} />
       <ErrorMessage message={locationError} />
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+      {presenceNotice ? <Text style={styles.notice}>{presenceNotice}</Text> : null}
       <View style={styles.statusStrip}>
         <View style={styles.statusItem}><View style={[styles.statusDot, location ? styles.statusOnline : styles.statusWaiting]} /><View><Text style={styles.statusLabel}>LIVE LOCATION</Text><Text style={styles.statusValue}>{location ? 'Connected' : 'Acquiring GPS'}</Text></View></View>
         <View style={styles.statusDivider} />

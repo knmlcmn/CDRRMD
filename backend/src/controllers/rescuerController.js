@@ -9,8 +9,8 @@ const {
 const { loadHardwareSensorSnapshot } = require('../services/hardwareSensorService');
 const {
   hasActivePresenceSql,
+  hasBoundSessionSql,
   hasLiveLocationSql,
-  hasValidSessionSql,
 } = require('../utils/rescuerPresence');
 
 function requireRole(req, role) {
@@ -434,9 +434,9 @@ async function heartbeatPresence(req, res) {
      SET is_active = TRUE, last_seen_at = NOW()
      WHERE id = $1 AND role IN ('rescuer', 'barangay_rescuer')
        AND COALESCE(is_archived, FALSE) = FALSE
-       AND ${hasValidSessionSql('users')}
+       AND ${hasBoundSessionSql('users', '$2')}
      RETURNING last_seen_at`,
-    [req.user.userId],
+    [req.user.userId, req.user.sessionHash || null],
   );
   if (!rows[0]) throw httpError(401, 'Responder session is no longer active.', 'AUTH_SESSION_INVALID');
   return res.json({ online: true, lastSeenAt: rows[0].last_seen_at });
@@ -457,9 +457,9 @@ async function updateMyLocation(req, res) {
       `UPDATE users SET current_latitude = $1, current_longitude = $2,
          location_updated_at = NOW(), last_seen_at = NOW(), is_active = TRUE
        WHERE id = $3 AND role IN ('rescuer', 'barangay_rescuer') AND COALESCE(is_archived, FALSE) = FALSE
-         AND ${hasValidSessionSql('users')}
+         AND ${hasBoundSessionSql('users', '$4')}
        RETURNING location_updated_at`,
-      [latitude, longitude, req.user.userId],
+      [latitude, longitude, req.user.userId, req.user.sessionHash || null],
     );
     if (!locationResult.rows[0]) throw httpError(401, 'Responder session is no longer active.', 'AUTH_SESSION_INVALID');
 

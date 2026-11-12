@@ -9,6 +9,7 @@ const {
   issueTokens,
   verifyRefreshToken,
 } = require('../utils/authTokens');
+const { hasBoundSessionSql } = require('../utils/rescuerPresence');
 const { httpError } = require('../utils/httpError');
 const { SUPPORTED_BARANGAYS: RESIDENT_BARANGAYS, normalizeBarangayName } = require('./supportedBarangays');
 const { resolveBarangayAtLocation } = require('./barangayBoundaryService');
@@ -226,13 +227,17 @@ async function completeLogin(user) {
   const { token, refreshToken } = issueTokens(user);
 
   await refreshTokenModel.withTransaction(async (client) => {
+    await client.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [user.id]);
     await refreshTokenModel.revokeActiveByUser(client, user.id);
     await persistRefreshToken(client, user.id, refreshToken);
     await client.query(
       `UPDATE users
        SET last_login = NOW(),
            last_seen_at = NOW(),
-           is_active = TRUE
+           is_active = TRUE,
+           current_latitude = CASE WHEN role IN ('rescuer', 'barangay_rescuer') THEN NULL ELSE current_latitude END,
+           current_longitude = CASE WHEN role IN ('rescuer', 'barangay_rescuer') THEN NULL ELSE current_longitude END,
+           location_updated_at = CASE WHEN role IN ('rescuer', 'barangay_rescuer') THEN NULL ELSE location_updated_at END
        WHERE id = $1`,
       [user.id],
     );
@@ -263,15 +268,24 @@ async function refresh(payload) {
 
   // Refresh flow validates the old token, revokes it, then issues a new pair.
   return refreshTokenModel.withTransaction(async (client) => {
+    const userResult = await client.query(
+      `SELECT id, username, email, first_name, last_name, address, contact_number, profile_image, role, barangay_name,
+              created_at
+       FROM users
+       WHERE id = $1 AND COALESCE(is_archived, FALSE) = FALSE
+       LIMIT 1
+       FOR UPDATE`,
+      [userId],
+    );
+    const user = userResult.rows[0];
+    if (!user) {
+      throw httpError(404, 'User not found.');
+    }
     const tokenRow = await refreshTokenModel.findValidToken(client, userId, tokenHash);
     if (!tokenRow) {
       throw httpError(401, 'Refresh token is no longer valid.', 'AUTH_REFRESH_INVALID');
     }
 
-    const user = await userModel.findPublicUserById(userId);
-    if (!user) {
-      throw httpError(404, 'User not found.');
-    }
     const nextTokens = issueTokens(user);
     await refreshTokenModel.revokeById(client, tokenRow.id);
     await persistRefreshToken(client, user.id, nextTokens.refreshToken);
@@ -284,12 +298,24 @@ async function refresh(payload) {
   });
 }
 
-async function logout(userId) {
+async function logout({ userId, sessionHash }) {
   if (!userId) {
     throw httpError(401, 'Invalid token payload.');
   }
 
   await refreshTokenModel.withTransaction(async (client) => {
+    const activeSession = await client.query(
+      `SELECT users.id
+       FROM users
+       WHERE users.id = $1
+         AND ${hasBoundSessionSql('users', '$2')}
+       LIMIT 1
+       FOR UPDATE OF users`,
+      [userId, sessionHash],
+    );
+    if (!activeSession.rows[0]) {
+      throw httpError(401, 'Session is no longer active.', 'AUTH_SESSION_INVALID');
+    }
     await refreshTokenModel.revokeActiveByUser(client, userId);
     await client.query(
       `UPDATE users SET is_active = FALSE, last_seen_at = NOW() WHERE id = $1`,

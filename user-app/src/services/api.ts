@@ -259,9 +259,21 @@ api.interceptors.response.use(
       throw error;
     }
 
+    if (status === 401 && code === 'AUTH_SESSION_INVALID' && !original.__retried) {
+      const requestAuthorization = String(original.headers?.Authorization || original.headers?.authorization || '');
+      const currentAuthorization = String(api.defaults.headers.common.Authorization || '');
+      if (requestAuthorization && currentAuthorization && requestAuthorization !== currentAuthorization) {
+        original.__retried = true;
+        original.headers = original.headers || {};
+        original.headers.Authorization = currentAuthorization;
+        return api.request(original);
+      }
+    }
+
     const tokenProblem =
       status === 401 &&
-      (code.startsWith('AUTH_TOKEN_') || /token/i.test(String(error?.response?.data?.message || '')));
+      (code.startsWith('AUTH_TOKEN_') || code === 'AUTH_SESSION_INVALID'
+        || /token/i.test(String(error?.response?.data?.message || '')));
     if (!tokenProblem || original.__retried) {
       throw error;
     }

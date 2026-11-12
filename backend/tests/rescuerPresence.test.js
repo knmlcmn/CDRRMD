@@ -2,13 +2,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
+const jwt = require('jsonwebtoken');
 
 const {
   HEARTBEAT_TTL_SECONDS,
   LOCATION_TTL_SECONDS,
+  hasBoundSessionSql,
   hasLiveLocationSql,
   isLiveResponder,
 } = require('../src/utils/rescuerPresence');
+const { hashRefreshToken, issueTokens } = require('../src/utils/authTokens');
 
 const now = Date.parse('2026-11-12T04:00:00.000Z');
 
@@ -35,6 +38,50 @@ test('both CDRRMD and Barangay responders require a valid live session and fresh
 test('logout or server-side session invalidation hides an otherwise fresh responder', () => {
   assert.equal(isLiveResponder(liveRecord({ isActive: false }), now), false);
   assert.equal(isLiveResponder(liveRecord({ hasValidSession: false }), now), false);
+});
+
+test('access tokens are bound to their exact rotating refresh session', () => {
+  const user = { id: 17, username: 'rescuer', role: 'rescuer', barangay_name: null };
+  const first = issueTokens(user);
+  const second = issueTokens(user);
+  const firstAccess = jwt.decode(first.token);
+  const secondAccess = jwt.decode(second.token);
+  assert.equal(firstAccess.sessionHash, hashRefreshToken(first.refreshToken));
+  assert.equal(secondAccess.sessionHash, hashRefreshToken(second.refreshToken));
+  assert.notEqual(firstAccess.sessionHash, secondAccess.sessionHash);
+});
+
+test('heartbeat, GPS, and logout bind the access token to one non-revoked session', () => {
+  const sql = hasBoundSessionSql('users', '$2');
+  assert.match(sql, /presence_session\.token_hash = \$2::text/);
+  assert.match(sql, /presence_session\.revoked_at IS NULL/);
+  assert.match(sql, /presence_session\.expires_at > NOW\(\)/);
+
+  const root = path.resolve(__dirname, '..');
+  const rescuerController = fs.readFileSync(path.join(root, 'src/controllers/rescuerController.js'), 'utf8');
+  const authController = fs.readFileSync(path.join(root, 'src/controllers/authController.js'), 'utf8');
+  assert.match(rescuerController, /hasBoundSessionSql\('users', '\$2'\)/);
+  assert.match(rescuerController, /hasBoundSessionSql\('users', '\$4'\)/);
+  assert.match(authController, /sessionHash: req\.user\?\.sessionHash/);
+});
+
+test('refresh rotation and login serialize the single-active-session policy', () => {
+  const root = path.resolve(__dirname, '..');
+  const authSource = fs.readFileSync(path.join(root, 'src/services/authService.js'), 'utf8');
+  const tokenModelSource = fs.readFileSync(path.join(root, 'src/models/refreshTokenModel.js'), 'utf8');
+  assert.match(authSource, /SELECT id FROM users WHERE id = \$1 FOR UPDATE/);
+  assert.match(authSource, /revokeActiveByUser\(client, user\.id\)/);
+  assert.match(tokenModelSource, /LIMIT 1\s+FOR UPDATE/);
+});
+
+test('mobile retries an in-flight old access token after successful session rotation', () => {
+  const apiSource = fs.readFileSync(
+    path.resolve(__dirname, '../../user-app/src/services/api.ts'),
+    'utf8',
+  );
+  assert.match(apiSource, /code === 'AUTH_SESSION_INVALID'/);
+  assert.match(apiSource, /requestAuthorization !== currentAuthorization/);
+  assert.match(apiSource, /original\.headers\.Authorization = currentAuthorization/);
 });
 
 test('app closure and network loss fail closed after the heartbeat TTL', () => {
@@ -80,4 +127,38 @@ test('Admin Dashboard and Incident Monitoring both enforce online gating and avo
   }
   const monitoring = fs.readFileSync(path.join(root, 'admin-web/src/pages/MonitoringPage.tsx'), 'utf8');
   assert.doesNotMatch(monitoring, /current_latitude \?\? selectedReport\?\.rescuer_latitude/);
+});
+
+test('portal-level GPS survives tab switching without duplicate screen-level tracking', () => {
+  const root = path.resolve(__dirname, '../..');
+  const portal = fs.readFileSync(path.join(root, 'user-app/src/rescuer/RescuerPortal.tsx'), 'utf8');
+  const assignments = fs.readFileSync(path.join(root, 'user-app/src/rescuer/screens/AssignmentsScreen.tsx'), 'utf8');
+  const hookIndex = portal.indexOf('useResponderLocationPresence(onAuthError)');
+  const contentIndex = portal.indexOf('const content =');
+  assert.ok(hookIndex > 0 && hookIndex < contentIndex, 'presence hook must remain mounted above tab content');
+  assert.doesNotMatch(assignments, /watchLiveLocation|requireLiveLocation|updateResponderLocation/);
+});
+
+test('foreground-only GPS fails closed for background, denied permission, and stale fixes', () => {
+  const root = path.resolve(__dirname, '../..');
+  const hook = fs.readFileSync(path.join(root, 'user-app/src/rescuer/hooks/useResponderLocationPresence.ts'), 'utf8');
+  const access = fs.readFileSync(path.join(root, 'user-app/src/services/locationAccess.ts'), 'utf8');
+  assert.match(hook, /if \(state === 'active'\) startForeground\(false\);\s+else stopForeground\(\);/);
+  assert.match(hook, /if \(!result\.ok\) \{\s+setLocation\(null\);/);
+  assert.match(hook, /now - location\.capturedAt <= RESPONDER_LOCATION_MAX_AGE_MS/);
+  assert.match(hook, /if \(Platform\.OS === 'web'\)/);
+  assert.match(hook, /if \(!latestPublishedLocation \|\| !isFreshResponderLocation\(latestPublishedLocation\)\)/);
+  assert.doesNotMatch(access, /maxAge:\s*120000/);
+  assert.match(access, /timeInterval:\s*15000/);
+  assert.match(access, /distanceInterval:\s*0/);
+});
+
+test('45-second server TTL has margin over 15-second heartbeat and GPS refresh intervals', () => {
+  const root = path.resolve(__dirname, '../..');
+  const portal = fs.readFileSync(path.join(root, 'user-app/src/rescuer/RescuerPortal.tsx'), 'utf8');
+  const hook = fs.readFileSync(path.join(root, 'user-app/src/rescuer/hooks/useResponderLocationPresence.ts'), 'utf8');
+  assert.match(portal, /setInterval\(\(\) => void heartbeat\(\), 15000\)/);
+  assert.match(hook, /RESPONDER_LOCATION_REFRESH_MS = 15_000/);
+  assert.ok(HEARTBEAT_TTL_SECONDS * 1000 >= 3 * 15_000);
+  assert.ok(LOCATION_TTL_SECONDS * 1000 >= 3 * 15_000);
 });

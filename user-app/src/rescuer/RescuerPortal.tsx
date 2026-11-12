@@ -13,6 +13,7 @@ import type { ResponderRole, WaterLevelSensor } from './types';
 import { MODERATE_WATER_LEVEL_THRESHOLD } from '../utils/waterLevelHazard';
 import { scopeWaterLevelSensors } from './utils/sensorScope';
 import { rescuerTheme } from './theme';
+import { useResponderLocationPresence } from './hooks/useResponderLocationPresence';
 
 type Tab = 'assignments' | 'history' | 'flood' | 'account';
 const tabs: Array<{ key: Tab; label: string; mobileLabel: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }> = [
@@ -36,6 +37,7 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
   const [alertSensors, setAlertSensors] = useState<WaterLevelSensor[]>([]);
   const [alertVisible, setAlertVisible] = useState(false);
   const alertStages = useRef<Record<string, 'moderate' | 'high'>>({});
+  const responderPresence = useResponderLocationPresence(onAuthError);
 
   // Presence belongs to the portal, not only the Incidents tab. Keeping this
   // mounted means a rescuer remains assignable while viewing History, Flood,
@@ -118,7 +120,14 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
       ? <FloodMonitoringScreen role={role} barangayName={barangayName} onAuthError={onAuthError} />
       : tab === 'account'
         ? <AccountScreen role={role} onAuthError={onAuthError} />
-        : <AssignmentsScreen role={role} onAuthError={onAuthError} />;
+        : <AssignmentsScreen
+          role={role}
+          onAuthError={onAuthError}
+          location={responderPresence.location}
+          locationError={responderPresence.locationError}
+          presenceNotice={responderPresence.notice}
+          presenceRevision={responderPresence.revision}
+        />;
 
   return (
     <TypographyFamily family="Manrope">

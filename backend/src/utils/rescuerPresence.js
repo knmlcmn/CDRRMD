@@ -11,6 +11,17 @@ function hasValidSessionSql(alias = 'u') {
   )`;
 }
 
+function hasBoundSessionSql(alias, sessionHashParameter) {
+  return `EXISTS (
+    SELECT 1 FROM user_refresh_tokens presence_session
+    WHERE presence_session.user_id = ${alias}.id
+      AND presence_session.revoked_at IS NULL
+      AND presence_session.expires_at > NOW()
+      AND ${sessionHashParameter}::text IS NOT NULL
+      AND presence_session.token_hash = ${sessionHashParameter}::text
+  )`;
+}
+
 function hasActivePresenceSql(alias = 'u') {
   return `(
     ${alias}.role IN ('rescuer', 'barangay_rescuer')
@@ -54,6 +65,7 @@ module.exports = {
   HEARTBEAT_TTL_SECONDS,
   LOCATION_TTL_SECONDS,
   hasValidSessionSql,
+  hasBoundSessionSql,
   hasActivePresenceSql,
   hasLiveLocationSql,
   isLiveResponder,

@@ -26,7 +26,10 @@ async function login(req, res) {
 }
 
 async function logout(req, res) {
-  await authService.logout(req.user?.userId);
+  await authService.logout({
+    userId: req.user?.userId,
+    sessionHash: req.user?.sessionHash || null,
+  });
   return res.json({ ok: true });
 }
 

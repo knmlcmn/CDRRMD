@@ -49,7 +49,8 @@ async function findValidToken(client, userId, tokenHash) {
        AND revoked_at IS NULL
        AND expires_at > NOW()
      ORDER BY id DESC
-     LIMIT 1`,
+     LIMIT 1
+     FOR UPDATE`,
     [userId, tokenHash],
   );
   return result.rows[0] || null;
