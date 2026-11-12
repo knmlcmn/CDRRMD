@@ -7,6 +7,12 @@ export const RESCUER_TABS = [
   { key: 'account', label: 'Account', mobileLabel: 'Account', icon: 'account-outline' },
 ] as const;
 
+export const RESCUER_TAB_INDICATOR = Object.freeze({
+  width: 44,
+  height: 32,
+  borderRadius: 16,
+});
+
 export function getRescuerTabItems(activeTab: RescuerTab) {
   return RESCUER_TABS.map((item) => {
     const active = item.key === activeTab;

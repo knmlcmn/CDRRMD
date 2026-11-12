@@ -13,7 +13,7 @@ import { subscribeToWaterLevelSensors } from './services/waterSensorMonitor';
 import type { ResponderRole, WaterLevelSensor } from './types';
 import { MODERATE_WATER_LEVEL_THRESHOLD } from '../utils/waterLevelHazard';
 import { scopeWaterLevelSensors } from './utils/sensorScope';
-import { getRescuerTabItems, type RescuerTab } from './utils/rescuerTabBar';
+import { getRescuerTabItems, RESCUER_TAB_INDICATOR, type RescuerTab } from './utils/rescuerTabBar';
 import { rescuerTheme } from './theme';
 import { beginPerformanceStage, endPerformanceStage, markNavigationSettled, markNavigationStart } from '../utils/performanceDiagnostics';
 
@@ -157,7 +157,12 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
         <View pointerEvents="none" style={[styles.mobilePatternArc, styles.mobilePatternBottom]} />
         {tabItems.map((item) => {
           return <TouchableOpacity key={item.key} onPress={() => navigateToTab(item.key)} style={styles.tab} accessibilityRole="tab" accessibilityState={{ selected: item.active }}>
-            <View style={[styles.iconWrap, item.active && styles.iconWrapActive]}><MaterialCommunityIcons key={item.iconRenderKey} name={item.icon} size={22} color={item.active ? '#fff' : '#c7e3f5'} /></View>
+            <View style={styles.iconWrap}>
+              <View pointerEvents="none" style={styles.iconIndicator}>
+                {item.active ? <View style={styles.iconIndicatorFill}><View style={styles.iconIndicatorAccent} /></View> : null}
+              </View>
+              <MaterialCommunityIcons key={item.iconRenderKey} name={item.icon} size={22} color={item.active ? '#fff' : '#c7e3f5'} />
+            </View>
             <Text numberOfLines={1} style={[styles.tabLabel, item.active && styles.tabLabelActive]}>{item.mobileLabel}</Text>
           </TouchableOpacity>;
         })}
@@ -202,8 +207,10 @@ const styles = StyleSheet.create({
   desktopLogout: { marginTop: 'auto', minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 12, borderWidth: 1, borderColor: '#486581' },
   tabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 72, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 7, overflow: 'hidden', backgroundColor: rescuerTheme.colors.navy900, borderTopWidth: 1, borderTopColor: '#315b78', shadowColor: rescuerTheme.colors.navy950, shadowOpacity: 0.2, shadowRadius: 9, shadowOffset: { width: 0, height: -3 }, elevation: 10 },
   tab: { flex: 1, minHeight: 54, alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 2 },
-  iconWrap: { width: 44, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  iconWrapActive: { backgroundColor: rescuerTheme.colors.blue600, borderLeftWidth: 3, borderLeftColor: rescuerTheme.colors.gold },
+  iconWrap: { ...RESCUER_TAB_INDICATOR, alignItems: 'center', justifyContent: 'center' },
+  iconIndicator: { ...RESCUER_TAB_INDICATOR, position: 'absolute', overflow: 'hidden' },
+  iconIndicatorFill: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: rescuerTheme.colors.blue600 },
+  iconIndicatorAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: rescuerTheme.colors.gold },
   tabLabel: { color: '#c7e3f5', fontSize: 9, lineHeight: 11, fontWeight: '800', textAlign: 'center' },
   tabLabelActive: { color: '#ffffff' },
 });
