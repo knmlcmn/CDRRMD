@@ -7,7 +7,9 @@ import {
   ViewStyle,
 } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
-import { markInitializationEnd, markInitializationStart } from '../utils/performanceDiagnostics';
+import { logMapLifecycle, markInitializationEnd, markInitializationStart } from '../utils/performanceDiagnostics';
+
+let nextPlatformMapInstanceId = 0;
 
 type PlatformMapProps = {
   html: string;
@@ -30,7 +32,14 @@ function PlatformMap({
   const webViewRef = useRef<WebView>(null);
   const lastPostedMessageRef = useRef('');
   const initialHtmlRef = useRef(html);
-  const initializationMarkerRef = useRef(markInitializationStart('PlatformMap/WebView'));
+  const initializationMarkerRef = useRef<ReturnType<typeof markInitializationStart>>(null);
+  const instanceIdRef = useRef(0);
+  const loadSequenceRef = useRef(0);
+  const updateMessageRef = useRef(updateMessage);
+  const onMessageRef = useRef(onMessage);
+  if (instanceIdRef.current === 0) instanceIdRef.current = ++nextPlatformMapInstanceId;
+  updateMessageRef.current = updateMessage;
+  onMessageRef.current = onMessage;
   const renderedHtml = preserveState ? initialHtmlRef.current : html;
   const nativeSource = useMemo(
     () => (baseUrl ? { html: renderedHtml, baseUrl } : { html: renderedHtml }),
@@ -38,20 +47,45 @@ function PlatformMap({
   );
 
   const postUpdate = useCallback((force = false) => {
-    if (!updateMessage) return;
-    const message = JSON.stringify(updateMessage);
+    const nextUpdate = updateMessageRef.current;
+    if (!nextUpdate) return;
+    const message = JSON.stringify(nextUpdate);
     if (!force && message === lastPostedMessageRef.current) return;
     lastPostedMessageRef.current = message;
     if (Platform.OS === 'web') {
-      iframeRef.current?.contentWindow?.postMessage(updateMessage, '*');
+      iframeRef.current?.contentWindow?.postMessage(nextUpdate, '*');
     } else {
       webViewRef.current?.postMessage(message);
     }
-  }, [updateMessage]);
+  }, []);
 
   useEffect(() => {
     if (preserveState) postUpdate();
-  }, [postUpdate, preserveState]);
+  }, [postUpdate, preserveState, updateMessage]);
+
+  useEffect(() => {
+    const instanceId = instanceIdRef.current;
+    logMapLifecycle('component-mount', instanceId, loadSequenceRef.current);
+    if (Platform.OS === 'web') {
+      initializationMarkerRef.current = markInitializationStart('PlatformMap/WebView');
+    }
+    return () => {
+      logMapLifecycle('component-unmount', instanceId, loadSequenceRef.current);
+      initializationMarkerRef.current = null;
+    };
+  }, []);
+
+  const handleMessageData = useCallback((data: string) => {
+    try {
+      const event = JSON.parse(data);
+      if (event?.type === 'map-lifecycle' && event.lifecycle === 'leaflet-ready') {
+        logMapLifecycle('leaflet-ready', instanceIdRef.current, loadSequenceRef.current);
+      }
+    } catch {
+      // Parent handlers still receive non-JSON WebView messages unchanged.
+    }
+    onMessageRef.current?.(data);
+  }, []);
 
   useEffect(() => {
     if (Platform.OS !== 'web') {
@@ -67,7 +101,7 @@ function PlatformMap({
       }
 
       if (typeof event.data === 'string') {
-        onMessage?.(event.data);
+        handleMessageData(event.data);
       }
     };
 
@@ -76,17 +110,24 @@ function PlatformMap({
     return () => {
       window.removeEventListener('message', handleMessage);
     };
-  }, [onMessage]);
+  }, [handleMessageData]);
 
-  const handleNativeMessage = (event: WebViewMessageEvent) => {
-    onMessage?.(event.nativeEvent.data);
-  };
+  const handleNativeMessage = useCallback((event: WebViewMessageEvent) => {
+    handleMessageData(event.nativeEvent.data);
+  }, [handleMessageData]);
 
-  const handleLoaded = () => {
+  const handleLoadStart = useCallback(() => {
+    loadSequenceRef.current += 1;
+    initializationMarkerRef.current = markInitializationStart('PlatformMap/WebView');
+    logMapLifecycle('document-load-start', instanceIdRef.current, loadSequenceRef.current);
+  }, []);
+
+  const handleLoaded = useCallback(() => {
     markInitializationEnd(initializationMarkerRef.current);
     initializationMarkerRef.current = null;
+    logMapLifecycle('document-load-end', instanceIdRef.current, loadSequenceRef.current);
     postUpdate(true);
-  };
+  }, [postUpdate]);
 
   if (Platform.OS === 'web') {
     return (
@@ -121,6 +162,7 @@ function PlatformMap({
         setBuiltInZoomControls={false}
         mixedContentMode="always"
         onMessage={handleNativeMessage}
+        onLoadStart={handleLoadStart}
         onLoadEnd={handleLoaded}
         style={styles.webView}
       />

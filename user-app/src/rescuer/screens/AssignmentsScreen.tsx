@@ -15,6 +15,7 @@ import {
   createAssignmentScreenRequestScope,
   shouldRefreshAssignmentHistory,
 } from '../utils/assignmentHistoryPolicy';
+import { retainLastMapLocation } from '../utils/responderMapState';
 
 type Props = {
   role: ResponderRole;
@@ -76,12 +77,15 @@ export default function AssignmentsScreen({
   const [requestScope] = useState(() => createAssignmentScreenRequestScope());
   const initialLocationFocusedRef = useRef(false);
   const lastFocusedAssignmentRef = useRef('');
+  const retainedMapLocationRef = useRef<Coordinate | null>(null);
   const initialMapLocationRef = useRef<Coordinate | null>(null);
   const routeRefreshRef = useRef<PreviousRouteRefresh | null>(null);
   const routeRequestRef = useRef<RouteRequest | null>(null);
   const alertRouteRefreshRef = useRef<PreviousRouteRefresh | null>(null);
   const alertRouteRequestRef = useRef<RouteRequest | null>(null);
-  if (!initialMapLocationRef.current && location) initialMapLocationRef.current = location;
+  retainedMapLocationRef.current = retainLastMapLocation(retainedMapLocationRef.current, location);
+  const mapLocation = retainedMapLocationRef.current;
+  if (!initialMapLocationRef.current && mapLocation) initialMapLocationRef.current = mapLocation;
   const initialMapLocation = initialMapLocationRef.current;
   const mapBaseUrl = String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '');
 
@@ -210,13 +214,17 @@ export default function AssignmentsScreen({
     : '';
 
   useEffect(() => {
-    if (!location || !destination) {
+    if (!destination) {
       routeRequestRef.current?.controller.abort();
       routeRequestRef.current = null;
       routeRefreshRef.current = null;
       setRoute((current) => current === EMPTY_ROUTE ? current : EMPTY_ROUTE);
       return;
     }
+    // A stationary Android device can briefly report no fresh GPS sample while
+    // the presence hook reacquires one. Retain the last route and mounted map;
+    // dispatch remains disabled until a fresh location is available again.
+    if (!location) return;
     const previous = routeRefreshRef.current;
     const refreshNow = Date.now();
     if (!shouldRefreshRoute({ previous, key: routeRefreshKey, location, now: refreshNow })) return;
@@ -305,7 +313,7 @@ export default function AssignmentsScreen({
 
   const mapUpdate = useMemo(() => ({
     type: 'rescue-map-update',
-    responderLocation: location,
+    responderLocation: mapLocation,
     routeCoordinates: route.routeCoordinates,
     incidentLocation: selected?.picked_up_at ? null : destination,
     selectedReportCode: selected?.report_code || null,
@@ -316,7 +324,7 @@ export default function AssignmentsScreen({
     routeDestination: selected?.picked_up_at ? destination : null,
     evacuationAreaName: selected?.evacuation_area_name || null,
     recenterRequestId,
-  }), [destination, incidentPoints, location, recenterRequestId, role, route.routeCoordinates, selected]);
+  }), [destination, incidentPoints, mapLocation, recenterRequestId, role, route.routeCoordinates, selected]);
 
   const newAssignment = useMemo(
     () => assignments.find((item) => !item.responder_acknowledged_at && item.backup_request_id !== dismissedAlertId) || null,
@@ -334,13 +342,14 @@ export default function AssignmentsScreen({
     : '';
 
   useEffect(() => {
-    if (!location || !alertDestination) {
+    if (!alertDestination) {
       alertRouteRequestRef.current?.controller.abort();
       alertRouteRequestRef.current = null;
       alertRouteRefreshRef.current = null;
       setAlertRoute((current) => current === EMPTY_ROUTE ? current : EMPTY_ROUTE);
       return;
     }
+    if (!location) return;
     const previous = alertRouteRefreshRef.current;
     const refreshNow = Date.now();
     if (!shouldRefreshRoute({ previous, key: alertRouteRefreshKey, location, now: refreshNow })) return;
@@ -407,7 +416,7 @@ export default function AssignmentsScreen({
 
   const alertMapUpdate = useMemo(() => newAssignment ? ({
     type: 'rescue-map-update',
-    responderLocation: location,
+    responderLocation: mapLocation,
     routeCoordinates: alertRoute.routeCoordinates,
     incidentLocation: alertDestination,
     selectedReportCode: newAssignment.report_code,
@@ -416,7 +425,7 @@ export default function AssignmentsScreen({
       : [],
     pickedUp: false,
     responderKind: role === 'barangay_rescuer' ? 'barangay' : 'cddrmd',
-  }) : null, [alertDestination, alertRoute.routeCoordinates, location, newAssignment, role]);
+  }) : null, [alertDestination, alertRoute.routeCoordinates, mapLocation, newAssignment, role]);
 
   async function dispatch(item: Assignment) {
     if (busy || !location) return;
@@ -444,7 +453,7 @@ export default function AssignmentsScreen({
         <View style={styles.statusItem}><MaterialCommunityIcons name="radio-tower" size={20} color={rescuerColors.blue} /><View><Text style={styles.statusLabel}>ASSIGNMENTS</Text><Text style={styles.statusValue}>{assignments.length} active</Text></View></View>
       </View>
       <View style={styles.mapCard}>
-        {!mapFullscreen && areasLoaded && location ? <PlatformMap
+        {!mapFullscreen && areasLoaded && mapLocation ? <PlatformMap
           html={mapHtml}
           baseUrl={mapBaseUrl}
           preserveState
@@ -494,7 +503,7 @@ export default function AssignmentsScreen({
 
       <Modal visible={mapFullscreen} animationType="fade" statusBarTranslucent onRequestClose={closeFullscreenMap}>
         <View style={styles.fullscreenMap}>
-          {mapFullscreen && areasLoaded && location ? <PlatformMap html={fullscreenMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={mapUpdate} onMessage={handleFullscreenMapMessage} /> : <EmptyState loading message={areasLoaded ? 'Waiting for your current location…' : 'Loading rescue map…'} />}
+          {mapFullscreen && areasLoaded && mapLocation ? <PlatformMap html={fullscreenMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={mapUpdate} onMessage={handleFullscreenMapMessage} /> : <EmptyState loading message={areasLoaded ? 'Waiting for your current location…' : 'Loading rescue map…'} />}
           <TouchableOpacity accessibilityLabel="Close full-screen map" onPress={closeFullscreenMap} style={[styles.fullscreenClose, forecastOverlayVisible && styles.fullscreenCloseRaised]}>
             <MaterialCommunityIcons name="fullscreen-exit" size={24} color="#ffffff" />
           </TouchableOpacity>
@@ -515,7 +524,7 @@ export default function AssignmentsScreen({
             <DetailRow label="Barangay" value={newAssignment.assigned_barangay} />
             <DetailRow label="Evacuation" value={newAssignment.evacuation_area_name || 'Nearest available center'} />
             <DetailRow label="Shortest route" value={alertRoute.distanceKm != null && alertRoute.etaMinutes != null ? `${alertRoute.distanceKm.toFixed(2)} km · about ${alertRoute.etaMinutes} min` : 'Calculating…'} />
-            {location && alertDestination ? <View style={styles.alertMap}><PlatformMap key={newAssignment.backup_request_id} html={alertMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={alertMapUpdate} /></View> : <View style={styles.alertMap}><EmptyState loading message="Waiting for GPS…" /></View>}
+            {mapLocation && alertDestination ? <View style={styles.alertMap}><PlatformMap key={newAssignment.backup_request_id} html={alertMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={alertMapUpdate} /></View> : <View style={styles.alertMap}><EmptyState loading message="Waiting for GPS…" /></View>}
             <Text style={styles.modalCode}>{newAssignment.report_code}</Text>
             <View style={styles.modalActions}>
               <PrimaryButton disabled={busy || !location} label={busy ? 'Confirming…' : location ? 'Confirm Dispatch' : 'Waiting for GPS…'} onPress={() => void dispatch(newAssignment)} />

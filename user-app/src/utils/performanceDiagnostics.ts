@@ -75,6 +75,18 @@ export function markInitializationEnd(marker: { component: string; startedAt: nu
   });
 }
 
+export function logMapLifecycle(
+  lifecycle: 'component-mount' | 'component-unmount' | 'document-load-start' | 'document-load-end' | 'leaflet-ready',
+  instanceId: number,
+  loadSequence: number,
+) {
+  emit('map-lifecycle', {
+    lifecycle,
+    instanceId,
+    loadSequence,
+  });
+}
+
 function sanitizedRoute(url?: string) {
   return String(url || 'unknown')
     .split('?')[0]

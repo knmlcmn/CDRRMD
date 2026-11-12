@@ -757,6 +757,15 @@ export function buildCalambaMapHtml(
         return windFieldData;
       }
 
+      function emitMapLifecycle(lifecycle) {
+        var message = JSON.stringify({ type: 'map-lifecycle', lifecycle: lifecycle });
+        if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
+          window.ReactNativeWebView.postMessage(message);
+        } else if (window.parent && window.parent !== window) {
+          window.parent.postMessage(message, '*');
+        }
+      }
+
       function updateForecastTimebar() {
         if (!forecastTimebar) return;
         var visible = Boolean(mapBehavior.showForecastTimeline)
@@ -2934,6 +2943,7 @@ export function buildCalambaMapHtml(
       } else if (payload.mapBehavior && (payload.mapBehavior.focusOnIncident || payload.mapBehavior.focusOnResponder)) {
         focusActiveRescue();
       }
+      emitMapLifecycle('leaflet-ready');
 
     </script>
   </body>
