@@ -48,7 +48,8 @@ test('rescuer auth failures are scoped to the session that created the portal', 
   const portal = await readFile(resolve(root, 'src/rescuer/RescuerPortal.tsx'), 'utf8');
   assert.match(app, /handleAuthFailureForSession\(session, sessionRef\.current, performLogout\)/);
   assert.match(app, /handleAuthFailureIfSessionActive\(sessionRef\.current/);
-  assert.match(portal, /if \(active && caught\?\.response\?\.status === 401\) onAuthError\(\)/);
+  assert.match(portal, /if \(active && caught\?\.response\?\.status === 401\) handleAuthError\(\)/);
+  assert.match(portal, /const handleAuthError = useCallback\(\(\) => onAuthErrorRef\.current\(\), \[\]\)/);
 });
 
 test('production authentication does not silently retry the same configured host', async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Image, InteractionManager, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -25,6 +25,25 @@ type Props = {
   onAuthError: () => void;
 };
 
+type PresenceAssignmentsProps = {
+  visible: boolean;
+  role: ResponderRole;
+  onAuthError: () => void;
+};
+
+function PresenceAssignments({ visible, role, onAuthError }: PresenceAssignmentsProps) {
+  const responderPresence = useResponderLocationPresence(onAuthError);
+  if (!visible) return null;
+  return <AssignmentsScreen
+    role={role}
+    onAuthError={onAuthError}
+    location={responderPresence.location}
+    locationError={responderPresence.locationError}
+    presenceNotice={responderPresence.notice}
+    presenceRevision={responderPresence.revision}
+  />;
+}
+
 export default function RescuerPortal({ role, barangayName, onLogout, onAuthError }: Props) {
   const { width } = useWindowDimensions();
   const desktop = width >= 820;
@@ -33,7 +52,9 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
   const [alertVisible, setAlertVisible] = useState(false);
   const alertStages = useRef<Record<string, 'moderate' | 'high'>>({});
   const readinessMarker = useRef(beginPerformanceStage('rescuer-portal-ready'));
-  const responderPresence = useResponderLocationPresence(onAuthError);
+  const onAuthErrorRef = useRef(onAuthError);
+  onAuthErrorRef.current = onAuthError;
+  const handleAuthError = useCallback(() => onAuthErrorRef.current(), []);
 
   useEffect(() => {
     const task = InteractionManager.runAfterInteractions(() => {
@@ -67,7 +88,7 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
       try {
         await sendHeartbeat();
       } catch (caught: any) {
-        if (active && caught?.response?.status === 401) onAuthError();
+        if (active && caught?.response?.status === 401) handleAuthError();
       }
     }
     void heartbeat();
@@ -80,7 +101,7 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
       clearInterval(timer);
       subscription.remove();
     };
-  }, [onAuthError]);
+  }, [handleAuthError]);
 
   useEffect(() => {
     let active = true;
@@ -116,29 +137,22 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
         }
       },
       (caught: any) => {
-        if (active && caught?.response?.status === 401) onAuthError();
+        if (active && caught?.response?.status === 401) handleAuthError();
       },
     );
     return () => {
       active = false;
       unsubscribe();
     };
-  }, [barangayName, onAuthError, role]);
+  }, [barangayName, handleAuthError, role]);
 
   const content = tab === 'history'
-    ? <HistoryScreen role={role} onAuthError={onAuthError} />
+    ? <HistoryScreen role={role} onAuthError={handleAuthError} />
     : tab === 'flood'
-      ? <FloodMonitoringScreen role={role} barangayName={barangayName} onAuthError={onAuthError} />
+      ? <FloodMonitoringScreen role={role} barangayName={barangayName} onAuthError={handleAuthError} />
       : tab === 'account'
-        ? <AccountScreen role={role} onAuthError={onAuthError} />
-        : <AssignmentsScreen
-          role={role}
-          onAuthError={onAuthError}
-          location={responderPresence.location}
-          locationError={responderPresence.locationError}
-          presenceNotice={responderPresence.notice}
-          presenceRevision={responderPresence.revision}
-        />;
+        ? <AccountScreen role={role} onAuthError={handleAuthError} />
+        : null;
   const tabItems = getRescuerTabItems(tab);
 
   return (
@@ -160,7 +174,10 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
           })}</View>
           <TouchableOpacity onPress={onLogout} style={styles.desktopLogout}><MaterialCommunityIcons name="logout" size={19} color="#fff" /><Text style={styles.sideNavLabel}>Logout</Text></TouchableOpacity>
         </View> : null}
-        <View style={styles.content}>{content}</View>
+        <View style={styles.content}>
+          <PresenceAssignments visible={tab === 'assignments'} role={role} onAuthError={handleAuthError} />
+          {content}
+        </View>
       </View>
       {!desktop ? <View style={styles.tabBar}>
         <View pointerEvents="none" style={[styles.mobilePatternArc, styles.mobilePatternBottom]} />

@@ -29,13 +29,20 @@ test('portal-level presence survives all four tabs without replacing v10 navigat
     readFile(resolve(root, 'src/rescuer/RescuerPortal.tsx'), 'utf8'),
     readFile(resolve(root, 'src/rescuer/utils/rescuerTabBar.ts'), 'utf8'),
   ]);
-  const hookIndex = portal.indexOf('useResponderLocationPresence(onAuthError)');
-  const contentIndex = portal.indexOf('const content =');
-  assert.ok(hookIndex > 0 && hookIndex < contentIndex);
+  assert.match(portal, /function PresenceAssignments[\s\S]*?useResponderLocationPresence\(onAuthError\)/);
+  assert.match(portal, /<PresenceAssignments visible=\{tab === 'assignments'\}/);
   assert.match(portal, /subscribeToWaterLevelSensors/);
   assert.match(portal, /RESCUER_TAB_INDICATOR/);
   assert.match(portal, /getRescuerTabItems\(tab\)/);
   assert.match(tabs, /assignments[\s\S]*history[\s\S]*flood[\s\S]*account/);
+});
+
+test('parent renders cannot restart portal GPS, heartbeat, or sensor subscriptions', async () => {
+  const portal = await readFile(resolve(root, 'src/rescuer/RescuerPortal.tsx'), 'utf8');
+  assert.match(portal, /const handleAuthError = useCallback\(\(\) => onAuthErrorRef\.current\(\), \[\]\)/);
+  assert.match(portal, /<PresenceAssignments[\s\S]*?onAuthError=\{handleAuthError\}/);
+  assert.doesNotMatch(portal, /\}, \[onAuthError\]\)/);
+  assert.doesNotMatch(portal, /\[barangayName, onAuthError, role\]/);
 });
 
 test('background, denied, stale, and failed publication paths clear visible presence', async () => {

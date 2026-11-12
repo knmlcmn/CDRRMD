@@ -44,7 +44,7 @@ test('focus changes remount only changed icon visual states without removing tab
 test('active indicator keeps fixed pill geometry while icon glyphs remain unclipped', async () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const source = await readFile(resolve(here, '../src/rescuer/RescuerPortal.tsx'), 'utf8');
-  const contentIndex = source.indexOf('<View style={styles.content}>{content}</View>');
+  const contentIndex = source.indexOf('<View style={styles.content}>');
   const tabBarIndex = source.indexOf('<View style={styles.tabBar}>');
   const indicatorIndex = source.indexOf('style={styles.iconIndicator}');
   const fillIndex = source.indexOf('item.active ? <View style={styles.iconIndicatorFill}>', indicatorIndex);
