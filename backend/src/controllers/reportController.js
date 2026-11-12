@@ -16,6 +16,7 @@ const {
 } = require('../services/evacuationRoutingService');
 const { syncFloodSensorAlerts } = require('../services/floodSensorAlertService');
 const { isExpoPushToken } = require('../services/expoPushService');
+const { hasLiveLocationSql } = require('../utils/rescuerPresence');
 
 function buildReportCode(id, createdAt) {
   const year = new Date(createdAt || Date.now()).getFullYear();
@@ -504,9 +505,9 @@ async function getMyReports(req, res) {
       dispatch.responder_acknowledged_at,
       dispatch.picked_up_at,
       NULLIF(TRIM(CONCAT_WS(' ', responder.first_name, responder.last_name)), '') AS rescuer_name,
-      responder.current_latitude AS rescuer_latitude,
-      responder.current_longitude AS rescuer_longitude,
-      responder.location_updated_at AS rescuer_location_updated_at
+      CASE WHEN ${hasLiveLocationSql('responder')} THEN responder.current_latitude END AS rescuer_latitude,
+      CASE WHEN ${hasLiveLocationSql('responder')} THEN responder.current_longitude END AS rescuer_longitude,
+      CASE WHEN ${hasLiveLocationSql('responder')} THEN responder.location_updated_at END AS rescuer_location_updated_at
      FROM incident_reports r
      LEFT JOIN evacuation_areas ea ON ea.id = r.evacuation_area_id
      LEFT JOIN LATERAL (
@@ -572,9 +573,9 @@ async function getReports(req, res) {
       dispatch.responder_acknowledged_at,
       dispatch.picked_up_at,
       NULLIF(TRIM(CONCAT_WS(' ', responder.first_name, responder.last_name)), '') AS rescuer_name,
-      responder.current_latitude AS rescuer_latitude,
-      responder.current_longitude AS rescuer_longitude,
-      responder.location_updated_at AS rescuer_location_updated_at,
+      CASE WHEN ${hasLiveLocationSql('responder')} THEN responder.current_latitude END AS rescuer_latitude,
+      CASE WHEN ${hasLiveLocationSql('responder')} THEN responder.current_longitude END AS rescuer_longitude,
+      CASE WHEN ${hasLiveLocationSql('responder')} THEN responder.location_updated_at END AS rescuer_location_updated_at,
       u.id AS reporter_id,
       u.first_name,
       u.last_name,

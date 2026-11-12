@@ -3,6 +3,7 @@ const auth = require('../middleware/auth');
 const pool = require('../config/db');
 const { SUPPORTED_BARANGAYS, isSupportedBarangay } = require('../services/supportedBarangays');
 const { assignNearestAvailableRescuer, findNearestAvailableRescuer } = require('../services/rescuerDispatchService');
+const { hasLiveLocationSql } = require('../utils/rescuerPresence');
 
 const SUPPORTED_BARANGAY_KEYS = SUPPORTED_BARANGAYS.map((name) => name.toLowerCase());
 
@@ -50,9 +51,9 @@ router.get('/', async (req, res) => {
             NULLIF(TRIM(CONCAT_WS(' ', rescuer.first_name, rescuer.last_name)), '') AS rescuer_name,
             CONCAT('RSC-', EXTRACT(YEAR FROM rescuer.created_at)::text, '-', LPAD(rescuer.id::text, 5, '0')) AS rescuer_account_id,
             rescuer.contact_number AS rescuer_contact,
-            rescuer.current_latitude AS rescuer_latitude,
-            rescuer.current_longitude AS rescuer_longitude,
-            rescuer.location_updated_at AS rescuer_location_updated_at
+            CASE WHEN ${hasLiveLocationSql('rescuer')} THEN rescuer.current_latitude END AS rescuer_latitude,
+            CASE WHEN ${hasLiveLocationSql('rescuer')} THEN rescuer.current_longitude END AS rescuer_longitude,
+            CASE WHEN ${hasLiveLocationSql('rescuer')} THEN rescuer.location_updated_at END AS rescuer_location_updated_at
      FROM backup_requests br
      JOIN incident_reports ir ON ir.id = br.report_id
      LEFT JOIN users reporter ON reporter.id = ir.reported_by

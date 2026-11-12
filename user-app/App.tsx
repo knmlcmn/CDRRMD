@@ -29,6 +29,7 @@ import { AppProfile, ensureAccountForSession, patchAccountProfile } from './src/
 import {
   assignAuthBarangayFromLocation,
   getAuthMe,
+  logoutAuthSession,
   putAuthMe,
   setApiAuthorizationToken,
   setAuthFailureHandler,
@@ -496,6 +497,7 @@ function AppContent() {
       if (sessionRef.current?.user.role === 'user') {
         await unregisterResidentPushNotifications().catch(() => {});
       }
+      await logoutAuthSession().catch(() => {});
       await clearSession();
       sessionRef.current = null;
       setLocationGate(null);

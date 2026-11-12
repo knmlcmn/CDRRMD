@@ -251,10 +251,12 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     .find((report) => report.id === mapFocusedReportId) || null, [activeMissionReports, mapFocusedReportId]);
 
   const responderLocation = useMemo<Coordinate | null>(() => {
-    const latitude = Number(selectedMapReport?.rescuer_latitude);
-    const longitude = Number(selectedMapReport?.rescuer_longitude);
+    const liveResponder = cityRescuers.find((rescuer) => rescuer.is_online
+      && Number(rescuer.id) === Number(selectedMapReport?.assigned_rescuer_id));
+    const latitude = Number(liveResponder?.current_latitude);
+    const longitude = Number(liveResponder?.current_longitude);
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
-  }, [selectedMapReport?.rescuer_latitude, selectedMapReport?.rescuer_longitude]);
+  }, [cityRescuers, selectedMapReport?.assigned_rescuer_id]);
 
   const residentLocation = useMemo<Coordinate | null>(() => {
     const latitude = Number(selectedMapReport?.latitude);
@@ -286,6 +288,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
   }, [responderLocation, routeDestination]);
 
   const responderPoints = useMemo(() => cityRescuers
+    .filter((rescuer) => rescuer.is_online)
     .map((rescuer) => {
       const activeAssignment = activeMissionReports.find((report) => Number(report.assigned_rescuer_id) === Number(rescuer.id));
       return {

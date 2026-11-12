@@ -340,11 +340,12 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   );
 
   const liveResponderLocation = useMemo<Coordinate | null>(() => {
-    const liveResponder = cityRescuers.find((rescuer) => Number(rescuer.id) === Number(selectedReport?.assigned_rescuer_id));
-    const latitude = Number(liveResponder?.current_latitude ?? selectedReport?.rescuer_latitude);
-    const longitude = Number(liveResponder?.current_longitude ?? selectedReport?.rescuer_longitude);
+    const liveResponder = cityRescuers.find((rescuer) => rescuer.is_online
+      && Number(rescuer.id) === Number(selectedReport?.assigned_rescuer_id));
+    const latitude = Number(liveResponder?.current_latitude);
+    const longitude = Number(liveResponder?.current_longitude);
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
-  }, [cityRescuers, selectedReport?.assigned_rescuer_id, selectedReport?.rescuer_latitude, selectedReport?.rescuer_longitude]);
+  }, [cityRescuers, selectedReport?.assigned_rescuer_id]);
 
   const responderLocation = useMemo(() => {
     return liveResponderLocation;
@@ -433,6 +434,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   }
 
   const responderPoints = useMemo(() => cityRescuers
+    .filter((rescuer) => rescuer.is_online)
     .map((rescuer) => {
       const activeAssignment = activeMissionReports.find((report) => Number(report.assigned_rescuer_id) === Number(rescuer.id));
       return {

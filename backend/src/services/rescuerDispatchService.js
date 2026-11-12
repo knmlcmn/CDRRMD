@@ -1,4 +1,5 @@
 const { httpError } = require('../utils/httpError');
+const { hasLiveLocationSql } = require('../utils/rescuerPresence');
 
 const CDRRMD_BASE = { latitude: 14.194052, longitude: 121.159688 };
 
@@ -53,8 +54,7 @@ async function findNearestAvailableRescuer(client, {
      LEFT JOIN barangay_boundaries bb
        ON $2 = 'barangay_rescuer' AND LOWER(bb.barangay_name) = LOWER(u.barangay_name)
      WHERE u.role = $2 AND COALESCE(u.is_archived, FALSE) = FALSE
-       AND COALESCE(u.is_active, FALSE) = TRUE
-       AND u.last_seen_at >= NOW() - INTERVAL '45 seconds'
+       AND ${hasLiveLocationSql('u')}
        AND ($1::text IS NULL OR LOWER(u.barangay_name) = LOWER($1))
        AND NOT EXISTS (
          SELECT 1 FROM backup_requests active

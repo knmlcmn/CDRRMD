@@ -7,6 +7,11 @@ const {
   findNearestAvailableEvacuationArea,
 } = require('../services/evacuationRoutingService');
 const { loadHardwareSensorSnapshot } = require('../services/hardwareSensorService');
+const {
+  hasActivePresenceSql,
+  hasLiveLocationSql,
+  hasValidSessionSql,
+} = require('../utils/rescuerPresence');
 
 function requireRole(req, role) {
   if (req.user?.role !== role) {
@@ -84,14 +89,16 @@ async function listAccounts(req, res) {
     `SELECT u.id,
             CONCAT($2::text, '-', EXTRACT(YEAR FROM u.created_at)::text, '-', LPAD(u.id::text, 5, '0')) AS rescuer_id,
             u.username, u.email, u.first_name, u.last_name, u.address, u.contact_number, u.barangay_name,
-            u.current_latitude, u.current_longitude, u.location_updated_at,
+            CASE WHEN ${hasLiveLocationSql('u')} THEN u.current_latitude END AS current_latitude,
+            CASE WHEN ${hasLiveLocationSql('u')} THEN u.current_longitude END AS current_longitude,
+            CASE WHEN ${hasLiveLocationSql('u')} THEN u.location_updated_at END AS location_updated_at,
             u.created_at, u.last_login,
-            (COALESCE(u.is_active, FALSE) AND u.last_seen_at >= NOW() - INTERVAL '45 seconds') AS is_online,
+            ${hasActivePresenceSql('u')} AS is_online,
             (u.id = $1) AS is_self,
-            NOT EXISTS (
+            (${hasLiveLocationSql('u')} AND NOT EXISTS (
               SELECT 1 FROM backup_requests br
               WHERE br.assigned_rescuer_id = u.id AND br.arrived_at IS NULL AND br.declined_at IS NULL
-            ) AS is_available
+            )) AS is_available
      FROM users u
      WHERE u.role = $3 AND COALESCE(u.is_archived, FALSE) = FALSE
        AND ($4::text IS NULL OR LOWER(u.barangay_name) = LOWER($4))
@@ -427,10 +434,11 @@ async function heartbeatPresence(req, res) {
      SET is_active = TRUE, last_seen_at = NOW()
      WHERE id = $1 AND role IN ('rescuer', 'barangay_rescuer')
        AND COALESCE(is_archived, FALSE) = FALSE
+       AND ${hasValidSessionSql('users')}
      RETURNING last_seen_at`,
     [req.user.userId],
   );
-  if (!rows[0]) throw httpError(404, 'Responder account not found.');
+  if (!rows[0]) throw httpError(401, 'Responder session is no longer active.', 'AUTH_SESSION_INVALID');
   return res.json({ online: true, lastSeenAt: rows[0].last_seen_at });
 }
 
@@ -449,10 +457,11 @@ async function updateMyLocation(req, res) {
       `UPDATE users SET current_latitude = $1, current_longitude = $2,
          location_updated_at = NOW(), last_seen_at = NOW(), is_active = TRUE
        WHERE id = $3 AND role IN ('rescuer', 'barangay_rescuer') AND COALESCE(is_archived, FALSE) = FALSE
+         AND ${hasValidSessionSql('users')}
        RETURNING location_updated_at`,
       [latitude, longitude, req.user.userId],
     );
-    if (!locationResult.rows[0]) throw httpError(404, 'Responder account not found.');
+    if (!locationResult.rows[0]) throw httpError(401, 'Responder session is no longer active.', 'AUTH_SESSION_INVALID');
 
     const assignmentResult = await client.query(
       `SELECT br.id AS backup_request_id, br.report_id, br.responder_acknowledged_at, br.picked_up_at,

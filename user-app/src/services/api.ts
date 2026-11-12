@@ -369,6 +369,10 @@ export async function getAuthMe() {
   }
 }
 
+export async function logoutAuthSession() {
+  await api.post('/auth/logout');
+}
+
 export async function putAuthMe(payload: {
   firstName?: string;
   lastName?: string;
