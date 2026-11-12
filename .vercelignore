@@ -32,3 +32,4 @@ user-app/v*-*-log.txt
 .env
 .env.local
 .env.*
+!.env.example

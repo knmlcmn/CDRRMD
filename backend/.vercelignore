@@ -11,6 +11,7 @@ database-backups/
 .env
 .env.local
 .env.*
+!.env.example
 *.log
 *.tmp
 *.temp
