@@ -445,7 +445,9 @@ export default function AssignmentsScreen({
   return (
     <RescuerScreen title={role === 'barangay_rescuer' ? 'Barangay Rescue Assignments' : 'CDRRMD Backup Assignments'} subtitle={subtitle} refreshing={loading} onRefresh={() => { setLoading(true); void refreshAll(true); }}>
       <ErrorMessage message={error} />
-      <ErrorMessage message={locationError} />
+      <View style={styles.locationStatusSlot}>
+        <ErrorMessage message={locationError} />
+      </View>
       {presenceNotice ? <Text style={styles.notice}>{presenceNotice}</Text> : null}
       <View style={styles.statusStrip}>
         <View style={styles.statusItem}><View style={[styles.statusDot, location ? styles.statusOnline : styles.statusWaiting]} /><View><Text style={styles.statusLabel}>LIVE LOCATION</Text><Text style={styles.statusValue}>{location ? 'Connected' : 'Acquiring GPS'}</Text></View></View>
@@ -538,6 +540,7 @@ export default function AssignmentsScreen({
 }
 
 const styles = StyleSheet.create({
+  locationStatusSlot: { height: 68 },
   statusStrip: { minHeight: 68, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, borderRadius: 16, borderWidth: 1, borderColor: rescuerColors.border, backgroundColor: '#fff', shadowColor: '#0b2e4e', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   statusItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9 },
   statusDivider: { width: 1, height: 32, marginHorizontal: 12, backgroundColor: '#dce7ef' },
