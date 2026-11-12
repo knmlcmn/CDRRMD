@@ -1,8 +1,18 @@
 import axios from 'axios';
 import Constants from 'expo-constants';
 import { NativeModules, Platform } from 'react-native';
-import { clearSession, loadSession, saveSession, SessionData } from './session';
-import { isCurrentAuthRequest } from './authRequestPolicy';
+import {
+  clearSession,
+  loadSession,
+  saveSession,
+  SessionData,
+  type AuthorizationUpdateReason,
+} from './session';
+import {
+  isCurrentAuthRequest,
+  isRefreshableAuthFailure,
+  shouldRetryRotatedAccessToken,
+} from './authRequestPolicy';
 import { beginApiRequest, endApiRequest } from '../utils/performanceDiagnostics';
 
 function parseHost(value?: string | null) {
@@ -181,10 +191,16 @@ let refreshingPromise: Promise<SessionData | null> | null = null;
 let refreshingGeneration: number | null = null;
 let authFailureHandler: (() => void) | null = null;
 
-export function setApiAuthorizationToken(token: string | null) {
+export function setApiAuthorizationToken(
+  token: string | null,
+  reason: AuthorizationUpdateReason = 'session',
+) {
   const nextAuthorization = token ? `Bearer ${token}` : '';
   const currentAuthorization = String(api.defaults.headers.common.Authorization || '');
-  if (nextAuthorization !== currentAuthorization) authRequestGeneration += 1;
+  // Refresh rotation stays within one authenticated account. Login, logout,
+  // and account switching still advance the generation and invalidate every
+  // request owned by the previous session.
+  if (nextAuthorization !== currentAuthorization && reason !== 'refresh') authRequestGeneration += 1;
 
   if (token) {
     api.defaults.headers.common.Authorization = nextAuthorization;
@@ -235,7 +251,11 @@ async function refreshAccessToken(requestGeneration: number) {
     // allow that stale response to resurrect the previous authenticated user.
     if (refreshGeneration !== authRequestGeneration) return null;
 
-    const saved = await saveSession(nextSession, () => refreshGeneration === authRequestGeneration);
+    const saved = await saveSession(
+      nextSession,
+      () => refreshGeneration === authRequestGeneration,
+      'refresh',
+    );
     if (!saved || refreshGeneration !== authRequestGeneration) return null;
     return nextSession;
   })()
@@ -312,9 +332,26 @@ api.interceptors.response.use(
       throw error;
     }
 
-    const tokenProblem =
-      status === 401 &&
-      (code.startsWith('AUTH_TOKEN_') || /token/i.test(String(error?.response?.data?.message || '')));
+    const requestAuthorization = String(original.headers?.Authorization || original.headers?.authorization || '');
+    const currentAuthorization = String(api.defaults.headers.common.Authorization || '');
+    if (shouldRetryRotatedAccessToken({
+      status,
+      code,
+      retried: original.__retried,
+      requestAuthorization,
+      currentAuthorization,
+    })) {
+      original.__retried = true;
+      original.headers = original.headers || {};
+      original.headers.Authorization = currentAuthorization;
+      return api.request(original);
+    }
+
+    const tokenProblem = isRefreshableAuthFailure(
+      status,
+      code,
+      error?.response?.data?.message,
+    );
     if (!tokenProblem || original.__retried || original.__skipAuthRefresh) {
       throw error;
     }
@@ -438,6 +475,13 @@ export async function getAuthMe() {
     setApiHost(nextHost);
     return api.get('/auth/me');
   }
+}
+
+export function logoutAuthSession(accessToken: string) {
+  return api.post('/auth/logout', undefined, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    __skipAuthRefresh: true,
+  } as any);
 }
 
 export async function putAuthMe(payload: {

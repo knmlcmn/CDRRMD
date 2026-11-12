@@ -11,7 +11,16 @@ test('logout transitions to login before background network cleanup settles', as
   const logout = app.slice(app.indexOf('function performLogout()'), app.indexOf('function requestLogout()'));
   assert.ok(logout.indexOf('setSession(null)') < logout.indexOf('Promise.allSettled'));
   assert.match(logout, /unregisterResidentPushNotifications\(previousSession\.token\)/);
+  assert.match(logout, /logoutAuthSession\(previousSession\.token\)/);
   assert.doesNotMatch(logout, /await unregisterResidentPushNotifications/);
+  assert.doesNotMatch(logout, /await logoutAuthSession/);
+});
+
+test('server logout uses the captured bearer token and never refreshes a closing session', async () => {
+  const api = await readFile(resolve(root, 'src/services/api.ts'), 'utf8');
+  const logout = api.slice(api.indexOf('export function logoutAuthSession'), api.indexOf('export async function putAuthMe'));
+  assert.match(logout, /Authorization: `Bearer \$\{accessToken\}`/);
+  assert.match(logout, /__skipAuthRefresh: true/);
 });
 
 test('runtime authorization is revoked before native storage cleanup', async () => {
@@ -27,9 +36,11 @@ test('stale token refresh responses cannot resurrect a logged-out session', asyn
   assert.match(api, /refreshGeneration !== authRequestGeneration/);
   assert.match(api, /isCurrentAuthRequest\(original\.__authRequestGeneration, authRequestGeneration\)/);
   assert.match(api, /refreshingGeneration === requestGeneration/);
-  assert.match(api, /saveSession\(nextSession, \(\) => refreshGeneration === authRequestGeneration\)/);
+  assert.match(api, /saveSession\([\s\S]*?nextSession,[\s\S]*?\(\) => refreshGeneration === authRequestGeneration,[\s\S]*?'refresh'/);
   assert.match(api, /typeof authConfig\.__authRequestGeneration !== 'number'/);
   assert.doesNotMatch(api, /\(config as any\)\.__authRequestGeneration = authRequestGeneration/);
+  assert.match(api, /reason !== 'refresh'/);
+  assert.match(api, /refreshGeneration === authRequestGeneration,[\s\S]*?'refresh'/);
 });
 
 test('rescuer auth failures are scoped to the session that created the portal', async () => {

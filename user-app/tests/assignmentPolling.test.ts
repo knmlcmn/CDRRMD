@@ -63,27 +63,29 @@ test('AssignmentsScreen polls only active assignments every five seconds', async
 });
 
 test('history refreshes on focus, manual refresh, resume, acknowledgement, and pickup', async () => {
-  const screen = await readFile(
-    resolve(dirname(fileURLToPath(import.meta.url)), '../src/rescuer/screens/AssignmentsScreen.tsx'),
-    'utf8',
-  );
+  const here = dirname(fileURLToPath(import.meta.url));
+  const [screen, presence] = await Promise.all([
+    readFile(resolve(here, '../src/rescuer/screens/AssignmentsScreen.tsx'), 'utf8'),
+    readFile(resolve(here, '../src/rescuer/hooks/useResponderLocationPresence.ts'), 'utf8'),
+  ]);
 
   assert.match(screen, /requestScope\.activate\(\)[\s\S]*?void refreshAll\(true\)/);
   assert.match(screen, /AppState\.addEventListener\('change'[\s\S]*?void refreshAll\(true\)/);
   assert.match(screen, /onRefresh=\{\(\) => \{ setLoading\(true\); void refreshAll\(true\); \}\}/);
   assert.match(screen, /await acknowledgeAssignment[\s\S]*?await refreshAll\(true\)/);
-  assert.match(screen, /if \(data\.pickupConfirmed\) void refreshAll\(true\)/);
+  assert.match(presence, /data\.rerouted \|\| data\.pickupConfirmed/);
+  assert.match(screen, /if \(presenceRevision > 0\) void refreshAll\(true\)/);
   assert.match(screen, /requestScope\.invalidate\(\)/);
 });
 
-test('GPS and OSRM routing thresholds remain unchanged by assignment polling work', async () => {
+test('portal owns GPS while assignment routing and optimized polling remain intact', async () => {
   const root = resolve(dirname(fileURLToPath(import.meta.url)), '../src');
   const [screen, locationAccess] = await Promise.all([
     readFile(resolve(root, 'rescuer/screens/AssignmentsScreen.tsx'), 'utf8'),
     readFile(resolve(root, 'services/locationAccess.ts'), 'utf8'),
   ]);
   assert.match(screen, /fetchRoadRoute\(location, destination, true, 1, controller\.signal\)/);
-  assert.match(screen, /watchLiveLocation\(\(nextLocation\)/);
-  assert.match(locationAccess, /timeInterval: 5000/);
-  assert.match(locationAccess, /distanceInterval: 3/);
+  assert.doesNotMatch(screen, /watchLiveLocation|requireLiveLocation|updateResponderLocation/);
+  assert.match(locationAccess, /timeInterval: 15000/);
+  assert.match(locationAccess, /distanceInterval: 0/);
 });

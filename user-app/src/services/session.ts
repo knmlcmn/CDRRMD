@@ -22,7 +22,8 @@ export type SessionData = {
 };
 
 const SESSION_KEY = '@cddrmd:user_session';
-let applyAuthorizationHeader: ((token: string | null) => void) | null = null;
+export type AuthorizationUpdateReason = 'session' | 'refresh';
+let applyAuthorizationHeader: ((token: string | null, reason?: AuthorizationUpdateReason) => void) | null = null;
 let sessionStorageQueue: Promise<unknown> = Promise.resolve();
 
 function enqueueSessionStorage<T>(operation: () => Promise<T>) {
@@ -31,18 +32,24 @@ function enqueueSessionStorage<T>(operation: () => Promise<T>) {
   return request;
 }
 
-export function registerSessionAuthorizationSetter(setter: (token: string | null) => void) {
+export function registerSessionAuthorizationSetter(
+  setter: (token: string | null, reason?: AuthorizationUpdateReason) => void,
+) {
   // Allows API layer to stay synchronized with persisted session state.
   applyAuthorizationHeader = setter;
 }
 
-export async function saveSession(session: SessionData, isCurrent: () => boolean = () => true) {
+export async function saveSession(
+  session: SessionData,
+  isCurrent: () => boolean = () => true,
+  authorizationReason: AuthorizationUpdateReason = 'session',
+) {
   // Persist session snapshot and immediately apply bearer token.
   return enqueueSessionStorage(async () => {
     if (!isCurrent()) return false;
     await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
     if (!isCurrent()) return false;
-    applyAuthorizationHeader?.(session.token);
+    applyAuthorizationHeader?.(session.token, authorizationReason);
     return true;
   });
 }

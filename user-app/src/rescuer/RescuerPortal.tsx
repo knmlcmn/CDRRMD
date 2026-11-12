@@ -16,6 +16,7 @@ import { scopeWaterLevelSensors } from './utils/sensorScope';
 import { getRescuerTabItems, RESCUER_TAB_INDICATOR, type RescuerTab } from './utils/rescuerTabBar';
 import { rescuerTheme } from './theme';
 import { beginPerformanceStage, endPerformanceStage, markNavigationSettled, markNavigationStart } from '../utils/performanceDiagnostics';
+import { useResponderLocationPresence } from './hooks/useResponderLocationPresence';
 
 type Props = {
   role: ResponderRole;
@@ -32,6 +33,7 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
   const [alertVisible, setAlertVisible] = useState(false);
   const alertStages = useRef<Record<string, 'moderate' | 'high'>>({});
   const readinessMarker = useRef(beginPerformanceStage('rescuer-portal-ready'));
+  const responderPresence = useResponderLocationPresence(onAuthError);
 
   useEffect(() => {
     const task = InteractionManager.runAfterInteractions(() => {
@@ -129,7 +131,14 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
       ? <FloodMonitoringScreen role={role} barangayName={barangayName} onAuthError={onAuthError} />
       : tab === 'account'
         ? <AccountScreen role={role} onAuthError={onAuthError} />
-        : <AssignmentsScreen role={role} onAuthError={onAuthError} />;
+        : <AssignmentsScreen
+          role={role}
+          onAuthError={onAuthError}
+          location={responderPresence.location}
+          locationError={responderPresence.locationError}
+          presenceNotice={responderPresence.notice}
+          presenceRevision={responderPresence.revision}
+        />;
   const tabItems = getRescuerTabItems(tab);
 
   return (

@@ -29,6 +29,7 @@ import { AppProfile, ensureAccountForSession, patchAccountProfile } from './src/
 import {
   assignAuthBarangayFromLocation,
   getAuthMe,
+  logoutAuthSession,
   putAuthMe,
   setApiAuthorizationToken,
   setAuthFailureHandler,
@@ -541,6 +542,16 @@ function AppContent() {
     endPerformanceStage(transitionMarker);
 
     const cleanupMarker = beginPerformanceStage('logout-background-cleanup');
+    const cleanupTasks: Promise<unknown>[] = [];
+    if (previousSession?.token) {
+      const serverMarker = beginPerformanceStage('logout-server-session-cleanup');
+      cleanupTasks.push(logoutAuthSession(previousSession.token)
+        .then(() => endPerformanceStage(serverMarker))
+        .catch((error) => {
+          endPerformanceStage(serverMarker, { success: false });
+          throw error;
+        }));
+    }
     const storageMarker = beginPerformanceStage('logout-session-storage-cleanup');
     const storageCleanup = clearSession()
       .then(() => endPerformanceStage(storageMarker))
@@ -548,7 +559,7 @@ function AppContent() {
         endPerformanceStage(storageMarker, { success: false });
         throw error;
       });
-    const cleanupTasks: Promise<unknown>[] = [storageCleanup];
+    cleanupTasks.push(storageCleanup);
     if (previousSession?.user.role === 'user') {
       const pushMarker = beginPerformanceStage('logout-resident-push-cleanup');
       cleanupTasks.push(unregisterResidentPushNotifications(previousSession.token)
