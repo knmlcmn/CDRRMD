@@ -16,7 +16,19 @@ export const authColors = {
   danger: '#b4232d',
 };
 
-export function AuthShell({ children, title, subtitle, centerContent = false }: { children: ReactNode; title: string; subtitle: string; centerContent?: boolean }) {
+export function AuthShell({
+  children,
+  title,
+  subtitle,
+  centerContent = false,
+  desktopContentMaxWidth = 620,
+}: {
+  children: ReactNode;
+  title: string;
+  subtitle: string;
+  centerContent?: boolean;
+  desktopContentMaxWidth?: number;
+}) {
   const { width } = useWindowDimensions();
   const wide = width >= 1024;
 
@@ -48,9 +60,14 @@ export function AuthShell({ children, title, subtitle, centerContent = false }: 
       <View style={[
         styles.formPane,
         wide && styles.formPaneWide,
-        !wide && { width: Math.min(Math.max(0, width - 32), 660) },
+        !wide && { width: Math.min(Math.max(0, width - 32), 660), maxWidth: 660 },
       ]}>
-        <View style={[styles.formBody, centerContent && wide && styles.formBodyCentered]}>
+        <View style={[
+          styles.formBody,
+          wide && styles.formBodyWide,
+          wide && { maxWidth: desktopContentMaxWidth },
+          centerContent && wide && styles.formBodyCentered,
+        ]}>
         <View style={styles.formHeading}>
           <View style={styles.headingIcon}><MaterialCommunityIcons name="shield-check-outline" size={21} color={authColors.blue} /></View>
           <View style={styles.headingCopy}><Text accessibilityRole="header" style={styles.title}>{title}</Text><Text style={styles.subtitle}>{subtitle}</Text></View>
@@ -66,7 +83,7 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: authColors.ice },
   rootWide: { flexDirection: 'row' },
   hero: { minHeight: 166, paddingHorizontal: 18, paddingTop: 14, paddingBottom: 13, justifyContent: 'space-between', overflow: 'hidden' },
-  heroWide: { width: '44%', minHeight: '100%', paddingHorizontal: 34, paddingVertical: 30 },
+  heroWide: { width: '40%', minHeight: '100%', paddingHorizontal: 34, paddingVertical: 30 },
   heroImage: { opacity: 0.98 },
   heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(5, 35, 61, 0.84)' },
   gridPattern: { position: 'absolute', width: 240, height: 240, right: -75, top: -80, borderWidth: 1, borderColor: 'rgba(137, 205, 242, 0.2)', borderRadius: 120, transform: [{ scaleX: 1.3 }] },
@@ -84,9 +101,10 @@ const styles = StyleSheet.create({
   heroTitle: { color: '#fff', maxWidth: 390, marginTop: 8, fontSize: 22, lineHeight: 27, fontWeight: '900', letterSpacing: -0.5 },
   heroText: { color: '#dcecf7', maxWidth: 420, marginTop: 6, fontSize: 11, lineHeight: 17 },
   heroFooter: { display: 'none', color: '#bcd5e5', fontSize: 8, fontWeight: '800', letterSpacing: 1.1 },
-  formPane: { flex: 1, maxWidth: 660, alignSelf: 'center', paddingTop: 12, paddingBottom: 10 },
-  formPaneWide: { justifyContent: 'center', paddingHorizontal: 48, paddingVertical: 28 },
+  formPane: { flex: 1, alignSelf: 'center', paddingTop: 12, paddingBottom: 10 },
+  formPaneWide: { alignSelf: 'stretch', justifyContent: 'center', paddingHorizontal: 42, paddingVertical: 28 },
   formBody: { flex: 1, width: '100%', minHeight: 0 },
+  formBodyWide: { alignSelf: 'center' },
   formBodyCentered: { flex: 1, justifyContent: 'center' },
   formHeading: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
   headingIcon: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#e3f1fa', borderWidth: 1, borderColor: '#c5dfef' },

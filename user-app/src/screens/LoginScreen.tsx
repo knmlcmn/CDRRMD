@@ -14,6 +14,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { postAuth } from '../services/api';
 import { SessionData } from '../services/session';
 import { beginPerformanceStage, endPerformanceStage } from '../utils/performanceDiagnostics';
+import { useResponsiveLayout } from '../utils/responsive';
 
 type Props = {
   onLoginSuccess: (session: SessionData) => Promise<void>;
@@ -22,6 +23,7 @@ type Props = {
 };
 
 export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPassword }: Props) {
+  const { isWebDesktop } = useResponsiveLayout();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -77,7 +79,7 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPa
     <AuthShell centerContent title="Welcome back" subtitle="Sign in as a resident or authorized emergency responder.">
       <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" bounces={false} showsVerticalScrollIndicator={false}>
-          <View style={styles.form}>
+          <View style={[styles.form, isWebDesktop && styles.formWide]}>
             <Text style={styles.sectionLabel}>Account credentials</Text>
 
             <View style={[styles.inputWrap, focusedField === 'identifier' && styles.inputWrapFocused]}>
@@ -144,6 +146,7 @@ const styles = StyleSheet.create({
   keyboard: { width: '100%' },
   scroll: { paddingBottom: 2 },
   form: { alignSelf: 'stretch', padding: 18, borderRadius: 18, backgroundColor: authColors.white, borderWidth: 1, borderColor: authColors.border, shadowColor: authColors.navy, shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
+  formWide: { padding: 24, borderRadius: 20 },
   sectionLabel: { color: authColors.ink, fontSize: 12, lineHeight: 16, fontWeight: '900', marginBottom: 10, letterSpacing: 0.25 },
   inputWrap: {
     minHeight: 50, borderWidth: 1, borderColor: authColors.border, borderRadius: 12, paddingHorizontal: 14,

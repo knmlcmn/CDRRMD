@@ -47,7 +47,7 @@ function Field({ icon, trailing, ...props }: FieldProps) {
 }
 
 export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props) {
-  const { isSmall } = useResponsiveLayout();
+  const { isSmall, isWebDesktop } = useResponsiveLayout();
   const [username, setUsername] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -169,7 +169,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
   }
 
   return (
-    <AuthShell title="Create a resident account" subtitle="Registration is for residents. Responder accounts remain provisioned by authorized personnel.">
+    <AuthShell desktopContentMaxWidth={720} title="Create a resident account" subtitle="Registration is for residents. Responder accounts remain provisioned by authorized personnel.">
       <KeyboardAvoidingView style={styles.keyboard} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           style={styles.scrollView}
@@ -179,7 +179,7 @@ export default function RegisterScreen({ onRegisterSuccess, onShowLogin }: Props
           bounces={false}
           showsVerticalScrollIndicator
         >
-          <View style={styles.form}>
+          <View style={[styles.form, isWebDesktop && styles.formWide]}>
             <Text style={styles.sectionLabel}>Resident information</Text>
 
             <Field icon="account-outline" value={username} onChangeText={setUsername} placeholder="Username" autoCapitalize="none" />
@@ -277,6 +277,7 @@ const styles = StyleSheet.create({
   scrollView: { flex: 1, minHeight: 0 },
   scroll: { flexGrow: 1, justifyContent: 'flex-start', paddingBottom: 24 },
   form: { alignSelf: 'stretch', padding: 18, borderRadius: 18, backgroundColor: authColors.white, borderWidth: 1, borderColor: authColors.border, shadowColor: authColors.navy, shadowOpacity: 0.07, shadowRadius: 13, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
+  formWide: { paddingHorizontal: 24, paddingVertical: 20, borderRadius: 20 },
   sectionLabel: { color: authColors.ink, fontSize: 12, fontWeight: '900', marginBottom: 10, letterSpacing: 0.25 },
   inputWrap: {
     minHeight: 46, borderWidth: 1, borderColor: authColors.border, borderRadius: 11, paddingHorizontal: 13,
