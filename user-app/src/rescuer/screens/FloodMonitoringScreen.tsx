@@ -260,7 +260,7 @@ export default function FloodMonitoringScreen({ role, barangayName, onAuthError 
             style={[styles.reportTab, reportView === 'history' && styles.reportTabActive]}
           ><Text style={[styles.reportTabText, reportView === 'history' && styles.reportTabTextActive]}>History</Text></Pressable>
         </View>
-        {!reportData.items.length ? <EmptyState loading={reportsLoading} message={reportView === 'today' ? 'No flood reports logged today.' : 'No earlier flood report history.'} /> : <ScrollView horizontal showsHorizontalScrollIndicator style={styles.tableWrap}><View style={styles.table}>
+        {!reportData.items.length ? <EmptyState loading={reportsLoading} message={reportView === 'today' ? 'No flood reports logged today.' : 'No earlier flood report history.'} /> : <ScrollView horizontal showsHorizontalScrollIndicator style={styles.tableWrap} contentContainerStyle={styles.tableScrollContent}><View style={styles.table}>
           <View style={[styles.tableRow, styles.tableHead]}>{['Location', 'Level', 'Logged', 'Distance'].map((label) => <Text key={label} style={[styles.cell, styles.headText]}>{label}</Text>)}</View>
           {reportData.items.map((report, index) => {
             const level = report.level === 'high' ? 'High' : 'Moderate';
@@ -328,11 +328,12 @@ const styles = StyleSheet.create({
   reportTabText: { color: '#475569', fontSize: 11, fontWeight: '900' },
   reportTabTextActive: { color: '#fff' },
   tableWrap: { marginTop: 11, borderRadius: 7, borderWidth: 1, borderColor: '#cbd5e1' },
-  table: { minWidth: 640 },
+  tableScrollContent: { flexGrow: 1 },
+  table: { width: '100%', minWidth: 640 },
   tableRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#cbd5e1' },
   tableHead: { backgroundColor: '#12314b' },
   altRow: { backgroundColor: '#f8fafc' },
-  cell: { width: 160, paddingHorizontal: 9, color: '#334155', fontSize: 10 },
+  cell: { flexGrow: 1, flexBasis: 150, minWidth: 0, paddingHorizontal: 9, color: '#334155', fontSize: 10 },
   locationCell: { color: rescuerColors.ink, fontWeight: '900' },
   headText: { color: '#fff', fontWeight: '900' },
   levelBadge: { alignSelf: 'flex-start', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4, color: '#fff', fontSize: 10, fontWeight: '900' },

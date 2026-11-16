@@ -83,7 +83,7 @@ export default function AccountScreen({ role, onAuthError }: { role: ResponderRo
           <View style={styles.avatar}><MaterialCommunityIcons name="account-outline" size={22} color={rescuerColors.blue} /></View>
           <View style={styles.accountCopy}><View style={styles.accountNameRow}><Text style={styles.accountName}>{[account.first_name, account.last_name].filter(Boolean).join(' ') || 'Rescuer'}</Text>{account.is_self ? <Text style={styles.youBadge}>You</Text> : null}</View><Text style={styles.accountMeta}>{account.rescuer_id} · {account.email || account.username || 'No email'}</Text><Text style={styles.accountMeta}>Last login: {formatLastLogin(account.last_login)}</Text></View>
           <View style={styles.accountEnd}><Text style={[styles.presence, account.is_online && styles.online]}>{account.is_online ? 'Online' : 'Offline'}</Text><MaterialCommunityIcons name="chevron-right" size={20} color="#71869a" /></View>
-        </TouchableOpacity>)}</View> : <ScrollView horizontal showsHorizontalScrollIndicator style={styles.tableWrap}><View style={styles.table}>
+        </TouchableOpacity>)}</View> : <ScrollView horizontal showsHorizontalScrollIndicator style={styles.tableWrap} contentContainerStyle={styles.tableScrollContent}><View style={styles.table}>
           <View style={[styles.tableRow, styles.tableHead]}>{['ID', 'Name', 'Email', 'Username', 'Contact', 'Status', 'Last Login', 'Actions'].map((label, index) => <Text key={label} style={[styles.cell, index === 2 && styles.emailCell, styles.headText]}>{label}</Text>)}</View>
           {filtered.map((account, index) => <View key={account.id} style={[styles.tableRow, index % 2 === 1 && styles.altRow, account.is_self && styles.selfRow]}>
             <Text style={styles.cell}>{account.rescuer_id}{account.is_self ? '  You' : ''}</Text><Text style={styles.cell}>{[account.first_name, account.last_name].filter(Boolean).join(' ') || 'N/A'}</Text><Text style={[styles.cell, styles.emailCell]}>{account.email || 'N/A'}</Text><Text style={styles.cell}>{account.username || 'N/A'}</Text><Text style={styles.cell}>{account.contact_number || 'N/A'}</Text><View style={styles.cell}><Text style={[styles.presence, account.is_online && styles.online]}>{account.is_online ? 'Online' : 'Offline'}</Text></View><Text style={styles.cell}>{formatLastLogin(account.last_login)}</Text><View style={styles.cell}><TouchableOpacity onPress={() => openAccount(account)} style={styles.viewButton}><Text style={styles.viewText}>View</Text></TouchableOpacity></View>
@@ -128,13 +128,14 @@ const styles = StyleSheet.create({
   input: { height: 42, width: '100%', maxWidth: 420, borderRadius: 8, borderWidth: 1, borderColor: '#cbd5e1', paddingHorizontal: 12, color: '#0f172a', backgroundColor: '#fff', fontSize: 12 },
   success: { padding: 11, borderRadius: 10, backgroundColor: '#ecfdf5', borderWidth: 1, borderColor: '#a7f3d0', color: rescuerColors.success, fontSize: 12, fontWeight: '700' },
   tableWrap: { borderRadius: 7, borderWidth: 1, borderColor: '#cbd5e1' },
-  table: { minWidth: 1040 },
+  tableScrollContent: { flexGrow: 1 },
+  table: { width: '100%', minWidth: 1040 },
   tableRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#cbd5e1' },
   tableHead: { backgroundColor: '#12314b' },
   altRow: { backgroundColor: '#f8fafc' },
   selfRow: { backgroundColor: '#eff6ff' },
-  cell: { width: 125, paddingHorizontal: 9, color: '#2b465b', fontSize: 10 },
-  emailCell: { width: 165 },
+  cell: { flexGrow: 1, flexBasis: 112, minWidth: 0, paddingHorizontal: 9, color: '#2b465b', fontSize: 10 },
+  emailCell: { flexBasis: 152 },
   headText: { color: '#fff', fontWeight: '900' },
   presence: { alignSelf: 'flex-start', color: '#64748b', backgroundColor: '#e2e8f0', borderRadius: 99, paddingHorizontal: 8, paddingVertical: 4, fontSize: 9, fontWeight: '900' },
   online: { color: '#047857', backgroundColor: '#d1fae5' },
