@@ -51,12 +51,14 @@ test('transient GPS freshness loss preserves map component identity and outer sc
   assert.doesNotMatch(rescuerScreen, /<ScrollView\s+key=/);
 });
 
-test('GPS status changes keep the banner slot height stable above the map', async () => {
+test('initial assignment layout has no empty GPS slot and keeps status height stable', async () => {
   const assignments = await readFile(resolve(userAppRoot, 'src/rescuer/screens/AssignmentsScreen.tsx'), 'utf8');
 
-  assert.match(assignments, /<View style=\{styles\.locationStatusSlot\}>\s*<ErrorMessage message=\{locationError\} \/>\s*<\/View>/);
-  assert.match(assignments, /locationStatusSlot:\s*\{ height: 68 \}/);
-  assert.doesNotMatch(assignments, /locationError\s*\?\s*<ErrorMessage/);
+  assert.doesNotMatch(assignments, /locationStatusSlot/);
+  assert.doesNotMatch(assignments, /<ErrorMessage message=\{locationError\}/);
+  assert.match(assignments, /location \? 'Connected' : locationError \|\| 'Acquiring GPS'/);
+  assert.match(assignments, /statusStrip:\s*\{ height: 68/);
+  assert.match(assignments, /mapCard:\s*\{ height: 370/);
 });
 
 test('map lifecycle diagnostics distinguish component mount, document load, and Leaflet readiness', async () => {

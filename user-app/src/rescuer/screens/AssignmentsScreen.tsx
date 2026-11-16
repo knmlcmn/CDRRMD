@@ -445,12 +445,9 @@ export default function AssignmentsScreen({
   return (
     <RescuerScreen title={role === 'barangay_rescuer' ? 'Barangay Rescue Assignments' : 'CDRRMD Backup Assignments'} subtitle={subtitle} refreshing={loading} onRefresh={() => { setLoading(true); void refreshAll(true); }}>
       <ErrorMessage message={error} />
-      <View style={styles.locationStatusSlot}>
-        <ErrorMessage message={locationError} />
-      </View>
       {presenceNotice ? <Text style={styles.notice}>{presenceNotice}</Text> : null}
       <View style={styles.statusStrip}>
-        <View style={styles.statusItem}><View style={[styles.statusDot, location ? styles.statusOnline : styles.statusWaiting]} /><View><Text style={styles.statusLabel}>LIVE LOCATION</Text><Text style={styles.statusValue}>{location ? 'Connected' : 'Acquiring GPS'}</Text></View></View>
+        <View style={styles.statusItem}><View style={[styles.statusDot, location ? styles.statusOnline : styles.statusWaiting]} /><View style={styles.statusText}><Text style={styles.statusLabel}>LIVE LOCATION</Text><Text numberOfLines={2} style={[styles.statusValue, locationError ? styles.statusError : null]}>{location ? 'Connected' : locationError || 'Acquiring GPS'}</Text></View></View>
         <View style={styles.statusDivider} />
         <View style={styles.statusItem}><MaterialCommunityIcons name="radio-tower" size={20} color={rescuerColors.blue} /><View><Text style={styles.statusLabel}>ASSIGNMENTS</Text><Text style={styles.statusValue}>{assignments.length} active</Text></View></View>
       </View>
@@ -540,15 +537,16 @@ export default function AssignmentsScreen({
 }
 
 const styles = StyleSheet.create({
-  locationStatusSlot: { height: 68 },
-  statusStrip: { minHeight: 68, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, borderRadius: 16, borderWidth: 1, borderColor: rescuerColors.border, backgroundColor: '#fff', shadowColor: '#0b2e4e', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+  statusStrip: { height: 68, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, borderRadius: 16, borderWidth: 1, borderColor: rescuerColors.border, backgroundColor: '#fff', shadowColor: '#0b2e4e', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   statusItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  statusText: { flex: 1 },
   statusDivider: { width: 1, height: 32, marginHorizontal: 12, backgroundColor: '#dce7ef' },
   statusDot: { width: 11, height: 11, borderRadius: 6 },
   statusOnline: { backgroundColor: '#10b981' },
   statusWaiting: { backgroundColor: '#f59e0b' },
   statusLabel: { color: rescuerColors.muted, fontSize: 8, lineHeight: 11, fontWeight: '900', letterSpacing: 0.8 },
   statusValue: { color: rescuerColors.ink, fontSize: 12, lineHeight: 16, fontWeight: '900' },
+  statusError: { color: rescuerColors.danger, fontSize: 9, lineHeight: 11 },
   mapCard: { height: 370, overflow: 'hidden', borderRadius: 18, borderWidth: 1, borderColor: rescuerColors.border, backgroundColor: '#dbe5eb', shadowColor: '#0b2e4e', shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
   mapPlaceholder: { flex: 1, backgroundColor: '#dbe5eb' },
   fullscreenButton: { position: 'absolute', right: 12, bottom: 12, width: 42, height: 42, borderRadius: 9, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(18,49,75,0.94)', alignItems: 'center', justifyContent: 'center' },
