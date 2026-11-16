@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { liveLocationSql } = require('../services/rescuerPresenceService');
 
 async function findUserByEmail(email) {
   const result = await pool.query(
@@ -861,9 +862,18 @@ async function listReportsByAssignedBarangay(barangayName, currentWeekOnly = fal
        dispatch.id AS dispatch_id, dispatch.dispatch_type, dispatch.assigned_rescuer_id,
        dispatch.assigned_at AS rescuer_assigned_at, dispatch.responder_acknowledged_at, dispatch.picked_up_at,
        NULLIF(TRIM(CONCAT_WS(' ', responder.first_name, responder.last_name)), '') AS rescuer_name,
-       responder.current_latitude AS rescuer_latitude,
-       responder.current_longitude AS rescuer_longitude,
-       responder.location_updated_at AS rescuer_location_updated_at
+       CASE WHEN ${liveLocationSql('responder')}
+              AND responder.role = 'barangay_rescuer'
+              AND LOWER(responder.barangay_name) = LOWER($1)
+            THEN responder.current_latitude END AS rescuer_latitude,
+       CASE WHEN ${liveLocationSql('responder')}
+              AND responder.role = 'barangay_rescuer'
+              AND LOWER(responder.barangay_name) = LOWER($1)
+            THEN responder.current_longitude END AS rescuer_longitude,
+       CASE WHEN ${liveLocationSql('responder')}
+              AND responder.role = 'barangay_rescuer'
+              AND LOWER(responder.barangay_name) = LOWER($1)
+            THEN responder.location_updated_at END AS rescuer_location_updated_at
      FROM incident_reports ir
      JOIN users u ON u.id = ir.reported_by
      LEFT JOIN evacuation_areas ea ON ea.id = ir.evacuation_area_id

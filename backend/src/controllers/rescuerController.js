@@ -7,6 +7,7 @@ const {
   findNearestAvailableEvacuationArea,
 } = require('../services/evacuationRoutingService');
 const { loadHardwareSensorSnapshot } = require('../services/hardwareSensorService');
+const { listVisibleLiveRescuers } = require('../services/rescuerPresenceService');
 
 function requireRole(req, role) {
   if (req.user?.role !== role) {
@@ -99,6 +100,10 @@ async function listAccounts(req, res) {
     [req.user.userId, prefix, listedRole, barangayScope],
   );
   return res.json(rows);
+}
+
+async function listLiveLocations(req, res) {
+  return res.json(await listVisibleLiveRescuers(req.user));
 }
 
 async function listArchivedAccounts(req, res) {
@@ -613,6 +618,7 @@ async function updateMyLocation(req, res) {
 }
 
 module.exports = {
+  listLiveLocations,
   listAccounts,
   listArchivedAccounts,
   createAccount,

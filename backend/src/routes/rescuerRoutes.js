@@ -6,6 +6,7 @@ const router = express.Router();
 const asyncHandler = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 
 router.use(auth);
+router.get('/live-locations', asyncHandler(controller.listLiveLocations));
 router.get('/accounts', asyncHandler(controller.listAccounts));
 router.get('/accounts/archived', asyncHandler(controller.listArchivedAccounts));
 router.post('/accounts', asyncHandler(controller.createAccount));

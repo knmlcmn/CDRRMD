@@ -8,6 +8,7 @@ import type { BackupRequest, EvacuationAreaItem, MonitoringReport, RescuerAccoun
 import { buildCalambaMapHtml } from '../utils/calambaMapHtml';
 import { formatIncidentStatus, INCIDENT_STATUS_FILTERS, type IncidentStatusFilter } from '../utils/incidentStatus';
 import type { RescuerAssignmentPreview as AssignmentPreview } from '../services/rescuerAssignmentPreview';
+import { isLiveResponder, liveResponderCoordinate } from '../services/liveResponderPresence';
 
 type Props = {
   onLogout: () => void;
@@ -147,6 +148,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   });
   const [topRainBarangays, setTopRainBarangays] = useState<RainRankingItem[]>([]);
   const [rainLegendUpdatedAt, setRainLegendUpdatedAt] = useState<string | null>(null);
+  const [presenceNow, setPresenceNow] = useState(() => Date.now());
 
   async function openProofImage(report: MonitoringReport) {
     if (report.image_base64) {
@@ -174,19 +176,15 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     }
 
     try {
-      const [reportsResponse, backupResponse, cdrrmdResponse, barangayResponderResponse] = await Promise.all([
+      const [reportsResponse, backupResponse, liveLocationsResponse] = await Promise.all([
         api.get('/reports'),
         api.get('/backup-requests'),
-        api.get('/rescuers/accounts', { params: { role: 'rescuer' } }),
-        api.get('/rescuers/accounts', { params: { role: 'barangay_rescuer' } }),
+        api.get('/rescuers/live-locations'),
       ]);
 
       const nextReports = Array.isArray(reportsResponse.data) ? reportsResponse.data : [];
       const nextBackupRequests = Array.isArray(backupResponse.data) ? backupResponse.data : [];
-      const nextCityRescuers = [
-        ...(Array.isArray(cdrrmdResponse.data) ? cdrrmdResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'cddrmd' as const })),
-        ...(Array.isArray(barangayResponderResponse.data) ? barangayResponderResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'barangay' as const })),
-      ];
+      const nextCityRescuers = Array.isArray(liveLocationsResponse.data) ? liveLocationsResponse.data : [];
 
       setReports((current) => preserveUnchangedArray(current, nextReports, REPORT_LIVE_FIELDS));
       setBackupRequests((current) => preserveUnchangedArray(current, nextBackupRequests, BACKUP_LIVE_FIELDS));
@@ -199,6 +197,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
 
       setError(null);
     } catch (err: unknown) {
+      setCityRescuers([]);
       const apiError = err as { response?: { status?: number; data?: { message?: string } } };
       if (apiError.response?.status === 401) {
         onAuthError();
@@ -274,6 +273,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
     loadRainRanking().catch(() => {});
 
     const refreshTimer = setInterval(() => {
+      setPresenceNow(Date.now());
       loadData(false).catch(() => {});
     }, 5000);
 
@@ -341,10 +341,8 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
 
   const liveResponderLocation = useMemo<Coordinate | null>(() => {
     const liveResponder = cityRescuers.find((rescuer) => Number(rescuer.id) === Number(selectedReport?.assigned_rescuer_id));
-    const latitude = Number(liveResponder?.current_latitude ?? selectedReport?.rescuer_latitude);
-    const longitude = Number(liveResponder?.current_longitude ?? selectedReport?.rescuer_longitude);
-    return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
-  }, [cityRescuers, selectedReport?.assigned_rescuer_id, selectedReport?.rescuer_latitude, selectedReport?.rescuer_longitude]);
+    return liveResponderCoordinate(liveResponder, presenceNow);
+  }, [cityRescuers, presenceNow, selectedReport?.assigned_rescuer_id]);
 
   const responderLocation = useMemo(() => {
     return liveResponderLocation;
@@ -433,6 +431,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   }
 
   const responderPoints = useMemo(() => cityRescuers
+    .filter((rescuer) => isLiveResponder(rescuer, presenceNow))
     .map((rescuer) => {
       const activeAssignment = activeMissionReports.find((report) => Number(report.assigned_rescuer_id) === Number(rescuer.id));
       return {
@@ -448,7 +447,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
         kind: rescuer.kind,
       };
     })
-    .filter((rescuer) => Number.isFinite(rescuer.latitude) && Number.isFinite(rescuer.longitude)), [activeMissionReports, cityRescuers]);
+    .filter((rescuer) => Number.isFinite(rescuer.latitude) && Number.isFinite(rescuer.longitude)), [activeMissionReports, cityRescuers, presenceNow]);
 
   const selectedResponderKind = selectedReport?.dispatch_type === 'cddrmd_backup' ? 'cddrmd' : 'barangay';
 
