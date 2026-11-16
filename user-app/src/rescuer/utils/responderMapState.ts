@@ -4,4 +4,3 @@ export function retainLastMapLocation<T>(
 ) {
   return liveLocation ?? retainedLocation;
 }
-
