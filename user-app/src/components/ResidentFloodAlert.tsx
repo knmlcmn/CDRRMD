@@ -5,6 +5,18 @@ import { editorial } from './EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { api } from '../services/api';
+import {
+  acknowledgeFloodEvent,
+  type EventAcknowledgements,
+  floodEventAcknowledgedAt,
+  isFloodEventAcknowledged,
+  isNotificationNewerThanAcknowledgement,
+  liveFloodEventKey,
+  normalizeBarangayName,
+  normalizeFloodSeverity,
+  notificationFloodEventKey,
+  selectEligibleFloodNotifications,
+} from './floodAlertPolicy';
 
 type FloodNotification = {
   id: number | null;
@@ -17,7 +29,9 @@ type FloodNotification = {
   read_at?: string | null;
   is_test_account?: boolean;
   matches_current_location?: boolean;
-  live_sensor_key?: string;
+  source_event_key?: string | null;
+  live_event_key?: string;
+  notification_event_key?: string;
 };
 
 type HardwareSensor = {
@@ -40,21 +54,16 @@ const MODERATE_WATER_LEVEL = 40;
 const HIGH_WATER_LEVEL = 61;
 const NOTIFICATION_POLL_INTERVAL_MS = 10_000;
 
-function normalizeBarangayName(value: unknown) {
-  return String(value || '').trim().toLowerCase().replace(/^barangay\s+/, '');
-}
-
 export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved, onSendRescue }: Props) {
   const { height: viewportHeight, width: viewportWidth } = useWindowDimensions();
   const [alert, setAlert] = useState<FloodNotification | null>(null);
   const coordinatesRef = useRef<{ latitude: number; longitude: number } | null>(null);
   const suppressedAlertIdsRef = useRef(new Set<number>());
-  const acknowledgedLiveKeysRef = useRef(new Set<string>());
+  const acknowledgedEventsRef = useRef<EventAcknowledgements>(new Map());
   const latestCheckRef = useRef(0);
   const checkInFlightRef = useRef(false);
   const cachedNotificationsRef = useRef<FloodNotification[]>([]);
   const lastNotificationCheckAtRef = useRef(0);
-  const lastLiveKeyRef = useRef<string | null>(null);
   const consecutiveSafeReadingsRef = useRef(0);
   const warningPulse = useRef(new Animated.Value(0)).current;
 
@@ -87,13 +96,6 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
       cachedNotificationsRef.current = notificationResult.value.data as FloodNotification[];
     }
     const notifications = cachedNotificationsRef.current;
-    const matchingUnread = notifications.filter(
-      (item) => String(item.category || '').toLowerCase() === 'flood_sensor'
-        && !item.read_at
-        && item.id !== null
-        && !suppressedAlertIdsRef.current.has(item.id),
-    );
-
     const sensors = sensorResult.status === 'fulfilled' && Array.isArray(sensorResult.value.data?.sensors)
       ? sensorResult.value.data.sensors as HardwareSensor[]
       : [];
@@ -110,19 +112,12 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
       ? (percentage >= HIGH_WATER_LEVEL ? 'high' : 'moderate')
       : null;
     const sensorId = String(residentSensor?.id || normalizeBarangayName(residentSensor?.barangayName));
-    const liveKey = liveSeverity && sensorId ? `${sensorId}:${liveSeverity}` : null;
+    const liveEventKey = sensorId ? liveFloodEventKey(sensorId) : null;
 
     if (checkNumber !== latestCheckRef.current) return;
 
-    if (liveKey) {
+    if (liveSeverity) {
       consecutiveSafeReadingsRef.current = 0;
-      // A severity transition is a new emergency event. This also allows a
-      // later high -> moderate -> high test cycle to display every transition,
-      // even when an earlier alert at that severity was acknowledged.
-      if (lastLiveKeyRef.current && lastLiveKeyRef.current !== liveKey) {
-        acknowledgedLiveKeysRef.current.delete(liveKey);
-      }
-      lastLiveKeyRef.current = liveKey;
     } else if (sensorAuthoritative) {
       consecutiveSafeReadingsRef.current += 1;
     }
@@ -133,27 +128,60 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
     const confirmedSafe = sensorAuthoritative
       && !liveSeverity
       && consecutiveSafeReadingsRef.current >= 2;
-    if (confirmedSafe && sensorId) {
-      acknowledgedLiveKeysRef.current.delete(`${sensorId}:moderate`);
-      acknowledgedLiveKeysRef.current.delete(`${sensorId}:high`);
-      lastLiveKeyRef.current = null;
+    if (confirmedSafe && liveEventKey) {
+      // A safe cycle closes the current sensor event. A later rise is a new
+      // emergency and may alert again even at a previously acknowledged level.
+      acknowledgedEventsRef.current.delete(liveEventKey);
     }
+
+    const matchingUnread = selectEligibleFloodNotifications({
+      notifications,
+      residentBarangay: barangayName,
+      suppressedIds: suppressedAlertIdsRef.current,
+      acknowledgements: acknowledgedEventsRef.current,
+    }).filter((item) => {
+      const itemSeverity = normalizeFloodSeverity(item.severity);
+      const sameLiveArea = Boolean(
+        liveEventKey
+          && liveSeverity
+          && normalizeBarangayName(item.barangay_name) === residentBarangay,
+      );
+      // If the resident already acknowledged this unchanged live sensor event,
+      // a later-arriving database notification for it must not reopen the modal.
+      return !sameLiveArea
+        || !isFloodEventAcknowledged(acknowledgedEventsRef.current, liveEventKey, itemSeverity)
+        || isNotificationNewerThanAcknowledgement(
+          item,
+          floodEventAcknowledgedAt(acknowledgedEventsRef.current, liveEventKey),
+        );
+    }) as FloodNotification[];
 
     const latestUnread = matchingUnread.find(
       (item) => liveSeverity
         && String(item.severity || '').toLowerCase() === liveSeverity
         && normalizeBarangayName(item.barangay_name) === residentBarangay,
-    ) || matchingUnread.find(
-      (item) => String(item.severity || '').toLowerCase() === 'high',
     ) || matchingUnread[0];
 
-    let nextAlert = confirmedSafe ? null : latestUnread || null;
-    if (liveSeverity && liveKey && !acknowledgedLiveKeysRef.current.has(liveKey)) {
+    let nextAlert: FloodNotification | null = confirmedSafe || !latestUnread
+      ? null
+      : {
+          ...latestUnread,
+          notification_event_key: notificationFloodEventKey(latestUnread) || undefined,
+        };
+    if (
+      liveSeverity
+      && liveEventKey
+      && !isFloodEventAcknowledged(acknowledgedEventsRef.current, liveEventKey, liveSeverity)
+    ) {
       const verifiedAlert = matchingUnread.find(
         (item) => String(item.severity || '').toLowerCase() === liveSeverity
           && normalizeBarangayName(item.barangay_name) === residentBarangay,
       );
-      nextAlert = verifiedAlert ? { ...verifiedAlert, live_sensor_key: liveKey } : {
+      nextAlert = verifiedAlert ? {
+        ...verifiedAlert,
+        live_event_key: liveEventKey,
+        notification_event_key: notificationFloodEventKey(verifiedAlert) || undefined,
+      } : {
         id: null,
         title: liveSeverity === 'high' ? 'Immediate evacuation required' : 'Prepare to evacuate',
         body: '',
@@ -161,28 +189,41 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
         severity: liveSeverity,
         barangay_name: residentSensor?.barangayName || barangayName || null,
         created_at: residentSensor?.updatedAt || new Date().toISOString(),
-        live_sensor_key: liveKey,
+        live_event_key: liveEventKey,
       };
     }
 
     setAlert((current) => {
       if (!nextAlert) {
-        const currentLiveKey = current?.live_sensor_key;
-        return confirmedSafe || (currentLiveKey && acknowledgedLiveKeysRef.current.has(currentLiveKey)) ? null : current;
+        const currentSeverity = normalizeFloodSeverity(current?.severity);
+        const currentLiveEventKey = current?.live_event_key;
+        const movedToDifferentSensor = Boolean(
+          currentLiveEventKey && liveEventKey && currentLiveEventKey !== liveEventKey,
+        );
+        const notificationNoLongerEligible = Boolean(
+          current?.notification_event_key && !currentLiveEventKey,
+        );
+        return confirmedSafe || movedToDifferentSensor || notificationNoLongerEligible || isFloodEventAcknowledged(
+          acknowledgedEventsRef.current,
+          currentLiveEventKey || current?.notification_event_key,
+          currentSeverity,
+        ) ? null : current;
       }
       const incomingIsHigh = String(nextAlert.severity || '').toLowerCase() === 'high';
       const currentIsHigh = String(current?.severity || '').toLowerCase() === 'high';
       const gainedVerifiedId = current?.id === null && nextAlert.id !== null;
-      const changedLiveSeverity = Boolean(
-        current?.live_sensor_key
-          && nextAlert.live_sensor_key
-          && current.live_sensor_key !== nextAlert.live_sensor_key,
-      );
-      return !current || changedLiveSeverity || (incomingIsHigh && !currentIsHigh) || gainedVerifiedId
+      const currentIdentity = current?.live_event_key || current?.notification_event_key || `id:${current?.id}`;
+      const nextIdentity = nextAlert.live_event_key || nextAlert.notification_event_key || `id:${nextAlert.id}`;
+      const changedEvent = currentIdentity !== nextIdentity;
+      return !current || changedEvent || (incomingIsHigh && !currentIsHigh) || gainedVerifiedId
         ? nextAlert
         : current;
     });
   }, [barangayName]);
+
+  const activeAlertEffectKey = alert
+    ? `${alert.live_event_key || alert.notification_event_key || alert.id}:${normalizeFloodSeverity(alert.severity)}`
+    : '';
 
   useEffect(() => {
     let locationSubscription: Location.LocationSubscription | null = null;
@@ -271,20 +312,26 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
       animation.stop();
       if (Platform.OS !== 'web') Vibration.cancel();
     };
-  }, [alert, warningPulse]);
+  }, [activeAlertEffectKey, warningPulse]);
 
   async function dismiss() {
     const current = alert;
     setAlert(null);
     if (current) {
-      if (current.live_sensor_key) acknowledgedLiveKeysRef.current.add(current.live_sensor_key);
+      const severity = normalizeFloodSeverity(current.severity);
+      acknowledgeFloodEvent(acknowledgedEventsRef.current, current.live_event_key, severity);
+      acknowledgeFloodEvent(acknowledgedEventsRef.current, current.notification_event_key, severity);
       if (current.id === null) return;
+      // Update the local cache before awaiting the network so the two-second
+      // sensor poll cannot select the same notification while PATCH is pending.
+      cachedNotificationsRef.current = cachedNotificationsRef.current.map((item) => (
+        item.id === current.id ? { ...item, read_at: new Date().toISOString() } : item
+      ));
       const response = await api.patch(`/reports/notifications/${current.id}/read`).catch(() => null);
       if (response?.data?.accountDeleted) {
         await onTestAccountRemoved?.();
         return;
       }
-      checkAlerts().catch(() => {});
     }
   }
 
@@ -294,7 +341,9 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
     // The API consumes this unread notification as verified proof only after
     // the rescue request is successfully submitted.
     if (current.id !== null) suppressedAlertIdsRef.current.add(current.id);
-    if (current.live_sensor_key) acknowledgedLiveKeysRef.current.add(current.live_sensor_key);
+    const severity = normalizeFloodSeverity(current.severity);
+    acknowledgeFloodEvent(acknowledgedEventsRef.current, current.live_event_key, severity);
+    acknowledgeFloodEvent(acknowledgedEventsRef.current, current.notification_event_key, severity);
     setAlert(null);
     await onSendRescue?.(current.id);
   }

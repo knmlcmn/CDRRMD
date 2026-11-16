@@ -2,6 +2,7 @@ import { submissionErrorNotice, useNoticeModal } from '../components/useNoticeMo
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  InteractionManager,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -14,16 +15,20 @@ import { AppText as Text, AppTextInput as TextInput } from '../components/Typogr
 import { DashboardHeader } from '../components/DashboardHeader';
 import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import PlatformMap from '../components/PlatformMap';
 import * as ImagePicker from 'expo-image-picker';
 import { api, assignAuthBarangayFromLocation, setApiAuthorizationToken } from '../services/api';
-import { fetchBestRoadRoute, fetchRoadRoute } from '../services/routingService';
+import { fetchBestRoadRouteProgressively, fetchRoadRoute } from '../services/routingService';
+import { rankNearestEligibleEvacuationCenters } from '../services/evacuationSelection';
 import { loadSession } from '../services/session';
 import { MAX_MAP_CONTENT_WIDTH, useResponsiveLayout } from '../utils/responsive';
 import { keepIfEqual } from '../utils/stableData';
 import { buildHardwareFloodRuntimeScript } from '../utils/waterLevelHazard';
 import { requireLiveLocation } from '../services/locationAccess';
+import { createSingleFlight } from '../utils/singleFlight';
+import { createAbortableLifecycle } from '../utils/abortableLifecycle';
+import { beginPerformanceStage, endPerformanceStage } from '../utils/performanceDiagnostics';
 
 type Coordinate = { latitude: number; longitude: number };
 type EvacuationArea = {
@@ -46,6 +51,8 @@ type RescuePlan = {
   routeCoordinates: Coordinate[];
   source: 'osrm';
 };
+
+const RESCUE_PIPELINE_TIMEOUT_MS = 18_000;
 
 type RescueRecord = {
   id: number;
@@ -163,14 +170,23 @@ async function resolveBestRoadPlan(
   evacuationAreas: EvacuationArea[],
   barangayName: string,
   peopleCount = 1,
+  signal?: AbortSignal,
 ): Promise<RescuePlan | null> {
   const localAvailableAreas = evacuationAreas.filter((area) =>
     isInBarangay(area, barangayName) && hasCapacityFor(area, peopleCount));
   // Leave the report's barangay only when every local center is full.
-  const availableAreas = localAvailableAreas.length > 0
+  const eligibleAreas = localAvailableAreas.length > 0
     ? localAvailableAreas
     : evacuationAreas.filter((area) => hasCapacityFor(area, peopleCount));
-  const bestRoute = await fetchBestRoadRoute(
+  // OSRM table cost grows with every destination. Geographic shortlisting is
+  // local CPU work; final selection still uses verified road distance.
+  const availableAreas = rankNearestEligibleEvacuationCenters(
+    userLocation,
+    eligibleAreas,
+    peopleCount,
+    Math.max(eligibleAreas.length, 1),
+  ).map((candidate) => candidate.area);
+  const bestRoute = await fetchBestRoadRouteProgressively(
     userLocation,
     availableAreas.map((area) => ({
       id: area.id,
@@ -178,6 +194,8 @@ async function resolveBestRoadPlan(
       longitude: area.longitude,
     })),
     3,
+    3,
+    signal,
   );
   if (!bestRoute) {
     return null;
@@ -1284,10 +1302,22 @@ function buildLeafletHtml(
         popupAnchor: [0, -14]
       });
 
-      var fitBounds = L.latLngBounds([[data.userLocation.latitude, data.userLocation.longitude]]);
       var selectedAreaMarker = null;
 
-      if (data.showAreas) {
+      function renderRescueData(nextData) {
+        data = Object.assign({}, data, nextData || {});
+        areaLayer.clearLayers();
+        routeLayer.clearLayers();
+        selectedAreaMarker = null;
+        evacuationDetail.hidden = true;
+        userMarker.setLatLng([data.userLocation.latitude, data.userLocation.longitude]);
+        var fitBounds = L.latLngBounds([[data.userLocation.latitude, data.userLocation.longitude]]);
+
+        if (!data.showAreas) {
+          map.setView([data.userLocation.latitude, data.userLocation.longitude], 15);
+          return;
+        }
+
         data.allAreas.forEach(function(area){
           if (!inCalamba(Number(area.latitude), Number(area.longitude))) {
             return;
@@ -1327,13 +1357,33 @@ function buildLeafletHtml(
           }
         } else if (data.requestStarted && fitBounds.isValid()) {
           map.fitBounds(fitBounds.pad(0.08), { maxZoom: 15 });
-        } else {
+        } else if (!data.requestStarted) {
           map.setView([data.userLocation.latitude, data.userLocation.longitude], 15);
         }
-
-      } else {
-        map.setView([data.userLocation.latitude, data.userLocation.longitude], 15);
+        if (selectedAreaMarker) {
+          var selectedArea = data.allAreas.find(function(area) { return area.id === data.selectedAreaId; });
+          if (selectedArea) showEvacuationDetail(selectedArea, true);
+        }
       }
+
+      var lastRescueUpdatePayload = '';
+      function receiveRescueUpdate(event) {
+        var payload = event && event.data;
+        if (typeof payload === 'string') {
+          if (payload === lastRescueUpdatePayload) return;
+          lastRescueUpdatePayload = payload;
+          try { payload = JSON.parse(payload); } catch (_error) { return; }
+        } else if (payload) {
+          var serializedPayload = JSON.stringify(payload);
+          if (serializedPayload === lastRescueUpdatePayload) return;
+          lastRescueUpdatePayload = serializedPayload;
+        }
+        if (!payload || payload.type !== 'rescue-map-update') return;
+        renderRescueData(payload.data);
+      }
+      document.addEventListener('message', receiveRescueUpdate);
+      window.addEventListener('message', receiveRescueUpdate);
+      renderRescueData(data);
 
       loadBarangayFloodLayer();
       if (Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
@@ -1344,12 +1394,7 @@ function buildLeafletHtml(
       renderBoundary();
       renderLayerControl();
       applyLayerVisibility();
-      if (selectedAreaMarker) {
-        var selectedArea = data.allAreas.find(function(area) { return area.id === data.selectedAreaId; });
-        if (selectedArea) {
-          window.setTimeout(function() { showEvacuationDetail(selectedArea, true); }, 200);
-        }
-      } else {
+      if (!selectedAreaMarker) {
         userMarker.openPopup();
       }
       window.setTimeout(function() {
@@ -1362,9 +1407,10 @@ function buildLeafletHtml(
 `;
 }
 
-export default function RescueMapScreen({ testModeEnabled = false, floodAlertRescueRequest = null }: Props) {
+export default function RescueMapScreen({ floodAlertRescueRequest = null }: Props) {
   const { showNotice, noticeModal } = useNoticeModal();
   const navigation = useNavigation<any>();
+  const isScreenFocused = useIsFocused();
   const { isSmall, horizontalPadding, uiScale } = useResponsiveLayout(MAX_MAP_CONTENT_WIDTH);
   const [userLocation, setUserLocation] = useState<Coordinate | null>(null);
   const [requestStarted, setRequestStarted] = useState(false);
@@ -1381,6 +1427,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
   const [peopleCount, setPeopleCount] = useState(1);
   const [floodAlertNotificationId, setFloodAlertNotificationId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [mapVisualReady, setMapVisualReady] = useState(false);
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationArea[]>([]);
   const [rescueBarangay, setRescueBarangay] = useState('');
   const [mapEvacuationAreas, setMapEvacuationAreas] = useState<EvacuationArea[]>([]);
@@ -1398,15 +1445,30 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
   });
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const recordSyncInFlightRef = useRef(false);
+  const [evacuationLoad] = useState(() => createSingleFlight<EvacuationArea[]>());
+  const [recommendationLifecycle] = useState(() => createAbortableLifecycle());
   const appliedRoadPlanAreaIdRef = useRef<EvacuationArea['id'] | null>(null);
   const handledFloodAlertRequestRef = useRef<number | null>(null);
+  const recommendationAttemptRef = useRef(0);
+  const initialMapHtmlRef = useRef<string | null>(null);
 
-  const loadEvacuationAreas = useCallback(async (updateMap = true) => {
+  const fetchEvacuationAreas = useCallback(async (
+    updateMap = true,
+    authoritative = false,
+    signal?: AbortSignal,
+    shouldApply: () => boolean = () => true,
+  ) => {
     try {
-      const areasResult = await api.get('/content/evacuation-areas').then((res) => res.data);
+      const areasResult = await api.get('/content/evacuation-areas', {
+        headers: authoritative ? { 'Cache-Control': 'no-cache' } : undefined,
+        signal,
+      }).then((res) => res.data);
+      if (signal?.aborted) throw new Error('EVACUATION_REQUEST_ABORTED');
       if (!Array.isArray(areasResult) || areasResult.length === 0) {
-        setEvacuationAreas((current) => keepIfEqual(current, []));
-        if (updateMap) setMapEvacuationAreas((current) => keepIfEqual(current, []));
+        if (shouldApply()) {
+          setEvacuationAreas((current) => keepIfEqual(current, []));
+          if (updateMap) setMapEvacuationAreas((current) => keepIfEqual(current, []));
+        }
         return [];
       }
 
@@ -1444,25 +1506,69 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
         .filter((item: EvacuationArea | null): item is EvacuationArea => Boolean(item));
 
       if (normalized.length > 0) {
-        setEvacuationAreas((current) => keepIfEqual(current, normalized));
-        if (updateMap) setMapEvacuationAreas((current) => keepIfEqual(current, normalized));
+        if (shouldApply()) {
+          setEvacuationAreas((current) => keepIfEqual(current, normalized));
+          if (updateMap) setMapEvacuationAreas((current) => keepIfEqual(current, normalized));
+        }
         return normalized;
       }
 
-      setEvacuationAreas((current) => keepIfEqual(current, []));
-      if (updateMap) setMapEvacuationAreas((current) => keepIfEqual(current, []));
+      if (shouldApply()) {
+        setEvacuationAreas((current) => keepIfEqual(current, []));
+        if (updateMap) setMapEvacuationAreas((current) => keepIfEqual(current, []));
+      }
       return [];
-    } catch {
+    } catch (caught) {
+      if (authoritative) throw caught;
       return [];
     }
   }, []);
+
+  const loadEvacuationAreas = useCallback((
+    updateMap = true,
+    coalesce = true,
+    signal?: AbortSignal,
+    shouldApply?: () => boolean,
+  ) => {
+    const load = () => fetchEvacuationAreas(updateMap, !coalesce, signal, shouldApply);
+    return coalesce ? evacuationLoad.run(load) : load();
+  }, [evacuationLoad, fetchEvacuationAreas]);
+
+  useEffect(() => {
+    if (!isScreenFocused) {
+      setIsMapFullscreen(false);
+      return;
+    }
+    const marker = beginPerformanceStage('request-rescue-map-deferred-start');
+    const mapTask = InteractionManager.runAfterInteractions(() => {
+      setMapVisualReady(true);
+      endPerformanceStage(marker);
+    });
+    return () => {
+      mapTask.cancel();
+      endPerformanceStage(marker, { success: false });
+    };
+  }, [isScreenFocused]);
+
+  useFocusEffect(
+    useCallback(() => () => {
+      recommendationLifecycle.cancel();
+      setRoutingRecommendation(false);
+    }, [recommendationLifecycle]),
+  );
 
   const beginRescueRequest = useCallback(async () => {
     if (!userLocation) {
       return;
     }
 
+    const lifecycle = recommendationLifecycle.begin(RESCUE_PIPELINE_TIMEOUT_MS);
+    const attemptNumber = ++recommendationAttemptRef.current;
+    const isCurrent = lifecycle.isCurrent;
+    const totalMarker = beginPerformanceStage('evacuation-selection-total');
+    setRoutingRecommendation(true);
     setRequestStarted(true);
+    appliedRoadPlanAreaIdRef.current = null;
     setSelectedAreaId(null);
     setRouteCoordinates([]);
     setRouteDistanceKm(null);
@@ -1474,34 +1580,78 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       userMarker: true,
       route: true,
     };
-    const barangayRequest = assignAuthBarangayFromLocation(userLocation.latitude, userLocation.longitude)
-      .then((response) => String(response.data?.barangayName || '').trim())
-      .catch(() => '');
-    const areasRequest = evacuationAreas.length > 0
-      ? Promise.resolve(evacuationAreas)
-      : loadEvacuationAreas(true);
-    let [reportBarangay, latestAreas] = await Promise.all([barangayRequest, areasRequest]);
-    if (!reportBarangay) {
-      // Test mode can use its configured session barangay; production must use
-      // the exact barangay that contains the submitted location.
-      if (testModeEnabled) {
-        const session = await loadSession();
-        reportBarangay = String(session?.user?.barangayName || '').trim();
+    let barangayValidationStatus = 0;
+    const barangayMarker = beginPerformanceStage('evacuation-barangay-validation');
+    const barangayRequest = assignAuthBarangayFromLocation(
+      userLocation.latitude,
+      userLocation.longitude,
+      lifecycle.signal,
+    )
+      .then((response) => {
+        const value = String(response.data?.barangayName || '').trim();
+        endPerformanceStage(barangayMarker, { success: Boolean(value) });
+        return value;
+      })
+      .catch((error: any) => {
+        barangayValidationStatus = Number(error?.response?.status || 0);
+        endPerformanceStage(barangayMarker, { success: false });
+        return '';
+      });
+    // Display snapshots may be retained for a smooth map, but a new rescue
+    // action always validates against a fresh capacity snapshot.
+    const areasMarker = beginPerformanceStage('evacuation-capacity-retrieval');
+    const areasRequest = loadEvacuationAreas(true, false, lifecycle.signal, isCurrent)
+      .then((areas) => {
+        endPerformanceStage(areasMarker, { success: true, candidateCount: areas.length });
+        return areas;
+      })
+      .catch((error) => {
+        endPerformanceStage(areasMarker, { success: false });
+        throw error;
+      });
+    let reportBarangay = '';
+    let latestAreas: EvacuationArea[] = [];
+    let routingSucceeded = false;
+    try {
+      [reportBarangay, latestAreas] = await Promise.all([barangayRequest, areasRequest]);
+    } catch {
+      if (!isCurrent()) {
+        endPerformanceStage(totalMarker, { success: false, outcome: 'cancelled', attemptNumber });
+        return;
       }
+      showNotice('Capacity unavailable', 'Unable to verify current evacuation capacity. Please check your connection and try again.');
+      setRoutingRecommendation(false);
+      lifecycle.finish();
+      endPerformanceStage(totalMarker, { success: false, attemptNumber });
+      return;
     }
+    if (!isCurrent()) return;
     if (!reportBarangay) {
-      showNotice('Barangay unavailable', 'Your barangay could not be determined. Please refresh your location and try again.');
+      showNotice(
+        'Barangay unavailable',
+        barangayValidationStatus === 400
+          ? 'The server could not match your current GPS location to an authorized Calamba barangay. Refresh your location and try again.'
+          : 'Your barangay could not be determined. Please refresh your location and try again.',
+      );
+      setRoutingRecommendation(false);
+      lifecycle.finish();
+      endPerformanceStage(totalMarker, { success: false, attemptNumber });
       return;
     }
     setRescueBarangay(reportBarangay);
     if (!latestAreas.some((area) => !isAreaFull(area))) {
       showNotice('No available evacuation area', 'All evacuation centers are currently full. Please try again shortly.');
+      setRoutingRecommendation(false);
+      lifecycle.finish();
+      endPerformanceStage(totalMarker, { success: false, candidateCount: latestAreas.length, attemptNumber });
       return;
     }
 
-    setRoutingRecommendation(true);
+    const routeMarker = beginPerformanceStage('evacuation-road-routing');
     try {
-      const plan = await resolveBestRoadPlan(userLocation, latestAreas, reportBarangay);
+      const plan = await resolveBestRoadPlan(userLocation, latestAreas, reportBarangay, peopleCount, lifecycle.signal);
+      if (!isCurrent()) return;
+      endPerformanceStage(routeMarker, { success: Boolean(plan), candidateCount: latestAreas.length });
       if (!plan) {
         showNotice(
           'No reachable evacuation area',
@@ -1510,18 +1660,34 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
         return;
       }
       applyRoadPlan(plan);
+      routingSucceeded = true;
       if (!isInBarangay(plan.area, reportBarangay)) {
         showNotice('Local centers are full', `All evacuation centers in Barangay ${reportBarangay} are full. The nearest available center is ${plan.area.name} in Barangay ${plan.area.barangay}.`);
       }
     } catch {
+      if (!isCurrent()) {
+        endPerformanceStage(routeMarker, { success: false, candidateCount: latestAreas.length, outcome: 'cancelled', attemptNumber });
+        return;
+      }
+      endPerformanceStage(routeMarker, { success: false, candidateCount: latestAreas.length, attemptNumber });
       showNotice(
         'Road routing unavailable',
         'Unable to verify a safe road route to an evacuation center. Please check your connection and try again.',
       );
     } finally {
-      setRoutingRecommendation(false);
+      if (isCurrent()) {
+        setRoutingRecommendation(false);
+        endPerformanceStage(totalMarker, { success: routingSucceeded, candidateCount: latestAreas.length, attemptNumber });
+        lifecycle.finish();
+      } else {
+        endPerformanceStage(totalMarker, { success: false, candidateCount: latestAreas.length, outcome: 'cancelled', attemptNumber });
+      }
     }
-  }, [evacuationAreas, loadEvacuationAreas, showNotice, testModeEnabled, userLocation]);
+  }, [loadEvacuationAreas, peopleCount, recommendationLifecycle, showNotice, userLocation]);
+
+  useEffect(() => () => {
+    recommendationLifecycle.cancel();
+  }, [recommendationLifecycle]);
 
   useEffect(() => {
     if (!floodAlertRescueRequest || !userLocation
@@ -1567,40 +1733,49 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
   }, []);
 
   useEffect(() => {
+    let active = true;
+
     async function bootstrap() {
       setLoading(true);
-      const [, locationResult] = await Promise.allSettled([
-        loadEvacuationAreas(true),
-        requireLiveLocation(false),
-        loadRecentRescueRecords(),
-      ]);
-      if (locationResult.status === 'fulfilled' && locationResult.value.ok) {
-        setUserLocation(locationResult.value.location);
+      const locationMarker = beginPerformanceStage('request-rescue-live-location');
+      const locationResult = await requireLiveLocation(false);
+      endPerformanceStage(locationMarker, { success: locationResult.ok });
+      if (!active) return;
+      if (locationResult.ok) {
+        setUserLocation(locationResult.location);
       } else {
-        setUserLocation({ latitude: 14.2128, longitude: 121.1671 });
+        // Never let a display fallback become an actionable rescue location.
+        setUserLocation(null);
       }
       setLoading(false);
     }
 
     bootstrap().catch(() => {
-      setLoading(false);
+      if (active) setLoading(false);
     });
-  }, [loadEvacuationAreas, loadRecentRescueRecords]);
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      loadRecentRescueRecords().catch(() => {});
-      loadEvacuationAreas().catch(() => {});
-
-      const timer = setInterval(() => {
+      const refresh = () => {
         loadRecentRescueRecords().catch(() => {});
         loadEvacuationAreas().catch(() => {});
-      }, 4000);
+      };
+      const historyTask = InteractionManager.runAfterInteractions(() => {
+        refresh();
+      });
+      loadEvacuationAreas().catch(() => {});
+      const timer = setInterval(refresh, requestStarted ? 4_000 : 30_000);
 
       return () => {
+        historyTask.cancel();
         clearInterval(timer);
       };
-    }, [loadEvacuationAreas, loadRecentRescueRecords]),
+    }, [loadEvacuationAreas, loadRecentRescueRecords, requestStarted]),
   );
 
   const selectedArea = useMemo(
@@ -1618,6 +1793,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
   }
 
   useEffect(() => {
+    if (!isScreenFocused) return;
     if (!requestStarted || !userLocation || !selectedArea) {
       setRouteCoordinates([]);
       setRouteDistanceKm(null);
@@ -1627,17 +1803,17 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     }
 
     if (appliedRoadPlanAreaIdRef.current === selectedArea.id) {
-      appliedRoadPlanAreaIdRef.current = null;
       return;
     }
 
     let active = true;
+    const controller = new AbortController();
     setRoutingRecommendation(true);
 
     fetchRoadRoute(userLocation, {
       latitude: selectedArea.latitude,
       longitude: selectedArea.longitude,
-    }, true, 3)
+    }, true, 3, controller.signal)
       .then((road) => {
         if (!active) {
           return;
@@ -1647,6 +1823,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
         setRouteDistanceKm(road.distanceKm);
         setRouteEtaText(formatEtaText(road.etaMinutes));
         setRouteSource('osrm');
+        appliedRoadPlanAreaIdRef.current = selectedArea.id;
       })
       .catch(() => {
         if (!active) {
@@ -1670,17 +1847,14 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
 
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [requestStarted, selectedArea?.id, selectedArea?.latitude, selectedArea?.longitude, showNotice, userLocation]);
+  }, [isScreenFocused, requestStarted, selectedArea?.id, selectedArea?.latitude, selectedArea?.longitude, showNotice, userLocation]);
 
   const apiBaseUrl = String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '');
 
-  const mapHtml = useMemo(() => {
-    if (!userLocation) {
-      return null;
-    }
-
-    return buildLeafletHtml(
+  if (userLocation && mapVisualReady && !initialMapHtmlRef.current) {
+    initialMapHtmlRef.current = buildLeafletHtml(
       userLocation,
       requestStarted && selectedArea ? [selectedArea] : mapEvacuationAreas,
       selectedAreaId,
@@ -1691,7 +1865,19 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       layerVisibilityRef.current,
       isMapFullscreen,
     );
-  }, [mapEvacuationAreas, apiBaseUrl, isMapFullscreen, requestStarted, routeCoordinates, selectedArea, selectedAreaId, userLocation]);
+  }
+  const mapHtml = initialMapHtmlRef.current;
+  const mapUpdateMessage = useMemo(() => userLocation ? ({
+    type: 'rescue-map-update',
+    data: {
+      userLocation,
+      allAreas: requestStarted && selectedArea ? [selectedArea] : mapEvacuationAreas,
+      selectedAreaId,
+      showAreas: true,
+      requestStarted,
+      routeCoordinates,
+    },
+  }) : null, [mapEvacuationAreas, requestStarted, routeCoordinates, selectedArea, selectedAreaId, userLocation]);
 
   function applyProofImage(asset: ImagePicker.ImagePickerAsset) {
     setProofImageUri(asset.uri || null);
@@ -1722,7 +1908,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     }
   }
 
-  async function handleMapMessage(data: string) {
+  const handleMapMessage = useCallback((data: string) => {
     try {
       const payload = JSON.parse(data) as {
         type?: string;
@@ -1740,7 +1926,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     } catch {
       // Ignore malformed messages from the map.
     }
-  }
+  }, []);
 
   async function handleSubmitRescue() {
     const hasVerifiedAlertProof = Number.isInteger(floodAlertNotificationId);
@@ -1748,14 +1934,29 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       return;
     }
 
-    const latestAreas = await loadEvacuationAreas(true);
-    const refreshedSelected = latestAreas.find((area) => area.id === selectedArea.id) || selectedArea;
+    setSubmitting(true);
+    let latestAreas: EvacuationArea[];
+    try {
+      latestAreas = await loadEvacuationAreas(true, false);
+    } catch {
+      setSubmitting(false);
+      showNotice('Capacity unavailable', 'Rescue was not submitted because current evacuation capacity could not be verified. Please try again.');
+      return;
+    }
+    const refreshedSelected = latestAreas.find((area) => area.id === selectedArea.id);
+    if (!refreshedSelected) {
+      setSubmitting(false);
+      setSelectedAreaId(null);
+      showNotice('Evacuation center unavailable', 'The selected evacuation center is no longer in the live capacity list. Please calculate a new route.');
+      return;
+    }
 
     const hasLocalCapacity = latestAreas.some((area) =>
       isInBarangay(area, rescueBarangay) && hasCapacityFor(area, peopleCount));
     if (!isInBarangay(refreshedSelected, rescueBarangay) && hasLocalCapacity) {
       setSelectedAreaId(null);
       showNotice('Select a local center', `Rescue requests from Barangay ${rescueBarangay} must use an evacuation center in the same barangay.`);
+      setSubmitting(false);
       return;
     }
 
@@ -1779,11 +1980,11 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       } finally {
         setRoutingRecommendation(false);
       }
+      setSubmitting(false);
       return;
     }
 
     try {
-      setSubmitting(true);
       const locationText = `Lat ${userLocation.latitude.toFixed(6)}, Lng ${userLocation.longitude.toFixed(6)}`;
       const session = await loadSession();
       const token = String(session?.token || '').trim();
@@ -1799,7 +2000,6 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
 
       await api.post('/reports', {
         reportType: 'rescue',
-        testModeBypassServiceArea: testModeEnabled,
         incidentType: 'Request Rescue',
         location: locationText,
         latitude: userLocation.latitude,
@@ -1840,7 +2040,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       if (errorCode === 'NO_AVAILABLE_EVACUATION_AREA' && userLocation) {
         setRoutingRecommendation(true);
         try {
-          const refreshedAreas = await loadEvacuationAreas(true);
+          const refreshedAreas = await loadEvacuationAreas(true, false);
           const replacementPlan = await resolveBestRoadPlan(userLocation, refreshedAreas, rescueBarangay, peopleCount);
           if (replacementPlan) {
             applyRoadPlan(replacementPlan);
@@ -1876,20 +2076,12 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     }
   }
 
-  if (loading || !userLocation || !mapHtml) {
-    return (
-      <View style={st.loadingWrap}>
-        <ActivityIndicator size="large" color="#0d3558" />
-        <Text style={st.loadingText}>Preparing map...</Text>
-      </View>
-    );
-  }
-
   function statusLabel(status: RescueRecord['status']) {
     return status;
   }
 
   const isAlertVerifiedRequest = Number.isInteger(floodAlertNotificationId);
+  const locationVerified = !loading && Boolean(userLocation);
 
   return (
     <View style={st.root}>
@@ -1899,9 +2091,9 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
         <Text style={st.pageTitle}>Request Rescue</Text>
         {/* Fullscreen map modal */}
-        {isMapFullscreen ? <Modal visible animationType="fade" statusBarTranslucent onRequestClose={() => setIsMapFullscreen(false)}>
+        {isScreenFocused && isMapFullscreen && mapVisualReady && mapHtml ? <Modal visible animationType="fade" statusBarTranslucent onRequestClose={() => setIsMapFullscreen(false)}>
           <View style={{ flex: 1, backgroundColor: '#000' }}>
-            <PlatformMap style={{ flex: 1 }} html={mapHtml} baseUrl={apiBaseUrl} onMessage={handleMapMessage} />
+            <PlatformMap style={{ flex: 1 }} html={mapHtml} baseUrl={apiBaseUrl} onMessage={handleMapMessage} preserveState updateMessage={mapUpdateMessage} />
             {/* Exit fullscreen — bottom-right */}
             <TouchableOpacity
               style={st.fsExitBtn}
@@ -1914,11 +2106,18 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
         </Modal> : null}
 
         <View style={st.mapContainer}>
-          {!isMapFullscreen ? <PlatformMap style={st.map} html={mapHtml} baseUrl={apiBaseUrl} onMessage={handleMapMessage} /> : null}
+          {!isMapFullscreen && mapVisualReady && mapHtml
+            ? <PlatformMap style={st.map} html={mapHtml} baseUrl={apiBaseUrl} onMessage={handleMapMessage} preserveState updateMessage={mapUpdateMessage} />
+            : <View style={[st.map, st.mapPlaceholder]}>
+                <ActivityIndicator size="small" color="#0d3558" />
+                <Text style={st.mapPlaceholderTitle}>Preparing rescue map</Text>
+                <Text style={st.mapPlaceholderText}>The screen is ready while location and map layers load.</Text>
+              </View>}
           {/* Fullscreen enter — bottom-right */}
           <TouchableOpacity
             style={st.fsEnterBtn}
             activeOpacity={0.85}
+            disabled={!mapHtml}
             onPress={() => setIsMapFullscreen(true)}
           >
             <MaterialCommunityIcons name="fullscreen" size={18} color="#fff" />
@@ -2009,16 +2208,18 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
             <View style={{ marginLeft: 8, flex: 1 }}>
               <Text style={st.areaName}>Your Current Location</Text>
               <Text style={st.areaAddr}>
-                {userLocation.latitude.toFixed(5)}°N, {userLocation.longitude.toFixed(5)}°E
+                {userLocation
+                  ? `${userLocation.latitude.toFixed(5)}°N, ${userLocation.longitude.toFixed(5)}°E`
+                  : 'Verifying current location…'}
               </Text>
             </View>
           </View>
 
           {!requestStarted ? <View style={st.actionWrap}>
             <TouchableOpacity
-              style={st.actionBtn}
+              style={[st.actionBtn, !locationVerified && st.actionBtnDisabled]}
               activeOpacity={0.88}
-              disabled={routingRecommendation}
+              disabled={!locationVerified || routingRecommendation}
               onPress={() => {
                 setFloodAlertNotificationId(null);
                 beginRescueRequest().catch(() => {
@@ -2027,7 +2228,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
               }}
             >
               <Text style={st.actionText}>
-                {routingRecommendation ? 'Finding Road Route...' : 'Send Rescue Request'}
+                {!locationVerified ? 'Verifying Location...' : routingRecommendation ? 'Finding Road Route...' : 'Send Rescue Request'}
               </Text>
             </TouchableOpacity>
           </View> : null}
@@ -2125,7 +2326,12 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
           }]}
           activeOpacity={0.9}
           onPress={() => {
+            const attemptNumber = recommendationAttemptRef.current;
+            const cancelMarker = beginPerformanceStage('request-rescue-cancel');
+            recommendationLifecycle.cancel();
+            setRoutingRecommendation(false);
             setRequestStarted(false);
+            appliedRoadPlanAreaIdRef.current = null;
             layerVisibilityRef.current = { ...layerVisibilityRef.current, route: false };
             setSelectedAreaId(null);
             setProofImageUri(null);
@@ -2137,6 +2343,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
             setRouteDistanceKm(null);
             setRouteEtaText(null);
             setRouteSource(null);
+            endPerformanceStage(cancelMarker, { success: false, outcome: 'cancelled', attemptNumber });
           }}
         >
           <MaterialCommunityIcons name="close-circle-outline" size={17} color="#fff" />
@@ -2149,9 +2356,6 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
 
 const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: editorial.background },
-  loadingWrap: { flex: 1, backgroundColor: editorial.background, alignItems: 'center', justifyContent: 'center' },
-  loadingText: { color: '#475569', marginTop: 10, fontSize: 13, fontWeight: '600' },
-
   scrollContent: { flexGrow: 1, width: '100%', maxWidth: 920, alignSelf: 'center', paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
   pageTitle: { color: editorial.ink, fontSize: 26, lineHeight: 31, fontWeight: '800', marginBottom: 6 },
 
@@ -2160,6 +2364,9 @@ const st = StyleSheet.create({
     borderWidth: 1, borderColor: editorial.border, aspectRatio: 1.08, minHeight: 280, maxHeight: 420, backgroundColor: editorial.surface,
   },
   map: { flex: 1 },
+  mapPlaceholder: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24, backgroundColor: '#f8fafc' },
+  mapPlaceholderTitle: { marginTop: 10, color: editorial.ink, fontSize: 14, fontWeight: '800' },
+  mapPlaceholderText: { marginTop: 4, color: '#64748b', fontSize: 11, lineHeight: 16, textAlign: 'center' },
   fsEnterBtn: {
     position: 'absolute', bottom: 10, right: 10,
     backgroundColor: 'rgba(15,23,42,0.82)', borderRadius: 8,
@@ -2223,6 +2430,7 @@ const st = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 13,
   },
+  actionBtnDisabled: { opacity: 0.55 },
   actionText: { color: '#fff', fontSize: 18, fontWeight: '900' },
   floatingCancelBtn: {
     position: 'absolute',

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
+  FlatList,
   ImageBackground,
   ScrollView,
   StyleSheet,
@@ -18,34 +19,52 @@ import {
   weatherAdvice,
   weatherIconFromCode,
 } from '../components/WeatherMetricArtwork';
-import { getCityForecastWeather } from '../services/weatherService';
+import {
+  getCityForecastWeather,
+  getCityWeatherSnapshot,
+  type CityWeatherSnapshot,
+} from '../services/weatherService';
 import { getWeatherVisualByCode } from '../utils/weatherVisual';
 import { useResponsiveLayout } from '../utils/responsive';
 import { keepIfEqual } from '../utils/stableData';
 
-type WeatherResponse = {
-  current?: {
-    time?: string;
-    temperature_2m?: number;
-    relative_humidity_2m?: number;
-    wind_speed_10m?: number;
-    weather_code?: number;
-  };
-  hourly?: {
-    time?: string[];
-    wind_speed_10m?: number[];
-    weather_code?: number[];
-    precipitation?: number[];
-    precipitation_probability?: number[];
-  };
-  daily?: {
-    time?: string[];
-    weather_code?: number[];
-    wind_speed_10m_max?: number[];
-    precipitation_sum?: number[];
-    precipitation_probability_max?: number[];
-  };
+type WeatherResponse = CityWeatherSnapshot;
+
+type HourlyForecastRow = {
+  key: string;
+  timeLabel: string;
+  condition: string;
+  artworkName: ReturnType<typeof weatherIconFromCode>;
+  windLabel: string;
+  rainLabel: string;
 };
+
+const HourlyForecastCard = memo(function HourlyForecastCard({
+  item,
+  scale,
+}: {
+  item: HourlyForecastRow;
+  scale: number;
+}) {
+  return (
+    <View style={[st.hourCard, {
+      width: 68 * scale,
+      padding: 8 * scale,
+      marginRight: 5 * scale,
+      borderRadius: 8 * scale,
+    }]}>
+      <Text style={[st.hourTime, { fontSize: 6 * scale }]}>{item.timeLabel}</Text>
+      <View style={[st.hourCondition, { marginTop: 4 * scale }]}>
+        <WeatherConditionArtwork name={item.artworkName} scale={1.3 * scale} />
+      </View>
+      <Text style={[st.hourText, { fontSize: 6 * scale, marginTop: 3 * scale }]} numberOfLines={1}>
+        {item.condition}
+      </Text>
+      <Text style={[st.hourText, { fontSize: 5.5 * scale, marginTop: 4 * scale }]}>{item.windLabel}</Text>
+      <Text style={[st.hourText, { fontSize: 5.5 * scale }]}>{item.rainLabel}</Text>
+    </View>
+  );
+});
 
 function formatHour(value: string) {
   return new Date(value).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -58,11 +77,14 @@ function formatDay(value: string) {
 export default function WeatherScreen() {
   const isFocused = useIsFocused();
   const { uiScale: scale, horizontalPadding } = useResponsiveLayout();
-  const [data, setData] = useState<WeatherResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [initialSnapshot] = useState(() => getCityWeatherSnapshot());
+  const [data, setData] = useState<WeatherResponse | null>(() => initialSnapshot.data);
+  const [loading, setLoading] = useState(() => !initialSnapshot.data);
   const [hasError, setHasError] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchWeather = useCallback(async () => {
+    setRefreshing(true);
     try {
       const next = await getCityForecastWeather();
       if (next) setData((current) => keepIfEqual(current, next));
@@ -71,6 +93,7 @@ export default function WeatherScreen() {
       setHasError(true);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -95,13 +118,34 @@ export default function WeatherScreen() {
 
   const hourlyRows = useMemo(() => {
     const hourly = data?.hourly;
-    return (hourly?.time ?? []).slice(0, 168).map((time, index) => ({
-      time,
-      wind: hourly?.wind_speed_10m?.[index],
-      rain: hourly?.precipitation?.[index],
-      code: hourly?.weather_code?.[index],
-    }));
+    return (hourly?.time ?? []).slice(0, 168).map((time, index) => {
+      const code = hourly?.weather_code?.[index];
+      const wind = hourly?.wind_speed_10m?.[index];
+      const rain = hourly?.precipitation?.[index];
+      return {
+        key: `${time}-${index}`,
+        timeLabel: formatHour(time),
+        condition: getWeatherVisualByCode(code).condition,
+        artworkName: weatherIconFromCode(code),
+        windLabel: `Wind ${wind ?? '--'} km/h`,
+        rainLabel: `Rain ${rain ?? '--'} mm`,
+      };
+    });
   }, [data?.hourly]);
+
+  const hourlyCardExtent = 73 * scale;
+  const renderHourlyCard = useCallback(
+    ({ item }: { item: HourlyForecastRow }) => <HourlyForecastCard item={item} scale={scale} />,
+    [scale],
+  );
+  const getHourlyItemLayout = useCallback(
+    (_data: ArrayLike<HourlyForecastRow> | null | undefined, index: number) => ({
+      length: hourlyCardExtent,
+      offset: hourlyCardExtent * index,
+      index,
+    }),
+    [hourlyCardExtent],
+  );
 
   const dailyRows = useMemo(() => {
     const daily = data?.daily;
@@ -136,6 +180,16 @@ export default function WeatherScreen() {
   return (
     <View style={st.root}>
       <DashboardHeader />
+
+      {hasError ? (
+        <View style={st.staleBanner}>
+          <Text style={st.staleText}>Showing the last available forecast. Live refresh failed.</Text>
+        </View>
+      ) : refreshing ? (
+        <View style={st.staleBanner}>
+          <Text style={st.staleText}>Refreshing weather in the background…</Text>
+        </View>
+      ) : null}
 
       <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
         <ImageBackground
@@ -199,26 +253,19 @@ export default function WeatherScreen() {
           {hourlyRows.length > 0 ? (
             <>
               <Text style={[st.sectionTitle, { fontSize: 10 * scale, marginTop: 9 * scale, marginBottom: 4 * scale }]}>Hourly Wind and Rain</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 8 * scale }}>
-                {hourlyRows.map((hour) => (
-                  <View key={hour.time} style={[st.hourCard, {
-                    width: 68 * scale,
-                    padding: 8 * scale,
-                    marginRight: 5 * scale,
-                    borderRadius: 8 * scale,
-                  }]}>
-                    <Text style={[st.hourTime, { fontSize: 6 * scale }]}>{formatHour(hour.time)}</Text>
-                    <View style={[st.hourCondition, { marginTop: 4 * scale }]}>
-                      <WeatherConditionArtwork name={weatherIconFromCode(hour.code)} scale={1.3 * scale} />
-                    </View>
-                    <Text style={[st.hourText, { fontSize: 6 * scale, marginTop: 3 * scale }]} numberOfLines={1}>
-                      {getWeatherVisualByCode(hour.code).condition}
-                    </Text>
-                    <Text style={[st.hourText, { fontSize: 5.5 * scale, marginTop: 4 * scale }]}>Wind {hour.wind ?? '--'} km/h</Text>
-                    <Text style={[st.hourText, { fontSize: 5.5 * scale }]}>Rain {hour.rain ?? '--'} mm</Text>
-                  </View>
-                ))}
-              </ScrollView>
+              <FlatList
+                horizontal
+                data={hourlyRows}
+                renderItem={renderHourlyCard}
+                keyExtractor={(item) => item.key}
+                getItemLayout={getHourlyItemLayout}
+                initialNumToRender={6}
+                maxToRenderPerBatch={6}
+                windowSize={5}
+                removeClippedSubviews
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 8 * scale }}
+              />
             </>
           ) : null}
 
@@ -256,6 +303,8 @@ const st = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: editorial.background, paddingHorizontal: 24 },
   errorTitle: { color: '#181818', fontSize: 18, fontWeight: '800', marginTop: 12 },
   errorBody: { color: '#585858', fontSize: 14, textAlign: 'center', marginTop: 6 },
+  staleBanner: { backgroundColor: '#eef6fb', borderBottomWidth: 1, borderBottomColor: '#c8dce8', paddingHorizontal: 14, paddingVertical: 6 },
+  staleText: { color: '#36576d', fontSize: 11, textAlign: 'center', fontWeight: '600' },
   scrollContent: { flexGrow: 1, width: '100%', backgroundColor: editorial.background },
   hero: { width: '100%', maxWidth: 720, alignSelf: 'center', backgroundColor: editorial.surface, flexDirection: 'row', marginTop: 10, borderRadius: 14, overflow: 'hidden' },
   heroBackgroundImage: { opacity: 0.48 },

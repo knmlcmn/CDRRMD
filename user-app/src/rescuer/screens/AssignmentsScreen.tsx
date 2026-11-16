@@ -1,19 +1,34 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Modal, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { AppState, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AppText as Text } from '../../components/Typography';
 import PlatformMap from '../../components/PlatformMap';
 import { api } from '../../services/api';
-import { requireLiveLocation, watchLiveLocation, type LiveLocationSubscription } from '../../services/locationAccess';
 import { fetchRoadRoute } from '../../services/routingService';
+import { shouldRefreshRoute, type PreviousRouteRefresh } from '../../services/routeRefreshPolicy';
 import type { EvacuationAreaItem } from '../../types';
 import { buildCalambaMapHtml } from '../utils/rescuerMapHtml';
 import { Card, DetailRow, EmptyState, ErrorMessage, PrimaryButton, RescuerScreen, rescuerColors } from '../components/RescuerScreen';
-import { acknowledgeAssignment, loadAssignments, loadWeeklyHistory, updateResponderLocation } from '../services/rescuerService';
+import { acknowledgeAssignment, loadAssignments, loadWeeklyHistory } from '../services/rescuerService';
 import type { Assignment, AssignmentHistory, Coordinate, ResponderRole } from '../types';
+import {
+  createAssignmentScreenRequestScope,
+  shouldRefreshAssignmentHistory,
+} from '../utils/assignmentHistoryPolicy';
+import { retainLastMapLocation } from '../utils/responderMapState';
 
-type Props = { role: ResponderRole; onAuthError: () => void };
+type Props = {
+  role: ResponderRole;
+  onAuthError: () => void;
+  location: Coordinate | null;
+  locationError: string;
+  presenceNotice: string;
+  presenceRevision: number;
+};
 type RouteData = { routeCoordinates: Coordinate[]; distanceKm: number | null; etaMinutes: number | null };
+type RouteRequest = { controller: AbortController };
+
+const EMPTY_ROUTE: RouteData = { routeCoordinates: [], distanceKm: null, etaMinutes: null };
 
 function errorMessage(error: any, fallback: string) {
   return error?.response?.data?.message || error?.message || fallback;
@@ -32,30 +47,45 @@ function sameRecords<T>(current: T[], next: T[]) {
   return JSON.stringify(current) === JSON.stringify(next);
 }
 
-export default function AssignmentsScreen({ role, onAuthError }: Props) {
+export default function AssignmentsScreen({
+  role,
+  onAuthError,
+  location,
+  locationError,
+  presenceNotice,
+  presenceRevision,
+}: Props) {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [history, setHistory] = useState<AssignmentHistory[]>([]);
   const [areas, setAreas] = useState<EvacuationAreaItem[]>([]);
   const [areasLoaded, setAreasLoaded] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [location, setLocation] = useState<Coordinate | null>(null);
   const [route, setRoute] = useState<RouteData>({ routeCoordinates: [], distanceKm: null, etaMinutes: null });
   const [alertRoute, setAlertRoute] = useState<RouteData>({ routeCoordinates: [], distanceKm: null, etaMinutes: null });
   const [recenterRequestId, setRecenterRequestId] = useState(0);
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const [forecastOverlayVisible, setForecastOverlayVisible] = useState(false);
   const [error, setError] = useState('');
-  const [locationError, setLocationError] = useState('');
-  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dismissedAlertId, setDismissedAlertId] = useState<number | null>(null);
-  const loadingRef = useRef(false);
-  const locationRef = useRef<Coordinate | null>(null);
+  const activeRequestRef = useRef<Promise<void> | null>(null);
+  const historyRequestRef = useRef<Promise<void> | null>(null);
+  const activeRefreshQueuedRef = useRef(false);
+  const historyRefreshQueuedRef = useRef(false);
+  const activeSnapshotRef = useRef<Assignment[] | null>(null);
+  const [requestScope] = useState(() => createAssignmentScreenRequestScope());
   const initialLocationFocusedRef = useRef(false);
   const lastFocusedAssignmentRef = useRef('');
+  const retainedMapLocationRef = useRef<Coordinate | null>(null);
   const initialMapLocationRef = useRef<Coordinate | null>(null);
-  if (!initialMapLocationRef.current && location) initialMapLocationRef.current = location;
+  const routeRefreshRef = useRef<PreviousRouteRefresh | null>(null);
+  const routeRequestRef = useRef<RouteRequest | null>(null);
+  const alertRouteRefreshRef = useRef<PreviousRouteRefresh | null>(null);
+  const alertRouteRequestRef = useRef<RouteRequest | null>(null);
+  retainedMapLocationRef.current = retainLastMapLocation(retainedMapLocationRef.current, location);
+  const mapLocation = retainedMapLocationRef.current;
+  if (!initialMapLocationRef.current && mapLocation) initialMapLocationRef.current = mapLocation;
   const initialMapLocation = initialMapLocationRef.current;
   const mapBaseUrl = String(api.defaults.baseURL || 'http://localhost:4000/api').replace(/\/$/, '');
 
@@ -64,28 +94,92 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
     else setError(errorMessage(caught, fallback));
   }, [onAuthError]);
 
-  const refresh = useCallback(async () => {
-    if (loadingRef.current || AppState.currentState !== 'active') return;
-    loadingRef.current = true;
-    try {
-      const [active, weekly] = await Promise.all([loadAssignments(), loadWeeklyHistory()]);
-      setAssignments((current) => sameRecords(current, active) ? current : active);
-      setHistory((current) => sameRecords(current, weekly) ? current : weekly);
-      setSelectedId((current) => active.some((item) => item.backup_request_id === current) ? current : active[0]?.backup_request_id ?? null);
-      setError('');
-    } catch (caught) {
-      handleApiError(caught, 'Failed to load assigned incidents.');
-    } finally {
-      loadingRef.current = false;
-      setLoading(false);
+  const refreshHistory = useCallback((ensureAfterCurrent = false): Promise<void> => {
+    if (AppState.currentState !== 'active') return Promise.resolve();
+    if (historyRequestRef.current) {
+      if (ensureAfterCurrent) historyRefreshQueuedRef.current = true;
+      return historyRequestRef.current;
     }
-  }, [handleApiError]);
+    const generation = requestScope.capture();
+    const request = loadWeeklyHistory()
+      .then((weekly) => {
+        if (!requestScope.isCurrent(generation)) return;
+        setHistory((current) => sameRecords(current, weekly) ? current : weekly);
+      })
+      .catch((caught) => {
+        if (requestScope.isCurrent(generation)) {
+          handleApiError(caught, 'Failed to load this week\'s assignment history.');
+        }
+      })
+      .finally(() => {
+        if (historyRequestRef.current === request) historyRequestRef.current = null;
+        if (historyRefreshQueuedRef.current) {
+          historyRefreshQueuedRef.current = false;
+          if (requestScope.isCurrent(generation)) void refreshHistory();
+        }
+      });
+    historyRequestRef.current = request;
+    return request;
+  }, [handleApiError, requestScope]);
+
+  const refreshActive = useCallback((ensureAfterCurrent = false): Promise<void> => {
+    if (AppState.currentState !== 'active') return Promise.resolve();
+    if (activeRequestRef.current) {
+      if (ensureAfterCurrent) activeRefreshQueuedRef.current = true;
+      return activeRequestRef.current;
+    }
+    const generation = requestScope.capture();
+    const request = loadAssignments()
+      .then((active) => {
+        if (!requestScope.isCurrent(generation)) return;
+        const historyChanged = shouldRefreshAssignmentHistory(activeSnapshotRef.current, active);
+        activeSnapshotRef.current = active;
+        setAssignments((current) => sameRecords(current, active) ? current : active);
+        setSelectedId((current) => active.some((item) => item.backup_request_id === current) ? current : active[0]?.backup_request_id ?? null);
+        setError('');
+        if (historyChanged) void refreshHistory(true);
+      })
+      .catch((caught) => {
+        if (requestScope.isCurrent(generation)) {
+          handleApiError(caught, 'Failed to load assigned incidents.');
+        }
+      })
+      .finally(() => {
+        if (activeRequestRef.current === request) activeRequestRef.current = null;
+        if (requestScope.isCurrent(generation)) setLoading(false);
+        if (activeRefreshQueuedRef.current) {
+          activeRefreshQueuedRef.current = false;
+          if (requestScope.isCurrent(generation)) void refreshActive();
+        }
+      });
+    activeRequestRef.current = request;
+    return request;
+  }, [handleApiError, refreshHistory, requestScope]);
+
+  const refreshAll = useCallback(async (ensureAfterCurrent = false) => {
+    if (AppState.currentState !== 'active') return;
+    await Promise.all([
+      refreshActive(ensureAfterCurrent),
+      refreshHistory(ensureAfterCurrent),
+    ]);
+  }, [refreshActive, refreshHistory]);
 
   useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), 5000);
-    return () => clearInterval(timer);
-  }, [refresh]);
+    requestScope.activate();
+    setLoading(true);
+    void refreshAll(true);
+    const timer = setInterval(() => void refreshActive(), 5000);
+    const appStateSubscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshAll(true);
+    });
+    return () => {
+      requestScope.invalidate();
+      activeRefreshQueuedRef.current = false;
+      historyRefreshQueuedRef.current = false;
+      clearInterval(timer);
+      appStateSubscription.remove();
+    };
+  }, [refreshActive, refreshAll, requestScope]);
 
   useEffect(() => {
     api.get<EvacuationAreaItem[]>('/content/evacuation-areas')
@@ -95,75 +189,8 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
   }, [handleApiError]);
 
   useEffect(() => {
-    let active = true;
-    let locationBusy = false;
-    let watcher: LiveLocationSubscription | null = null;
-
-    async function publishLocation(nextLocation: Coordinate) {
-      if (!active) return;
-      const previous = locationRef.current;
-      locationRef.current = nextLocation;
-      if (!previous || previous.latitude !== nextLocation.latitude || previous.longitude !== nextLocation.longitude) {
-        setLocation(nextLocation);
-      }
-      setLocationError('');
-      if (locationBusy) return;
-      locationBusy = true;
-      try {
-        const { data } = await updateResponderLocation(nextLocation.latitude, nextLocation.longitude);
-        if (!active) return;
-        if (data.rerouted) setNotice(`Route updated to ${data.evacuationAreaName || 'the nearest available evacuation center'}.`);
-        if (data.rerouted || data.pickupConfirmed) void refresh();
-      } catch (caught) {
-        if (active) handleApiError(caught, 'Unable to update your live responder location.');
-      } finally {
-        locationBusy = false;
-      }
-    }
-
-    async function updateLocation(requestPermission: boolean) {
-      try {
-        const result = await requireLiveLocation(requestPermission);
-        if (!active) return;
-        if (!result.ok) {
-          // A temporary follow-up timeout must not invalidate a location that
-          // is already visible on the map and usable for dispatch.
-          if (!locationRef.current) setLocationError(result.message);
-          else await publishLocation(locationRef.current);
-          return;
-        }
-        await publishLocation(result.location);
-      } catch (caught) {
-        if (active && !locationRef.current) handleApiError(caught, 'Unable to update your live responder location.');
-      }
-    }
-
-    async function startTracking() {
-      await updateLocation(true);
-      if (!active || Platform.OS === 'web') return;
-      try {
-        watcher = await watchLiveLocation((nextLocation) => { void publishLocation(nextLocation); });
-      } catch (caught) {
-        if (active && !locationRef.current) handleApiError(caught, 'Unable to start live responder location tracking.');
-      }
-    }
-
-    void startTracking();
-    const webTimer = Platform.OS === 'web'
-      ? setInterval(() => void updateLocation(false), 10000)
-      : null;
-    // Refresh the server timestamp even while the responder is stationary and
-    // Android therefore has no new distance-based watcher event to deliver.
-    const serverTimer = setInterval(() => {
-      if (locationRef.current) void publishLocation(locationRef.current);
-    }, 15000);
-    return () => {
-      active = false;
-      if (webTimer) clearInterval(webTimer);
-      clearInterval(serverTimer);
-      watcher?.remove();
-    };
-  }, [handleApiError, refresh]);
+    if (presenceRevision > 0) void refreshAll(true);
+  }, [presenceRevision, refreshAll]);
 
   const selected = useMemo(
     () => assignments.find((item) => item.backup_request_id === selectedId) || assignments[0] || null,
@@ -176,17 +203,51 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
   }, [selected]);
 
+  const routeRefreshKey = selected && destination
+    ? [
+        selected.backup_request_id,
+        Boolean(selected.responder_acknowledged_at),
+        Boolean(selected.picked_up_at),
+        destination.latitude,
+        destination.longitude,
+      ].join(':')
+    : '';
+
   useEffect(() => {
-    let active = true;
-    if (!location || !destination) {
-      setRoute({ routeCoordinates: [], distanceKm: null, etaMinutes: null });
-      return () => { active = false; };
+    if (!destination) {
+      routeRequestRef.current?.controller.abort();
+      routeRequestRef.current = null;
+      routeRefreshRef.current = null;
+      setRoute((current) => current === EMPTY_ROUTE ? current : EMPTY_ROUTE);
+      return;
     }
-    fetchRoadRoute(location, destination, true)
-      .then((result) => { if (active) setRoute(result); })
-      .catch(() => { if (active) setRoute({ routeCoordinates: [location, destination], distanceKm: null, etaMinutes: null }); });
-    return () => { active = false; };
-  }, [destination, location]);
+    // A stationary Android device can briefly report no fresh GPS sample while
+    // the presence hook reacquires one. Retain the last route and mounted map;
+    // dispatch remains disabled until a fresh location is available again.
+    if (!location) return;
+    const previous = routeRefreshRef.current;
+    const refreshNow = Date.now();
+    if (!shouldRefreshRoute({ previous, key: routeRefreshKey, location, now: refreshNow })) return;
+
+    const keyChanged = previous?.key !== routeRefreshKey;
+    routeRefreshRef.current = { key: routeRefreshKey, location, refreshedAt: refreshNow };
+    routeRequestRef.current?.controller.abort();
+    const controller = new AbortController();
+    routeRequestRef.current = { controller };
+    if (keyChanged) setRoute(EMPTY_ROUTE);
+
+    fetchRoadRoute(location, destination, true, 1, controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted && routeRequestRef.current?.controller === controller) setRoute(result);
+      })
+      .catch((caught: any) => {
+        if (controller.signal.aborted || caught?.name === 'AbortError') return;
+        if (routeRequestRef.current?.controller !== controller) return;
+        setRoute((current) => current.routeCoordinates.length > 1
+          ? current
+          : { routeCoordinates: [location, destination], distanceKm: null, etaMinutes: null });
+      });
+  }, [destination, location, routeRefreshKey]);
 
   const buildAssignmentMapHtml = useCallback((fullscreen: boolean) => buildCalambaMapHtml(
     areas,
@@ -252,7 +313,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
 
   const mapUpdate = useMemo(() => ({
     type: 'rescue-map-update',
-    responderLocation: location,
+    responderLocation: mapLocation,
     routeCoordinates: route.routeCoordinates,
     incidentLocation: selected?.picked_up_at ? null : destination,
     selectedReportCode: selected?.report_code || null,
@@ -263,9 +324,12 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
     routeDestination: selected?.picked_up_at ? destination : null,
     evacuationAreaName: selected?.evacuation_area_name || null,
     recenterRequestId,
-  }), [destination, incidentPoints, location, recenterRequestId, role, route.routeCoordinates, selected]);
+  }), [destination, incidentPoints, mapLocation, recenterRequestId, role, route.routeCoordinates, selected]);
 
-  const newAssignment = assignments.find((item) => !item.responder_acknowledged_at && item.backup_request_id !== dismissedAlertId) || null;
+  const newAssignment = useMemo(
+    () => assignments.find((item) => !item.responder_acknowledged_at && item.backup_request_id !== dismissedAlertId) || null,
+    [assignments, dismissedAlertId],
+  );
   const alertDestination = useMemo<Coordinate | null>(() => {
     if (!newAssignment) return null;
     const latitude = Number(newAssignment.reported_latitude ?? newAssignment.latitude);
@@ -273,17 +337,47 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
   }, [newAssignment]);
 
+  const alertRouteRefreshKey = newAssignment && alertDestination
+    ? `${newAssignment.backup_request_id}:${alertDestination.latitude}:${alertDestination.longitude}`
+    : '';
+
   useEffect(() => {
-    let active = true;
-    if (!location || !alertDestination) {
-      setAlertRoute({ routeCoordinates: [], distanceKm: null, etaMinutes: null });
-      return () => { active = false; };
+    if (!alertDestination) {
+      alertRouteRequestRef.current?.controller.abort();
+      alertRouteRequestRef.current = null;
+      alertRouteRefreshRef.current = null;
+      setAlertRoute((current) => current === EMPTY_ROUTE ? current : EMPTY_ROUTE);
+      return;
     }
-    fetchRoadRoute(location, alertDestination, true)
-      .then((result) => { if (active) setAlertRoute(result); })
-      .catch(() => { if (active) setAlertRoute({ routeCoordinates: [location, alertDestination], distanceKm: null, etaMinutes: null }); });
-    return () => { active = false; };
-  }, [alertDestination, location]);
+    if (!location) return;
+    const previous = alertRouteRefreshRef.current;
+    const refreshNow = Date.now();
+    if (!shouldRefreshRoute({ previous, key: alertRouteRefreshKey, location, now: refreshNow })) return;
+
+    const keyChanged = previous?.key !== alertRouteRefreshKey;
+    alertRouteRefreshRef.current = { key: alertRouteRefreshKey, location, refreshedAt: refreshNow };
+    alertRouteRequestRef.current?.controller.abort();
+    const controller = new AbortController();
+    alertRouteRequestRef.current = { controller };
+    if (keyChanged) setAlertRoute(EMPTY_ROUTE);
+
+    fetchRoadRoute(location, alertDestination, true, 1, controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted && alertRouteRequestRef.current?.controller === controller) setAlertRoute(result);
+      })
+      .catch((caught: any) => {
+        if (controller.signal.aborted || caught?.name === 'AbortError') return;
+        if (alertRouteRequestRef.current?.controller !== controller) return;
+        setAlertRoute((current) => current.routeCoordinates.length > 1
+          ? current
+          : { routeCoordinates: [location, alertDestination], distanceKm: null, etaMinutes: null });
+      });
+  }, [alertDestination, alertRouteRefreshKey, location]);
+
+  useEffect(() => () => {
+    routeRequestRef.current?.controller.abort();
+    alertRouteRequestRef.current?.controller.abort();
+  }, []);
 
   const focusKey = selected ? `${selected.backup_request_id}:${Boolean(selected.responder_acknowledged_at)}:${Boolean(selected.picked_up_at)}:${selected.evacuation_area_id || ''}` : '';
   useEffect(() => {
@@ -302,7 +396,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
   }, [focusKey, location]);
 
   const alertMapHtml = useMemo(() => buildCalambaMapHtml(
-    [], location, alertRoute.routeCoordinates, alertDestination,
+    [], initialMapLocation, [], alertDestination,
     newAssignment?.report_code || null,
     alertDestination && newAssignment ? [{ reportCode: newAssignment.report_code, ...alertDestination, status: 'pending', reportType: 'rescue' }] : [],
     `${String(api.defaults.baseURL).replace(/\/$/, '')}/flood-risk/calamba/barangays`,
@@ -318,15 +412,28 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
       showForecastTimeline: false,
       showForecastLayers: false,
     },
-  ), [alertDestination, alertRoute.routeCoordinates, location, newAssignment, role]);
+  ), [alertDestination, initialMapLocation, newAssignment, role]);
+
+  const alertMapUpdate = useMemo(() => newAssignment ? ({
+    type: 'rescue-map-update',
+    responderLocation: mapLocation,
+    routeCoordinates: alertRoute.routeCoordinates,
+    incidentLocation: alertDestination,
+    selectedReportCode: newAssignment.report_code,
+    incidentPoints: alertDestination
+      ? [{ reportCode: newAssignment.report_code, ...alertDestination, status: 'pending', reportType: 'rescue' }]
+      : [],
+    pickedUp: false,
+    responderKind: role === 'barangay_rescuer' ? 'barangay' : 'cddrmd',
+  }) : null, [alertDestination, alertRoute.routeCoordinates, mapLocation, newAssignment, role]);
 
   async function dispatch(item: Assignment) {
-    if (busy || !locationRef.current) return;
+    if (busy || !location) return;
     setBusy(true);
     try {
       await acknowledgeAssignment(item.backup_request_id);
       setDismissedAlertId(null);
-      await refresh();
+      await refreshAll(true);
     } catch (caught) {
       handleApiError(caught, 'Unable to confirm this rescue dispatch.');
     } finally {
@@ -336,22 +443,24 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
 
   const subtitle = role === 'barangay_rescuer' ? 'Barangay incidents and live routing' : 'CDRRMD backup incidents and live routing';
   return (
-    <RescuerScreen title={role === 'barangay_rescuer' ? 'Barangay Rescue Assignments' : 'CDRRMD Backup Assignments'} subtitle={subtitle} refreshing={loading} onRefresh={() => void refresh()}>
+    <RescuerScreen title={role === 'barangay_rescuer' ? 'Barangay Rescue Assignments' : 'CDRRMD Backup Assignments'} subtitle={subtitle} refreshing={loading} onRefresh={() => { setLoading(true); void refreshAll(true); }}>
       <ErrorMessage message={error} />
-      <ErrorMessage message={locationError} />
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+      <View style={styles.locationStatusSlot}>
+        <ErrorMessage message={locationError} />
+      </View>
+      {presenceNotice ? <Text style={styles.notice}>{presenceNotice}</Text> : null}
       <View style={styles.statusStrip}>
         <View style={styles.statusItem}><View style={[styles.statusDot, location ? styles.statusOnline : styles.statusWaiting]} /><View><Text style={styles.statusLabel}>LIVE LOCATION</Text><Text style={styles.statusValue}>{location ? 'Connected' : 'Acquiring GPS'}</Text></View></View>
         <View style={styles.statusDivider} />
         <View style={styles.statusItem}><MaterialCommunityIcons name="radio-tower" size={20} color={rescuerColors.blue} /><View><Text style={styles.statusLabel}>ASSIGNMENTS</Text><Text style={styles.statusValue}>{assignments.length} active</Text></View></View>
       </View>
       <View style={styles.mapCard}>
-        {areasLoaded && location ? <PlatformMap
+        {!mapFullscreen && areasLoaded && mapLocation ? <PlatformMap
           html={mapHtml}
           baseUrl={mapBaseUrl}
           preserveState
           updateMessage={mapUpdate}
-        /> : <EmptyState loading message={areasLoaded ? 'Waiting for your current location…' : 'Loading rescue map…'} />}
+        /> : mapFullscreen ? <View style={styles.mapPlaceholder} /> : <EmptyState loading message={areasLoaded ? 'Waiting for your current location…' : 'Loading rescue map…'} />}
         <TouchableOpacity accessibilityLabel="Open map full screen" onPress={() => { setForecastOverlayVisible(false); setMapFullscreen(true); }} style={styles.fullscreenButton}>
           <MaterialCommunityIcons name="fullscreen" size={22} color="#ffffff" />
         </TouchableOpacity>
@@ -396,7 +505,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
 
       <Modal visible={mapFullscreen} animationType="fade" statusBarTranslucent onRequestClose={closeFullscreenMap}>
         <View style={styles.fullscreenMap}>
-          {mapFullscreen && areasLoaded && location ? <PlatformMap html={fullscreenMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={mapUpdate} onMessage={handleFullscreenMapMessage} /> : <EmptyState loading message={areasLoaded ? 'Waiting for your current location…' : 'Loading rescue map…'} />}
+          {mapFullscreen && areasLoaded && mapLocation ? <PlatformMap html={fullscreenMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={mapUpdate} onMessage={handleFullscreenMapMessage} /> : <EmptyState loading message={areasLoaded ? 'Waiting for your current location…' : 'Loading rescue map…'} />}
           <TouchableOpacity accessibilityLabel="Close full-screen map" onPress={closeFullscreenMap} style={[styles.fullscreenClose, forecastOverlayVisible && styles.fullscreenCloseRaised]}>
             <MaterialCommunityIcons name="fullscreen-exit" size={24} color="#ffffff" />
           </TouchableOpacity>
@@ -417,7 +526,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
             <DetailRow label="Barangay" value={newAssignment.assigned_barangay} />
             <DetailRow label="Evacuation" value={newAssignment.evacuation_area_name || 'Nearest available center'} />
             <DetailRow label="Shortest route" value={alertRoute.distanceKm != null && alertRoute.etaMinutes != null ? `${alertRoute.distanceKm.toFixed(2)} km · about ${alertRoute.etaMinutes} min` : 'Calculating…'} />
-            {location && alertDestination ? <View style={styles.alertMap}><PlatformMap key={newAssignment.backup_request_id} html={alertMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={{ type: 'rescue-map-update', responderLocation: location, routeCoordinates: alertRoute.routeCoordinates, incidentLocation: alertDestination, selectedReportCode: newAssignment.report_code, incidentPoints: [{ reportCode: newAssignment.report_code, ...alertDestination, status: 'pending', reportType: 'rescue' }], pickedUp: false, responderKind: role === 'barangay_rescuer' ? 'barangay' : 'cddrmd' }} /></View> : <View style={styles.alertMap}><EmptyState loading message="Waiting for GPS…" /></View>}
+            {mapLocation && alertDestination ? <View style={styles.alertMap}><PlatformMap key={newAssignment.backup_request_id} html={alertMapHtml} baseUrl={mapBaseUrl} preserveState updateMessage={alertMapUpdate} /></View> : <View style={styles.alertMap}><EmptyState loading message="Waiting for GPS…" /></View>}
             <Text style={styles.modalCode}>{newAssignment.report_code}</Text>
             <View style={styles.modalActions}>
               <PrimaryButton disabled={busy || !location} label={busy ? 'Confirming…' : location ? 'Confirm Dispatch' : 'Waiting for GPS…'} onPress={() => void dispatch(newAssignment)} />
@@ -431,6 +540,7 @@ export default function AssignmentsScreen({ role, onAuthError }: Props) {
 }
 
 const styles = StyleSheet.create({
+  locationStatusSlot: { height: 68 },
   statusStrip: { minHeight: 68, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, borderRadius: 16, borderWidth: 1, borderColor: rescuerColors.border, backgroundColor: '#fff', shadowColor: '#0b2e4e', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
   statusItem: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9 },
   statusDivider: { width: 1, height: 32, marginHorizontal: 12, backgroundColor: '#dce7ef' },
@@ -440,6 +550,7 @@ const styles = StyleSheet.create({
   statusLabel: { color: rescuerColors.muted, fontSize: 8, lineHeight: 11, fontWeight: '900', letterSpacing: 0.8 },
   statusValue: { color: rescuerColors.ink, fontSize: 12, lineHeight: 16, fontWeight: '900' },
   mapCard: { height: 370, overflow: 'hidden', borderRadius: 18, borderWidth: 1, borderColor: rescuerColors.border, backgroundColor: '#dbe5eb', shadowColor: '#0b2e4e', shadowOpacity: 0.08, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  mapPlaceholder: { flex: 1, backgroundColor: '#dbe5eb' },
   fullscreenButton: { position: 'absolute', right: 12, bottom: 12, width: 42, height: 42, borderRadius: 9, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)', backgroundColor: 'rgba(18,49,75,0.94)', alignItems: 'center', justifyContent: 'center' },
   fullscreenMap: { flex: 1, backgroundColor: '#0f172a' },
   fullscreenClose: { position: 'absolute', right: 14, bottom: 14, width: 46, height: 46, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.55)', backgroundColor: 'rgba(18,49,75,0.96)', alignItems: 'center', justifyContent: 'center' },

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "clear:port": "kill-port 8081",
     "prestart": "npm run clear:port",
     "start": "expo start --port 8081",

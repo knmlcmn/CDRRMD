@@ -2,7 +2,8 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, AppState, Easing, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { AppText as Text } from '../../components/Typography';
 import { Card, EmptyState, ErrorMessage, RescuerScreen, rescuerColors } from '../components/RescuerScreen';
-import { loadFloodReportLogs, loadWaterLevelSensors } from '../services/rescuerService';
+import { loadFloodReportLogs } from '../services/rescuerService';
+import { refreshWaterLevelSensors, subscribeToWaterLevelSensors } from '../services/waterSensorMonitor';
 import type { FloodReportLogPage, ResponderRole, WaterLevelSensor } from '../types';
 import { HIGH_WATER_LEVEL_THRESHOLD, MODERATE_WATER_LEVEL_THRESHOLD } from '../../utils/waterLevelHazard';
 import { scopeWaterLevelSensors } from '../utils/sensorScope';
@@ -157,30 +158,34 @@ export default function FloodMonitoringScreen({ role, barangayName, onAuthError 
   const [reportsLoading, setReportsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const loadingRef = useRef(false);
   const reportRequestRef = useRef(0);
 
-  const refresh = useCallback(async () => {
-    if (loadingRef.current || AppState.currentState !== 'active') return;
-    loadingRef.current = true;
-    try {
-      const nextSensors = scopeWaterLevelSensors(await loadWaterLevelSensors(), role, barangayName);
-      setSensors((current) => sensorSignature(current) === sensorSignature(nextSensors) ? current : nextSensors);
-      setError('');
-    } catch (caught: any) {
-      if (caught?.response?.status === 401) onAuthError();
-      else setError(caught?.response?.data?.message || 'Unable to load flood monitoring data.');
-    } finally {
-      loadingRef.current = false;
-      setLoading(false);
-    }
-  }, [barangayName, onAuthError, role]);
+  const refresh = useCallback(() => {
+    if (AppState.currentState === 'active') void refreshWaterLevelSensors();
+  }, []);
 
   useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), 3_000);
-    return () => clearInterval(timer);
-  }, [refresh]);
+    let active = true;
+    const unsubscribe = subscribeToWaterLevelSensors(
+      (loaded) => {
+        if (!active) return;
+        const nextSensors = scopeWaterLevelSensors(loaded, role, barangayName);
+        setSensors((current) => sensorSignature(current) === sensorSignature(nextSensors) ? current : nextSensors);
+        setError('');
+        setLoading(false);
+      },
+      (caught: any) => {
+        if (!active) return;
+        if (caught?.response?.status === 401) onAuthError();
+        else setError(caught?.response?.data?.message || 'Unable to load flood monitoring data.');
+        setLoading(false);
+      },
+    );
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [barangayName, onAuthError, role]);
 
   const refreshReports = useCallback(async () => {
     if (AppState.currentState !== 'active') return;
@@ -211,7 +216,7 @@ export default function FloodMonitoringScreen({ role, barangayName, onAuthError 
   const highCount = useMemo(() => sensors.filter((sensor) => sensor.status === 'Active' && sensor.waterLevelPercentage >= HIGH_WATER_LEVEL_THRESHOLD).length, [sensors]);
   const sensorWidth = role === 'barangay_rescuer' ? '100%' : width >= 1100 ? '16.666%' : width >= 700 ? '33.333%' : '50%';
   return (
-    <RescuerScreen title="Flood Monitoring" subtitle="Live water levels for rescue operations" refreshing={loading} onRefresh={() => void refresh()}>
+    <RescuerScreen title="Flood Monitoring" subtitle="Live water levels for rescue operations" refreshing={loading} onRefresh={refresh}>
       <ErrorMessage message={error} />
       <View style={styles.sensorPanel}>
         <View style={styles.headingRow}><Text style={styles.title}>Water Level Indicators</Text><Text style={styles.high}>{highCount} high-level slots</Text></View>

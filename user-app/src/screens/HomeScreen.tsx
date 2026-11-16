@@ -27,7 +27,7 @@ import {
   weatherIconFromCode,
 } from '../components/WeatherMetricArtwork';
 import { api } from '../services/api';
-import { getCityCurrentWeather } from '../services/weatherService';
+import { getCityForecastWeather, getCityWeatherSnapshot } from '../services/weatherService';
 import { getWeatherVisualByCode } from '../utils/weatherVisual';
 import { useResponsiveLayout } from '../utils/responsive';
 import { keepIfEqual } from '../utils/stableData';
@@ -147,7 +147,9 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [news, setNews] = useState<AnnouncementItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [weather, setWeather] = useState<WeatherResponse | null>(null);
+  const [weather, setWeather] = useState<WeatherResponse | null>(
+    () => getCityWeatherSnapshot().data,
+  );
   const [refreshing, setRefreshing] = useState(false);
   const [selectedUpdate, setSelectedUpdate] = useState<PublishedUpdate | null>(null);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -187,17 +189,17 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
     }
   }, [applyNotifications]);
 
-  const refreshWeather = useCallback(async () => {
-    const next = await getCityCurrentWeather();
+  const refreshWeather = useCallback(async (forceRefresh = false) => {
+    const next = await getCityForecastWeather({ forceRefresh });
     setWeather((current) => keepIfEqual(current, next as WeatherResponse));
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (forceWeather = false) => {
     const [a, n, ntf] = await Promise.allSettled([
       api.get('/content/alerts'),
       api.get('/content/announcements'),
       api.get('/reports/notifications/mine'),
-      refreshWeather(),
+      refreshWeather(forceWeather),
     ]);
     if (a.status === 'fulfilled') setAlerts((current) => keepIfEqual(current, a.value.data ?? []));
     if (n.status === 'fulfilled') setNews((current) => keepIfEqual(current, n.value.data ?? []));
@@ -371,7 +373,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await load().catch(() => {});
+    await load(true).catch(() => {});
     setRefreshing(false);
   };
 

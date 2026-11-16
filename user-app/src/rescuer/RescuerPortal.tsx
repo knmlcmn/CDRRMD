@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { AppState, Image, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Image, InteractionManager, StyleSheet, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppText as Text, TypographyFamily } from '../components/Typography';
@@ -8,19 +8,15 @@ import HistoryScreen from './screens/HistoryScreen';
 import FloodMonitoringScreen from './screens/FloodMonitoringScreen';
 import AccountScreen from './screens/AccountScreen';
 import WaterLevelAlert from './components/WaterLevelAlert';
-import { loadWaterLevelSensors, sendHeartbeat } from './services/rescuerService';
+import { sendHeartbeat } from './services/rescuerService';
+import { subscribeToWaterLevelSensors } from './services/waterSensorMonitor';
 import type { ResponderRole, WaterLevelSensor } from './types';
 import { MODERATE_WATER_LEVEL_THRESHOLD } from '../utils/waterLevelHazard';
 import { scopeWaterLevelSensors } from './utils/sensorScope';
+import { getRescuerTabItems, RESCUER_TAB_INDICATOR, type RescuerTab } from './utils/rescuerTabBar';
 import { rescuerTheme } from './theme';
-
-type Tab = 'assignments' | 'history' | 'flood' | 'account';
-const tabs: Array<{ key: Tab; label: string; mobileLabel: string; icon: keyof typeof MaterialCommunityIcons.glyphMap }> = [
-  { key: 'assignments', label: 'Incident Reports', mobileLabel: 'Incidents', icon: 'alert-outline' },
-  { key: 'history', label: 'History', mobileLabel: 'History', icon: 'history' },
-  { key: 'flood', label: 'Flood Monitoring', mobileLabel: 'Flood', icon: 'water-outline' },
-  { key: 'account', label: 'Account', mobileLabel: 'Account', icon: 'account-outline' },
-];
+import { beginPerformanceStage, endPerformanceStage, markNavigationSettled, markNavigationStart } from '../utils/performanceDiagnostics';
+import { useResponderLocationPresence } from './hooks/useResponderLocationPresence';
 
 type Props = {
   role: ResponderRole;
@@ -29,13 +25,58 @@ type Props = {
   onAuthError: () => void;
 };
 
+type PresenceAssignmentsProps = {
+  visible: boolean;
+  role: ResponderRole;
+  onAuthError: () => void;
+};
+
+function PresenceAssignments({ visible, role, onAuthError }: PresenceAssignmentsProps) {
+  const responderPresence = useResponderLocationPresence(onAuthError);
+  if (!visible) return null;
+  return <AssignmentsScreen
+    role={role}
+    onAuthError={onAuthError}
+    location={responderPresence.location}
+    locationError={responderPresence.locationError}
+    presenceNotice={responderPresence.notice}
+    presenceRevision={responderPresence.revision}
+  />;
+}
+
 export default function RescuerPortal({ role, barangayName, onLogout, onAuthError }: Props) {
   const { width } = useWindowDimensions();
   const desktop = width >= 820;
-  const [tab, setTab] = useState<Tab>('assignments');
+  const [tab, setTab] = useState<RescuerTab>('assignments');
   const [alertSensors, setAlertSensors] = useState<WaterLevelSensor[]>([]);
   const [alertVisible, setAlertVisible] = useState(false);
   const alertStages = useRef<Record<string, 'moderate' | 'high'>>({});
+  const readinessMarker = useRef(beginPerformanceStage('rescuer-portal-ready'));
+  const onAuthErrorRef = useRef(onAuthError);
+  onAuthErrorRef.current = onAuthError;
+  const handleAuthError = useCallback(() => onAuthErrorRef.current(), []);
+
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      endPerformanceStage(readinessMarker.current);
+      readinessMarker.current = null;
+    });
+    return () => {
+      task.cancel();
+      endPerformanceStage(readinessMarker.current, { success: false });
+      readinessMarker.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    markNavigationSettled(`rescuer:${tab}`);
+  }, [tab]);
+
+  function navigateToTab(nextTab: RescuerTab) {
+    if (nextTab === tab) return;
+    markNavigationStart(`rescuer:${nextTab}`);
+    setTab(nextTab);
+  }
 
   // Presence belongs to the portal, not only the Incidents tab. Keeping this
   // mounted means a rescuer remains assignable while viewing History, Flood,
@@ -47,7 +88,7 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
       try {
         await sendHeartbeat();
       } catch (caught: any) {
-        if (caught?.response?.status === 401) onAuthError();
+        if (active && caught?.response?.status === 401) handleAuthError();
       }
     }
     void heartbeat();
@@ -60,17 +101,12 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
       clearInterval(timer);
       subscription.remove();
     };
-  }, [onAuthError]);
+  }, [handleAuthError]);
 
   useEffect(() => {
     let active = true;
-    let loading = false;
-
-    async function checkWaterLevels() {
-      if (!active || loading || AppState.currentState !== 'active') return;
-      loading = true;
-      try {
-        const loaded = await loadWaterLevelSensors();
+    const unsubscribe = subscribeToWaterLevelSensors(
+      (loaded) => {
         if (!active) return;
         const scoped = scopeWaterLevelSensors(loaded, role, barangayName);
         const hazardous = scoped
@@ -86,39 +122,38 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
           alertStages.current[sensor.id] = stage;
         });
         Object.keys(alertStages.current).forEach((sensorId) => {
-          if (!hazardousIds.has(sensorId)) delete alertStages.current[sensorId];
+          if (!hazardousIds.has(sensorId)) {
+            delete alertStages.current[sensorId];
+            changed = true;
+          }
         });
 
         if (changed && hazardous.length > 0) {
           setAlertSensors(hazardous);
           setAlertVisible(true);
+        } else if (changed) {
+          setAlertSensors([]);
+          setAlertVisible(false);
         }
-      } catch (caught: any) {
-        if (caught?.response?.status === 401) onAuthError();
-      } finally {
-        loading = false;
-      }
-    }
-
-    void checkWaterLevels();
-    const timer = setInterval(() => void checkWaterLevels(), 3_000);
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void checkWaterLevels();
-    });
+      },
+      (caught: any) => {
+        if (active && caught?.response?.status === 401) handleAuthError();
+      },
+    );
     return () => {
       active = false;
-      clearInterval(timer);
-      subscription.remove();
+      unsubscribe();
     };
-  }, [barangayName, onAuthError, role]);
+  }, [barangayName, handleAuthError, role]);
 
   const content = tab === 'history'
-    ? <HistoryScreen role={role} onAuthError={onAuthError} />
+    ? <HistoryScreen role={role} onAuthError={handleAuthError} />
     : tab === 'flood'
-      ? <FloodMonitoringScreen role={role} barangayName={barangayName} onAuthError={onAuthError} />
+      ? <FloodMonitoringScreen role={role} barangayName={barangayName} onAuthError={handleAuthError} />
       : tab === 'account'
-        ? <AccountScreen role={role} onAuthError={onAuthError} />
-        : <AssignmentsScreen role={role} onAuthError={onAuthError} />;
+        ? <AccountScreen role={role} onAuthError={handleAuthError} />
+        : null;
+  const tabItems = getRescuerTabItems(tab);
 
   return (
     <TypographyFamily family="Manrope">
@@ -134,21 +169,27 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
       <View style={styles.layout}>
         {desktop ? <View style={styles.sidebar}>
           <View style={styles.desktopBrand}><Image source={require('../../assets/cdrrmd-logo.png')} style={styles.logo} /><View><Text style={styles.desktopBrandTitle}>CDRRMD</Text><Text style={styles.desktopBrandRole}>{role === 'barangay_rescuer' ? 'Barangay Rescuer' : 'CDRRMD Rescuer'}</Text></View></View>
-          <View style={styles.sideNav}>{tabs.map((item) => {
-            const active = tab === item.key;
-            return <TouchableOpacity key={item.key} accessibilityRole="tab" accessibilityState={{ selected: active }} onPress={() => setTab(item.key)} style={[styles.sideNavItem, active && styles.sideNavItemActive]}>{active ? <View style={styles.activeRail} /> : null}<MaterialCommunityIcons name={item.icon} size={20} color={active ? '#fff' : '#b9d4e6'} /><Text style={[styles.sideNavLabel, !active && styles.sideNavLabelIdle]}>{item.label}</Text></TouchableOpacity>;
+          <View style={styles.sideNav}>{tabItems.map((item) => {
+            return <TouchableOpacity key={item.key} accessibilityRole="tab" accessibilityState={{ selected: item.active }} onPress={() => navigateToTab(item.key)} style={[styles.sideNavItem, item.active && styles.sideNavItemActive]}>{item.active ? <View style={styles.activeRail} /> : null}<MaterialCommunityIcons key={item.iconRenderKey} name={item.icon} size={20} color={item.active ? '#fff' : '#b9d4e6'} /><Text style={[styles.sideNavLabel, !item.active && styles.sideNavLabelIdle]}>{item.label}</Text></TouchableOpacity>;
           })}</View>
           <TouchableOpacity onPress={onLogout} style={styles.desktopLogout}><MaterialCommunityIcons name="logout" size={19} color="#fff" /><Text style={styles.sideNavLabel}>Logout</Text></TouchableOpacity>
         </View> : null}
-        <View style={styles.content}>{content}</View>
+        <View style={styles.content}>
+          <PresenceAssignments visible={tab === 'assignments'} role={role} onAuthError={handleAuthError} />
+          {content}
+        </View>
       </View>
       {!desktop ? <View style={styles.tabBar}>
         <View pointerEvents="none" style={[styles.mobilePatternArc, styles.mobilePatternBottom]} />
-        {tabs.map((item) => {
-          const active = tab === item.key;
-          return <TouchableOpacity key={item.key} onPress={() => setTab(item.key)} style={styles.tab} accessibilityRole="button" accessibilityState={{ selected: active }}>
-            <View style={[styles.iconWrap, active && styles.iconWrapActive]}><MaterialCommunityIcons name={item.icon} size={22} color={active ? '#fff' : '#c7e3f5'} /></View>
-            <Text numberOfLines={1} style={[styles.tabLabel, active && styles.tabLabelActive]}>{item.mobileLabel}</Text>
+        {tabItems.map((item) => {
+          return <TouchableOpacity key={item.key} onPress={() => navigateToTab(item.key)} style={styles.tab} accessibilityRole="tab" accessibilityState={{ selected: item.active }}>
+            <View style={styles.iconWrap}>
+              <View pointerEvents="none" style={styles.iconIndicator}>
+                {item.active ? <View style={styles.iconIndicatorFill}><View style={styles.iconIndicatorAccent} /></View> : null}
+              </View>
+              <MaterialCommunityIcons key={item.iconRenderKey} name={item.icon} size={22} color={item.active ? '#fff' : '#c7e3f5'} />
+            </View>
+            <Text numberOfLines={1} style={[styles.tabLabel, item.active && styles.tabLabelActive]}>{item.mobileLabel}</Text>
           </TouchableOpacity>;
         })}
       </View> : null}
@@ -158,7 +199,7 @@ export default function RescuerPortal({ role, barangayName, onLogout, onAuthErro
         onClose={() => setAlertVisible(false)}
         onSeeDetails={() => {
           setAlertVisible(false);
-          setTab('flood');
+          navigateToTab('flood');
         }}
       />
     </SafeAreaView>
@@ -192,8 +233,10 @@ const styles = StyleSheet.create({
   desktopLogout: { marginTop: 'auto', minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, borderRadius: 12, borderWidth: 1, borderColor: '#486581' },
   tabBar: { position: 'absolute', left: 0, right: 0, bottom: 0, minHeight: 72, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 6, paddingVertical: 7, overflow: 'hidden', backgroundColor: rescuerTheme.colors.navy900, borderTopWidth: 1, borderTopColor: '#315b78', shadowColor: rescuerTheme.colors.navy950, shadowOpacity: 0.2, shadowRadius: 9, shadowOffset: { width: 0, height: -3 }, elevation: 10 },
   tab: { flex: 1, minHeight: 54, alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 2 },
-  iconWrap: { width: 44, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
-  iconWrapActive: { backgroundColor: rescuerTheme.colors.blue600, borderLeftWidth: 3, borderLeftColor: rescuerTheme.colors.gold },
+  iconWrap: { ...RESCUER_TAB_INDICATOR, alignItems: 'center', justifyContent: 'center' },
+  iconIndicator: { ...RESCUER_TAB_INDICATOR, position: 'absolute', overflow: 'hidden' },
+  iconIndicatorFill: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: rescuerTheme.colors.blue600 },
+  iconIndicatorAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: rescuerTheme.colors.gold },
   tabLabel: { color: '#c7e3f5', fontSize: 9, lineHeight: 11, fontWeight: '800', textAlign: 'center' },
   tabLabelActive: { color: '#ffffff' },
 });

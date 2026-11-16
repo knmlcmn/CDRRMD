@@ -22,27 +22,48 @@ export type SessionData = {
 };
 
 const SESSION_KEY = '@cddrmd:user_session';
-let applyAuthorizationHeader: ((token: string | null) => void) | null = null;
+export type AuthorizationUpdateReason = 'session' | 'refresh';
+let applyAuthorizationHeader: ((token: string | null, reason?: AuthorizationUpdateReason) => void) | null = null;
+let sessionStorageQueue: Promise<unknown> = Promise.resolve();
 
-export function registerSessionAuthorizationSetter(setter: (token: string | null) => void) {
+function enqueueSessionStorage<T>(operation: () => Promise<T>) {
+  const request = sessionStorageQueue.catch(() => {}).then(operation);
+  sessionStorageQueue = request.catch(() => {});
+  return request;
+}
+
+export function registerSessionAuthorizationSetter(
+  setter: (token: string | null, reason?: AuthorizationUpdateReason) => void,
+) {
   // Allows API layer to stay synchronized with persisted session state.
   applyAuthorizationHeader = setter;
 }
 
-export async function saveSession(session: SessionData) {
+export async function saveSession(
+  session: SessionData,
+  isCurrent: () => boolean = () => true,
+  authorizationReason: AuthorizationUpdateReason = 'session',
+) {
   // Persist session snapshot and immediately apply bearer token.
-  await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
-  applyAuthorizationHeader?.(session.token);
+  return enqueueSessionStorage(async () => {
+    if (!isCurrent()) return false;
+    await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    if (!isCurrent()) return false;
+    applyAuthorizationHeader?.(session.token, authorizationReason);
+    return true;
+  });
 }
 
 export async function clearSession() {
-  // Clear both storage and runtime auth header.
-  await AsyncStorage.removeItem(SESSION_KEY);
+  // Revoke runtime authorization synchronously so navigation and request
+  // cleanup never wait on the native storage bridge during logout.
   applyAuthorizationHeader?.(null);
+  await enqueueSessionStorage(() => AsyncStorage.removeItem(SESSION_KEY));
 }
 
 export async function loadSession(): Promise<SessionData | null> {
   // Restore session and re-apply token after app relaunch.
+  await sessionStorageQueue.catch(() => {});
   const raw = await AsyncStorage.getItem(SESSION_KEY);
   if (!raw) {
     return null;

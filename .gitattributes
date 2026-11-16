@@ -1,2 +1,12 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# The recovered production OTA was published with LF in these seven files.
+# Preserve those exact bytes on Windows so a clean checkout reproduces Hermes.
+user-app/PERFORMANCE_DIAGNOSTICS.md text eol=lf
+user-app/src/components/floodAlertPolicy.ts text eol=lf
+user-app/src/rescuer/services/waterSensorMonitor.ts text eol=lf
+user-app/src/utils/performanceDiagnostics.ts text eol=lf
+user-app/src/utils/sharedPoller.ts text eol=lf
+user-app/tests/floodAlertPolicy.test.ts text eol=lf
+user-app/tests/sharedPoller.test.ts text eol=lf

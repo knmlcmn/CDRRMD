@@ -29,10 +29,15 @@ import { AppProfile, ensureAccountForSession, patchAccountProfile } from './src/
 import {
   assignAuthBarangayFromLocation,
   getAuthMe,
+  logoutAuthSession,
   putAuthMe,
   setApiAuthorizationToken,
   setAuthFailureHandler,
 } from './src/services/api';
+import {
+  handleAuthFailureForSession,
+  handleAuthFailureIfSessionActive,
+} from './src/services/authRequestPolicy';
 import ResidentFloodAlert from './src/components/ResidentFloodAlert';
 import RequiredLocationModal from './src/components/RequiredLocationModal';
 import LogoutConfirmationModal from './src/components/LogoutConfirmationModal';
@@ -42,10 +47,19 @@ import { loadTestMode, saveTestMode } from './src/services/testMode';
 import RescuerPortal from './src/rescuer/RescuerPortal';
 import type { ResponderRole } from './src/rescuer/types';
 import {
+  beginResidentPushNotificationSession,
   registerResidentPushNotifications,
   subscribeToPushTokenChanges,
   unregisterResidentPushNotifications,
 } from './src/services/pushNotifications';
+import {
+  beginPerformanceStage,
+  endPerformanceStage,
+  logRuntimeDiagnostics,
+  markNavigationSettled,
+  markNavigationStart,
+  startJsStallMonitor,
+} from './src/utils/performanceDiagnostics';
 
 function isBlank(value?: string | null) {
   return !String(value ?? '').trim();
@@ -215,7 +229,10 @@ function UserTabBar({ state, navigation }: BottomTabBarProps) {
                 target: route.key,
                 canPreventDefault: true,
               });
-              if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
+              if (!focused && !event.defaultPrevented) {
+                markNavigationStart(route.name);
+                navigation.navigate(route.name);
+              }
             }}
           />
         );
@@ -244,6 +261,11 @@ function AppContent() {
   const [floodAlertRescueRequest, setFloodAlertRescueRequest] = useState<{ notificationId: number | null; requestedAt: number } | null>(null);
   const [locationChecking, setLocationChecking] = useState(false);
   const [locationGate, setLocationGate] = useState<{ message: string; activeSession: boolean } | null>(null);
+
+  useEffect(() => {
+    logRuntimeDiagnostics();
+    return startJsStallMonitor();
+  }, []);
   const [logoutConfirmationVisible, setLogoutConfirmationVisible] = useState(false);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const sessionRef = useRef<SessionData | null>(null);
@@ -251,6 +273,7 @@ function AppContent() {
   const lastLocationRef = useRef<{ location: LiveLocation; checkedAt: number } | null>(null);
   const lastBarangaySyncRef = useRef(0);
   const monitorRunningRef = useRef(false);
+  const lastLogoutAtRef = useRef(0);
 
   useEffect(() => {
     sessionRef.current = session;
@@ -266,8 +289,9 @@ function AppContent() {
 
   useEffect(() => {
     if (session?.user.role !== 'user') return undefined;
-    registerResidentPushNotifications().catch(() => {});
-    const tokenSubscription = subscribeToPushTokenChanges();
+    const pushSessionScope = beginResidentPushNotificationSession();
+    registerResidentPushNotifications(pushSessionScope).catch(() => {});
+    const tokenSubscription = subscribeToPushTokenChanges(pushSessionScope);
     return () => tokenSubscription?.remove();
   }, [session?.user.id, session?.user.role]);
 
@@ -328,8 +352,7 @@ function AppContent() {
 
   useEffect(() => {
     setAuthFailureHandler(() => {
-      setSession(null);
-      setAuthMode('login');
+      handleAuthFailureIfSessionActive(sessionRef.current, performLogout);
     });
 
     return () => {
@@ -392,6 +415,9 @@ function AppContent() {
     if (!currentSession) return;
 
     const response = await assignAuthBarangayFromLocation(location.latitude, location.longitude);
+    // A resident request may finish after logout or after a responder signs in.
+    // It must not update React state, storage, or the shared authorization header.
+    if (sessionRef.current !== currentSession) return;
     const assignedUser = response.data?.user as SessionData['user'] | undefined;
     if (!assignedUser?.id || !assignedUser.barangayName) {
       throw new Error('The current activity barangay could not be determined.');
@@ -402,7 +428,9 @@ function AppContent() {
       user: { ...currentSession.user, ...assignedUser },
     };
     const ensured = await ensureAccountForSession(nextSession);
-    await saveSession(ensured.session);
+    if (sessionRef.current !== currentSession) return;
+    const saved = await saveSession(ensured.session, () => sessionRef.current === currentSession);
+    if (!saved || sessionRef.current !== currentSession) return;
     lastBarangaySyncRef.current = Date.now();
     sessionRef.current = ensured.session;
     setSession(ensured.session);
@@ -475,10 +503,20 @@ function AppContent() {
 
   async function handleAuthenticated(nextSession: SessionData, registrationProfile?: AppProfile) {
     if (nextSession.user.role === 'rescuer' || nextSession.user.role === 'barangay_rescuer') {
-      await saveSession(nextSession);
+      const switchedAfterLogout = lastLogoutAtRef.current > 0;
+      const marker = beginPerformanceStage(switchedAfterLogout
+        ? 'rescuer-session-ready-after-logout'
+        : 'rescuer-session-ready-direct');
       sessionRef.current = nextSession;
       setLocationGate(null);
       setSession(nextSession);
+      endPerformanceStage(marker);
+      // Persist after exposing the already-authenticated portal. The API token
+      // was installed by postAuth, so this does not weaken request security.
+      const persistenceMarker = beginPerformanceStage('rescuer-session-persistence');
+      void saveSession(nextSession, () => sessionRef.current === nextSession)
+        .then((saved) => endPerformanceStage(persistenceMarker, { success: saved }))
+        .catch(() => endPerformanceStage(persistenceMarker, { success: false }));
       return;
     }
     if (nextSession.user.role !== 'user') {
@@ -490,21 +528,52 @@ function AppContent() {
     await activateSession(nextSession, registrationProfile);
   }
 
-  async function performLogout() {
+  function performLogout() {
+    const previousSession = sessionRef.current;
+    const transitionMarker = beginPerformanceStage('logout-ui-transition');
     setLogoutBusy(true);
-    try {
-      if (sessionRef.current?.user.role === 'user') {
-        await unregisterResidentPushNotifications().catch(() => {});
-      }
-      await clearSession();
-      sessionRef.current = null;
-      setLocationGate(null);
-      setSession(null);
-      setAuthMode('login');
-    } finally {
-      setLogoutBusy(false);
-      setLogoutConfirmationVisible(false);
+    sessionRef.current = null;
+    lastLogoutAtRef.current = Date.now();
+    setLocationGate(null);
+    setSession(null);
+    setAuthMode('login');
+    setLogoutBusy(false);
+    setLogoutConfirmationVisible(false);
+    endPerformanceStage(transitionMarker);
+
+    const cleanupMarker = beginPerformanceStage('logout-background-cleanup');
+    const cleanupTasks: Promise<unknown>[] = [];
+    if (previousSession?.token) {
+      const serverMarker = beginPerformanceStage('logout-server-session-cleanup');
+      cleanupTasks.push(logoutAuthSession(previousSession.token)
+        .then(() => endPerformanceStage(serverMarker))
+        .catch((error) => {
+          endPerformanceStage(serverMarker, { success: false });
+          throw error;
+        }));
     }
+    const storageMarker = beginPerformanceStage('logout-session-storage-cleanup');
+    const storageCleanup = clearSession()
+      .then(() => endPerformanceStage(storageMarker))
+      .catch((error) => {
+        endPerformanceStage(storageMarker, { success: false });
+        throw error;
+      });
+    cleanupTasks.push(storageCleanup);
+    if (previousSession?.user.role === 'user') {
+      const pushMarker = beginPerformanceStage('logout-resident-push-cleanup');
+      cleanupTasks.push(unregisterResidentPushNotifications(previousSession.token)
+        .then(() => endPerformanceStage(pushMarker))
+        .catch((error) => {
+          endPerformanceStage(pushMarker, { success: false });
+          throw error;
+        }));
+    }
+    void Promise.allSettled(cleanupTasks).then((results) => {
+      endPerformanceStage(cleanupMarker, {
+        success: results.every((result) => result.status === 'fulfilled'),
+      });
+    });
   }
 
   function requestLogout() {
@@ -602,7 +671,9 @@ function AppContent() {
           role={session.user.role as ResponderRole}
           barangayName={session.user.barangayName}
           onLogout={requestLogout}
-          onAuthError={() => void performLogout()}
+          onAuthError={() => {
+            handleAuthFailureForSession(session, sessionRef.current, performLogout);
+          }}
         />
         <LogoutConfirmationModal
           visible={logoutConfirmationVisible}
@@ -617,7 +688,13 @@ function AppContent() {
 
   return (
     <View style={styles.appRoot}>
-      <NavigationContainer ref={navigationRef}>
+      <NavigationContainer
+        ref={navigationRef}
+        onStateChange={() => {
+          const routeName = navigationRef.getCurrentRoute()?.name;
+          if (routeName) markNavigationSettled(routeName);
+        }}
+      >
         <ResidentFloodAlert
           barangayName={session.user.barangayName ?? ''}
           onTestAccountRemoved={() => void performLogout()}
