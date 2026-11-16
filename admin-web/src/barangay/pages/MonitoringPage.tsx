@@ -8,6 +8,7 @@ import { d } from '../barangayDesign';
 import type { IncidentReport, EvacuationAreaItem } from '../../types';
 import { buildCalambaMapHtml, type Coordinate } from '../../utils/calambaMapHtml';
 import { formatIncidentStatus, INCIDENT_STATUS_FILTERS, type IncidentStatusFilter } from '../../utils/incidentStatus';
+import { isLiveResponder, liveResponderCoordinate } from '../../services/liveResponderPresence';
 
 type Props = {
   barangayName: string;
@@ -50,6 +51,8 @@ type BarangayRescuerLocation = {
   current_latitude?: number | string | null;
   current_longitude?: number | string | null;
   is_available?: boolean;
+  is_online?: boolean | null;
+  location_updated_at?: string | null;
 };
 
 type DestinationType = 'resident' | 'evacuation_center';
@@ -137,6 +140,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   const areasLoadInFlightRef = useRef(false);
   const lastFocusedRescue = useRef('');
   const [mapReady, setMapReady] = useState(false);
+  const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const [layerVisibility] = useState<MonitoringLayerVisibility>({
     boundary: true,
     floodHazard: true,
@@ -178,7 +182,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
     try {
       const [reportsRes, personnelRes] = await Promise.allSettled([
         api.get('/barangay/reports/mine'),
-        api.get('/barangay/personnel'),
+        api.get('/rescuers/live-locations'),
       ]);
 
       const reportsFailed = reportsRes.status === 'rejected';
@@ -199,7 +203,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
       } else if (personnelRes.reason?.response?.status === 401) {
         onAuthError();
         return;
-      } else if (showLoading) {
+      } else {
         setBarangayRescuers([]);
       }
 
@@ -262,6 +266,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
     loadEvacuationAreas().catch(() => {});
     loadRainRanking().catch(() => {});
     const rt = setInterval(() => {
+      setPresenceNow(Date.now());
       loadData(false).catch(() => {});
     }, 5000);
     const areasTimer = setInterval(() => {
@@ -355,11 +360,9 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   }, [evacuationAreas, selectedReport]);
 
   const responderLocation = useMemo<Coordinate | null>(() => {
-    if (selectedReport?.rescuer_latitude == null || selectedReport.rescuer_longitude == null) return null;
-    const latitude = Number(selectedReport.rescuer_latitude);
-    const longitude = Number(selectedReport.rescuer_longitude);
-    return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
-  }, [selectedReport?.rescuer_latitude, selectedReport?.rescuer_longitude]);
+    const liveResponder = barangayRescuers.find((rescuer) => Number(rescuer.id) === Number(selectedReport?.assigned_rescuer_id));
+    return liveResponderCoordinate(liveResponder, presenceNow);
+  }, [barangayRescuers, presenceNow, selectedReport?.assigned_rescuer_id]);
 
   // Route the assigned first responder to the resident, then to the center
   // after pickup while retaining the live responder marker.
@@ -484,7 +487,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
   ]);
 
   const responderPoints = useMemo(() => {
-    const barangayPoints = barangayRescuers.map((rescuer) => {
+    const barangayPoints = barangayRescuers.filter((rescuer) => isLiveResponder(rescuer, presenceNow)).map((rescuer) => {
       const activeAssignment = activeReports.find((report) => Number(report.assigned_rescuer_id) === Number(rescuer.id));
       return {
         id: rescuer.id,
@@ -499,25 +502,11 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
         kind: 'barangay' as const,
       };
     });
-    const cdrrmdPoints = activeReports
-      .filter((report) => report.dispatch_type === 'cddrmd_backup' && report.assigned_rescuer_id)
-      .map((report) => ({
-        id: report.assigned_rescuer_id as number,
-        rescuerId: null,
-        name: report.rescuer_name || 'CDRRMD Rescuer',
-        latitude: report.rescuer_latitude == null ? Number.NaN : Number(report.rescuer_latitude),
-        longitude: report.rescuer_longitude == null ? Number.NaN : Number(report.rescuer_longitude),
-        isAvailable: false,
-        activeReportId: report.id,
-        activeReportCode: report.report_code || null,
-        barangayName: null,
-        kind: 'cddrmd' as const,
-      }));
-    return [...barangayPoints, ...cdrrmdPoints]
+    return barangayPoints
       .filter((rescuer) => Number.isFinite(rescuer.latitude) && Number.isFinite(rescuer.longitude));
-  }, [activeReports, barangayRescuers]);
+  }, [activeReports, barangayRescuers, presenceNow]);
 
-  const selectedResponderKind = selectedReport?.dispatch_type === 'cddrmd_backup' ? 'cddrmd' : 'barangay';
+  const selectedResponderKind = 'barangay';
 
   const mapHtml = useMemo(
     () => buildCalambaMapHtml(

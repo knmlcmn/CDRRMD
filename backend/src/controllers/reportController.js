@@ -1,4 +1,5 @@
 const pool = require('../config/db');
+const { liveLocationSql } = require('../services/rescuerPresenceService');
 const userModel = require('../models/userModel');
 const {
   resolveBarangayAtLocation,
@@ -572,9 +573,9 @@ async function getReports(req, res) {
       dispatch.responder_acknowledged_at,
       dispatch.picked_up_at,
       NULLIF(TRIM(CONCAT_WS(' ', responder.first_name, responder.last_name)), '') AS rescuer_name,
-      responder.current_latitude AS rescuer_latitude,
-      responder.current_longitude AS rescuer_longitude,
-      responder.location_updated_at AS rescuer_location_updated_at,
+      CASE WHEN ${liveLocationSql('responder')} THEN responder.current_latitude END AS rescuer_latitude,
+      CASE WHEN ${liveLocationSql('responder')} THEN responder.current_longitude END AS rescuer_longitude,
+      CASE WHEN ${liveLocationSql('responder')} THEN responder.location_updated_at END AS rescuer_location_updated_at,
       u.id AS reporter_id,
       u.first_name,
       u.last_name,

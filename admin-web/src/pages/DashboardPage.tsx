@@ -15,6 +15,7 @@ import { buildCalambaMapHtml } from '../utils/calambaMapHtml';
 import { loadWaterLevelSensors, WATER_LEVEL_POLL_INTERVAL_MS, type WaterLevelSensor } from '../services/waterLevelSensors';
 import { formatIncidentStatus } from '../utils/incidentStatus';
 import { isInCurrentManilaWeek } from '../utils/currentWeek';
+import { isLiveResponder, liveResponderCoordinate } from '../services/liveResponderPresence';
 
 type Coordinate = { latitude: number; longitude: number };
 type CityRescuerLocation = RescuerAccount & { kind: 'barangay' | 'cddrmd' };
@@ -101,6 +102,8 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
   const [waterLevelSensors, setWaterLevelSensors] = useState<WaterLevelSensor[]>([]);
   const routineLoadInFlightRef = useRef(false);
   const criticalLoadInFlightRef = useRef(false);
+  const liveLocationsLoadInFlightRef = useRef(false);
+  const [presenceNow, setPresenceNow] = useState(() => Date.now());
   const [cards, setCards] = useState<DashboardSummary['cards']>({
     emergencyAlerts: 0,
     activeTeams: 0,
@@ -126,19 +129,13 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     setError(null);
 
     try {
-      const [areasResponse, summaryResponse, cdrrmdResponse, barangayResponderResponse] = await Promise.all([
+      const [areasResponse, summaryResponse] = await Promise.all([
         api.get('/content/evacuation-areas'),
         api.get('/content/dashboard-summary'),
-        api.get('/rescuers/accounts', { params: { role: 'rescuer' } }).catch(() => ({ data: [] })),
-        api.get('/rescuers/accounts', { params: { role: 'barangay_rescuer' } }).catch(() => ({ data: [] })),
       ]);
 
       setAreas(areasResponse.data);
       setCards(summaryResponse.data.cards);
-      setCityRescuers([
-        ...(Array.isArray(cdrrmdResponse.data) ? cdrrmdResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'cddrmd' as const })),
-        ...(Array.isArray(barangayResponderResponse.data) ? barangayResponderResponse.data : []).map((rescuer: RescuerAccount) => ({ ...rescuer, kind: 'barangay' as const })),
-      ]);
     } catch (err: unknown) {
       const apiError = err as { response?: { status?: number; data?: { message?: string } } };
       if (apiError.response?.status === 401) {
@@ -151,6 +148,21 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       if (showLoading) {
         setLoading(false);
       }
+    }
+  }, [onAuthError]);
+
+  const loadLiveLocations = useCallback(async () => {
+    if (liveLocationsLoadInFlightRef.current) return;
+    liveLocationsLoadInFlightRef.current = true;
+    try {
+      const { data } = await api.get('/rescuers/live-locations');
+      setCityRescuers(Array.isArray(data) ? data : []);
+    } catch (err: unknown) {
+      setCityRescuers([]);
+      const apiError = err as { response?: { status?: number } };
+      if (apiError.response?.status === 401) onAuthError();
+    } finally {
+      liveLocationsLoadInFlightRef.current = false;
     }
   }, [onAuthError]);
 
@@ -190,6 +202,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
 
   useEffect(() => {
     loadFeed(true);
+    loadLiveLocations().catch(() => {});
     loadCriticalFeed().catch(() => {});
     loadWaterLevels().catch(() => {});
 
@@ -201,6 +214,11 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
       loadCriticalFeed().catch(() => {});
     }, 5_000);
 
+    const liveLocationsTimer = setInterval(() => {
+      setPresenceNow(Date.now());
+      loadLiveLocations().catch(() => {});
+    }, 5_000);
+
     const waterLevelTimer = setInterval(() => {
       loadWaterLevels().catch(() => {});
     }, WATER_LEVEL_POLL_INTERVAL_MS);
@@ -208,6 +226,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
         loadFeed(false);
+        loadLiveLocations().catch(() => {});
         loadCriticalFeed().catch(() => {});
         loadWaterLevels().catch(() => {});
       }
@@ -218,10 +237,11 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     return () => {
       clearInterval(refreshTimer);
       clearInterval(criticalTimer);
+      clearInterval(liveLocationsTimer);
       clearInterval(waterLevelTimer);
       document.removeEventListener('visibilitychange', onVisible);
     };
-  }, [loadCriticalFeed, loadFeed]);
+  }, [loadCriticalFeed, loadFeed, loadLiveLocations]);
 
   useEffect(() => {
     const onFsChange = () => {
@@ -251,10 +271,9 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
     .find((report) => report.id === mapFocusedReportId) || null, [activeMissionReports, mapFocusedReportId]);
 
   const responderLocation = useMemo<Coordinate | null>(() => {
-    const latitude = Number(selectedMapReport?.rescuer_latitude);
-    const longitude = Number(selectedMapReport?.rescuer_longitude);
-    return Number.isFinite(latitude) && Number.isFinite(longitude) ? { latitude, longitude } : null;
-  }, [selectedMapReport?.rescuer_latitude, selectedMapReport?.rescuer_longitude]);
+    const liveResponder = cityRescuers.find((rescuer) => Number(rescuer.id) === Number(selectedMapReport?.assigned_rescuer_id));
+    return liveResponderCoordinate(liveResponder, presenceNow);
+  }, [cityRescuers, presenceNow, selectedMapReport?.assigned_rescuer_id]);
 
   const residentLocation = useMemo<Coordinate | null>(() => {
     const latitude = Number(selectedMapReport?.latitude);
@@ -286,6 +305,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
   }, [responderLocation, routeDestination]);
 
   const responderPoints = useMemo(() => cityRescuers
+    .filter((rescuer) => isLiveResponder(rescuer, presenceNow))
     .map((rescuer) => {
       const activeAssignment = activeMissionReports.find((report) => Number(report.assigned_rescuer_id) === Number(rescuer.id));
       return {
@@ -301,7 +321,7 @@ export default function DashboardPage({ onLogout, onOpenAdmin, onOpenUsers, onOp
         kind: rescuer.kind,
       };
     })
-    .filter((rescuer) => Number.isFinite(rescuer.latitude) && Number.isFinite(rescuer.longitude)), [activeMissionReports, cityRescuers]);
+    .filter((rescuer) => Number.isFinite(rescuer.latitude) && Number.isFinite(rescuer.longitude)), [activeMissionReports, cityRescuers, presenceNow]);
 
   const mapHtml = useMemo(
     () => buildMapHtml(
