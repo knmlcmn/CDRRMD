@@ -1,14 +1,15 @@
 import type { ReactNode } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import { AppText as Text } from './Typography';
-import { useResponsiveLayout } from '../utils/responsive';
+import { useResponsiveLayout, WEB_DESKTOP_CONTENT_WIDTH } from '../utils/responsive';
 
 export function DashboardHeader({ action, backAction }: { action?: ReactNode; backAction?: ReactNode }) {
-  const { uiScale: scale, horizontalPadding } = useResponsiveLayout();
+  const { uiScale: scale, horizontalPadding, isWebDesktop } = useResponsiveLayout();
 
   return (
     <View style={styles.shell}>
       <View style={[styles.header, {
+        maxWidth: isWebDesktop ? WEB_DESKTOP_CONTENT_WIDTH : 760,
         paddingTop: 28 * scale,
         paddingBottom: 7 * scale,
         paddingHorizontal: Math.max(horizontalPadding, 10 * scale),
@@ -35,7 +36,7 @@ export function DashboardHeader({ action, backAction }: { action?: ReactNode; ba
 const styles = StyleSheet.create({
   shell: { width: '100%', backgroundColor: '#ffffff' },
   header: {
-    width: '100%', maxWidth: 760, alignSelf: 'center',
+    width: '100%', maxWidth: 760, boxSizing: 'border-box', alignSelf: 'center',
     backgroundColor: '#ffffff',
     flexDirection: 'row',
     alignItems: 'center',

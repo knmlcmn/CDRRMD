@@ -18,7 +18,7 @@ export const authColors = {
 
 export function AuthShell({ children, title, subtitle, centerContent = false }: { children: ReactNode; title: string; subtitle: string; centerContent?: boolean }) {
   const { width } = useWindowDimensions();
-  const wide = width >= 760;
+  const wide = width >= 1024;
 
   return (
     <View style={[styles.root, wide && styles.rootWide]}>
@@ -45,8 +45,12 @@ export function AuthShell({ children, title, subtitle, centerContent = false }: 
         <Text style={styles.heroFooter}>CITY DISASTER RISK REDUCTION AND MANAGEMENT DIVISION</Text>
       </ImageBackground>
 
-      <View style={[styles.formPane, wide && styles.formPaneWide]}>
-        <View style={[styles.formBody, centerContent && styles.formBodyCentered]}>
+      <View style={[
+        styles.formPane,
+        wide && styles.formPaneWide,
+        !wide && { width: Math.min(Math.max(0, width - 32), 660) },
+      ]}>
+        <View style={[styles.formBody, centerContent && wide && styles.formBodyCentered]}>
         <View style={styles.formHeading}>
           <View style={styles.headingIcon}><MaterialCommunityIcons name="shield-check-outline" size={21} color={authColors.blue} /></View>
           <View style={styles.headingCopy}><Text accessibilityRole="header" style={styles.title}>{title}</Text><Text style={styles.subtitle}>{subtitle}</Text></View>
@@ -80,7 +84,7 @@ const styles = StyleSheet.create({
   heroTitle: { color: '#fff', maxWidth: 390, marginTop: 8, fontSize: 22, lineHeight: 27, fontWeight: '900', letterSpacing: -0.5 },
   heroText: { color: '#dcecf7', maxWidth: 420, marginTop: 6, fontSize: 11, lineHeight: 17 },
   heroFooter: { display: 'none', color: '#bcd5e5', fontSize: 8, fontWeight: '800', letterSpacing: 1.1 },
-  formPane: { flex: 1, width: '100%', maxWidth: 660, alignSelf: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
+  formPane: { flex: 1, maxWidth: 660, alignSelf: 'center', paddingTop: 12, paddingBottom: 10 },
   formPaneWide: { justifyContent: 'center', paddingHorizontal: 48, paddingVertical: 28 },
   formBody: { flex: 1, width: '100%', minHeight: 0 },
   formBodyCentered: { flex: 1, justifyContent: 'center' },

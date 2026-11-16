@@ -22,7 +22,7 @@ import { api, assignAuthBarangayFromLocation, setApiAuthorizationToken } from '.
 import { fetchBestRoadRouteProgressively, fetchRoadRoute } from '../services/routingService';
 import { rankNearestEligibleEvacuationCenters } from '../services/evacuationSelection';
 import { loadSession } from '../services/session';
-import { MAX_MAP_CONTENT_WIDTH, useResponsiveLayout } from '../utils/responsive';
+import { MAX_MAP_CONTENT_WIDTH, useResponsiveLayout, WEB_DESKTOP_MAP_WIDTH } from '../utils/responsive';
 import { keepIfEqual } from '../utils/stableData';
 import { buildHardwareFloodRuntimeScript } from '../utils/waterLevelHazard';
 import { requireLiveLocation } from '../services/locationAccess';
@@ -1411,7 +1411,7 @@ export default function RescueMapScreen({ floodAlertRescueRequest = null }: Prop
   const { showNotice, noticeModal } = useNoticeModal();
   const navigation = useNavigation<any>();
   const isScreenFocused = useIsFocused();
-  const { isSmall, horizontalPadding, uiScale } = useResponsiveLayout(MAX_MAP_CONTENT_WIDTH);
+  const { isSmall, horizontalPadding, uiScale, height: viewportHeight, isWebDesktop } = useResponsiveLayout(MAX_MAP_CONTENT_WIDTH);
   const [userLocation, setUserLocation] = useState<Coordinate | null>(null);
   const [requestStarted, setRequestStarted] = useState(false);
   const [selectedAreaId, setSelectedAreaId] = useState<EvacuationArea['id'] | null>(null);
@@ -2088,7 +2088,10 @@ export default function RescueMapScreen({ floodAlertRescueRequest = null }: Prop
       {noticeModal}
       <DashboardHeader />
 
-      <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
+      <ScrollView contentContainerStyle={[st.scrollContent, {
+        paddingHorizontal: horizontalPadding,
+        maxWidth: isWebDesktop ? WEB_DESKTOP_MAP_WIDTH : MAX_MAP_CONTENT_WIDTH,
+      }]}>
         <Text style={st.pageTitle}>Request Rescue</Text>
         {/* Fullscreen map modal */}
         {isScreenFocused && isMapFullscreen && mapVisualReady && mapHtml ? <Modal visible animationType="fade" statusBarTranslucent onRequestClose={() => setIsMapFullscreen(false)}>
@@ -2105,7 +2108,11 @@ export default function RescueMapScreen({ floodAlertRescueRequest = null }: Prop
           </View>
         </Modal> : null}
 
-        <View style={st.mapContainer}>
+        <View style={[st.mapContainer, isWebDesktop && {
+          height: Math.min(620, Math.max(440, viewportHeight - 270)),
+          maxHeight: 620,
+          aspectRatio: undefined,
+        }]}>
           {!isMapFullscreen && mapVisualReady && mapHtml
             ? <PlatformMap style={st.map} html={mapHtml} baseUrl={apiBaseUrl} onMessage={handleMapMessage} preserveState updateMessage={mapUpdateMessage} />
             : <View style={[st.map, st.mapPlaceholder]}>
@@ -2356,7 +2363,7 @@ export default function RescueMapScreen({ floodAlertRescueRequest = null }: Prop
 
 const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: editorial.background },
-  scrollContent: { flexGrow: 1, width: '100%', maxWidth: 920, alignSelf: 'center', paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
+  scrollContent: { flexGrow: 1, width: '100%', maxWidth: 920, boxSizing: 'border-box', alignSelf: 'center', paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
   pageTitle: { color: editorial.ink, fontSize: 26, lineHeight: 31, fontWeight: '800', marginBottom: 6 },
 
   mapContainer: {

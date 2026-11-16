@@ -143,7 +143,7 @@ export default function LoginScreen({ onLoginSuccess, onShowRegister, onForgotPa
 const styles = StyleSheet.create({
   keyboard: { width: '100%' },
   scroll: { paddingBottom: 2 },
-  form: { width: '100%', padding: 18, borderRadius: 18, backgroundColor: authColors.white, borderWidth: 1, borderColor: authColors.border, shadowColor: authColors.navy, shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
+  form: { alignSelf: 'stretch', padding: 18, borderRadius: 18, backgroundColor: authColors.white, borderWidth: 1, borderColor: authColors.border, shadowColor: authColors.navy, shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
   sectionLabel: { color: authColors.ink, fontSize: 12, lineHeight: 16, fontWeight: '900', marginBottom: 10, letterSpacing: 0.25 },
   inputWrap: {
     minHeight: 50, borderWidth: 1, borderColor: authColors.border, borderRadius: 12, paddingHorizontal: 14,

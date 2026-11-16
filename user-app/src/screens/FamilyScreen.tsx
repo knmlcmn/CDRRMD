@@ -6,7 +6,7 @@ import { editorial } from '../components/EditorialTheme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../services/api';
-import { useResponsiveLayout } from '../utils/responsive';
+import { useResponsiveLayout, WEB_DESKTOP_CONTENT_WIDTH } from '../utils/responsive';
 
 type FamilyStatus = 'Safe' | 'No response';
 
@@ -37,7 +37,7 @@ function fmtTime(date = new Date()) {
 }
 
 export default function FamilyScreen() {
-  const { isSmall, horizontalPadding } = useResponsiveLayout();
+  const { isSmall, horizontalPadding, isWebDesktop } = useResponsiveLayout();
   const [myStatus, setMyStatus] = useState<FamilyStatus>('No response');
   const [members, setMembers] = useState<FamilyMember[]>([]);
   const [inviteId, setInviteId] = useState('');
@@ -124,7 +124,7 @@ export default function FamilyScreen() {
         </TouchableOpacity>
       } />
 
-      <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
+      <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding, maxWidth: isWebDesktop ? Math.min(WEB_DESKTOP_CONTENT_WIDTH, 980) : 760 }]}>
         <Text style={st.pageTitle}>Family Status</Text>
         {/* Counters */}
         <View style={st.counterRow}>
@@ -235,7 +235,7 @@ export default function FamilyScreen() {
 
 const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: editorial.background },
-  scrollContent: { flexGrow: 1, width: '100%', maxWidth: 760, alignSelf: 'center', paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
+  scrollContent: { flexGrow: 1, width: '100%', maxWidth: 760, boxSizing: 'border-box', alignSelf: 'center', paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
   pageTitle: { color: editorial.ink, fontSize: 26, lineHeight: 31, fontWeight: '800', marginBottom: 14 },
   addBtn: {
     width: 34, height: 34, borderRadius: 17,

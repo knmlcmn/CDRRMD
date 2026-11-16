@@ -516,7 +516,7 @@ body {
   outline-offset: 2px;
 }
 
-@media (min-width: 820px) {
+@media (min-width: 1024px) {
   .admin-desktop-scale .portal-shell-layout.portal-shell-collapsed { grid-template-columns: 5.25rem minmax(0,1fr) !important; }
   .admin-desktop-scale .portal-sidebar.is-collapsed { padding-inline: 0.65rem !important; }
 }
@@ -543,7 +543,7 @@ body {
   border-radius: 0.8rem !important;
 }
 
-@media (max-width: 819px) {
+@media (max-width: 1023px) {
   :is(.admin-desktop-scale, .barangay-desktop-scale) .portal-mobile-top,
   :is(.admin-desktop-scale, .barangay-desktop-scale) .portal-mobile-nav {
     border-color: rgba(173, 211, 237, 0.24) !important;

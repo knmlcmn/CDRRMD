@@ -7,7 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { AppProfile, getAccountById, updateAccountProfile } from '../services/appAccount';
 import { putAuthMe } from '../services/api';
-import { useResponsiveLayout } from '../utils/responsive';
+import { useResponsiveLayout, WEB_DESKTOP_CONTENT_WIDTH } from '../utils/responsive';
 import * as ImagePicker from 'expo-image-picker';
 import { ProfileField, ProfileValidationErrors, validateEditableProfile } from '../utils/profileValidation';
 
@@ -28,7 +28,7 @@ const EMPTY_PROFILE: AppProfile = {
   };
 
 export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
-  const { isSmall, horizontalPadding } = useResponsiveLayout();
+  const { isSmall, horizontalPadding, isWebDesktop } = useResponsiveLayout();
   const [profile, setProfile] = useState<AppProfile>(EMPTY_PROFILE);
   const [draftProfile, setDraftProfile] = useState<AppProfile>(EMPTY_PROFILE);
   const [saving, setSaving] = useState(false);
@@ -169,7 +169,7 @@ export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
         </TouchableOpacity>
       ) : null} />
 
-      <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
+      <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding, maxWidth: isWebDesktop ? Math.min(WEB_DESKTOP_CONTENT_WIDTH, 920) : 760 }]}>
         <Text style={st.pageTitle}>Me</Text>
         {/* Profile Card */}
         <View style={st.card}>
@@ -339,7 +339,7 @@ export default function MeScreen({ appUserId, barangayName, onLogout }: Props) {
 
 const st = StyleSheet.create({
   root: { flex: 1, backgroundColor: editorial.background },
-  scrollContent: { flexGrow: 1, width: '100%', maxWidth: 760, alignSelf: 'center', paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
+  scrollContent: { flexGrow: 1, width: '100%', maxWidth: 760, boxSizing: 'border-box', alignSelf: 'center', paddingTop: 16, paddingBottom: 110, backgroundColor: editorial.background },
   pageTitle: { color: editorial.ink, fontSize: 26, lineHeight: 31, fontWeight: '800', marginBottom: 14 },
   editHeaderBtn: {
     borderWidth: 1,

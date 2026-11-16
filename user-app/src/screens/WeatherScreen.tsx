@@ -25,7 +25,7 @@ import {
   type CityWeatherSnapshot,
 } from '../services/weatherService';
 import { getWeatherVisualByCode } from '../utils/weatherVisual';
-import { useResponsiveLayout } from '../utils/responsive';
+import { useResponsiveLayout, WEB_DESKTOP_CONTENT_WIDTH } from '../utils/responsive';
 import { keepIfEqual } from '../utils/stableData';
 
 type WeatherResponse = CityWeatherSnapshot;
@@ -76,7 +76,8 @@ function formatDay(value: string) {
 
 export default function WeatherScreen() {
   const isFocused = useIsFocused();
-  const { uiScale: scale, horizontalPadding } = useResponsiveLayout();
+  const { uiScale: scale, horizontalPadding, isWebDesktop } = useResponsiveLayout();
+  const pageMaxWidth = isWebDesktop ? WEB_DESKTOP_CONTENT_WIDTH : 720;
   const [initialSnapshot] = useState(() => getCityWeatherSnapshot());
   const [data, setData] = useState<WeatherResponse | null>(() => initialSnapshot.data);
   const [loading, setLoading] = useState(() => !initialSnapshot.data);
@@ -195,7 +196,7 @@ export default function WeatherScreen() {
         <ImageBackground
           source={visual.backgroundSource}
           resizeMode="cover"
-          style={[st.hero, { minHeight: 126 * scale, paddingHorizontal: 13 * scale, paddingTop: 13 * scale }]}
+          style={[st.hero, { maxWidth: pageMaxWidth, minHeight: 126 * scale, paddingHorizontal: 13 * scale, paddingTop: 13 * scale }]}
           imageStyle={st.heroBackgroundImage}
         >
           <View pointerEvents="none" style={st.heroScrim} />
@@ -221,6 +222,7 @@ export default function WeatherScreen() {
         </ImageBackground>
 
         <View style={[st.contentPanel, {
+          maxWidth: pageMaxWidth,
           paddingBottom: 72 * scale,
         }]}>
           <Text style={[st.sectionTitle, { fontSize: 10 * scale, marginTop: 6 * scale, marginBottom: 4 * scale }]}>Current Conditions</Text>
@@ -262,8 +264,8 @@ export default function WeatherScreen() {
                 initialNumToRender={6}
                 maxToRenderPerBatch={6}
                 windowSize={5}
-                removeClippedSubviews
-                showsHorizontalScrollIndicator={false}
+                removeClippedSubviews={!isWebDesktop}
+                showsHorizontalScrollIndicator={isWebDesktop}
                 contentContainerStyle={{ paddingHorizontal: 8 * scale }}
               />
             </>
@@ -305,7 +307,7 @@ const st = StyleSheet.create({
   errorBody: { color: '#585858', fontSize: 14, textAlign: 'center', marginTop: 6 },
   staleBanner: { backgroundColor: '#eef6fb', borderBottomWidth: 1, borderBottomColor: '#c8dce8', paddingHorizontal: 14, paddingVertical: 6 },
   staleText: { color: '#36576d', fontSize: 11, textAlign: 'center', fontWeight: '600' },
-  scrollContent: { flexGrow: 1, width: '100%', backgroundColor: editorial.background },
+  scrollContent: { flexGrow: 1, width: '100%', boxSizing: 'border-box', backgroundColor: editorial.background },
   hero: { width: '100%', maxWidth: 720, alignSelf: 'center', backgroundColor: editorial.surface, flexDirection: 'row', marginTop: 10, borderRadius: 14, overflow: 'hidden' },
   heroBackgroundImage: { opacity: 0.48 },
   heroScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.42)' },

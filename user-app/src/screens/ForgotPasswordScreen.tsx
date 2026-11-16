@@ -114,7 +114,7 @@ export default function ForgotPasswordScreen({ onShowLogin }: Props) {
 const styles = StyleSheet.create({
   keyboard: { flex: 1 },
   scroll: { flexGrow: 1, justifyContent: 'center' },
-  form: { width: '100%', padding: 20, borderRadius: 18, backgroundColor: authColors.white, borderWidth: 1, borderColor: authColors.border, shadowColor: authColors.navy, shadowOpacity: 0.07, shadowRadius: 13, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
+  form: { alignSelf: 'stretch', padding: 20, borderRadius: 18, backgroundColor: authColors.white, borderWidth: 1, borderColor: authColors.border, shadowColor: authColors.navy, shadowOpacity: 0.07, shadowRadius: 13, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
   description: { color: '#526170', fontSize: 12, lineHeight: 18, marginBottom: 18 },
   inputWrap: { height: 48, borderWidth: 1, borderColor: authColors.border, borderRadius: 11, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', marginBottom: 10, backgroundColor: '#fafdff' },
   input: { flex: 1, color: '#111111', fontSize: 13, marginLeft: 8, paddingVertical: 0 },

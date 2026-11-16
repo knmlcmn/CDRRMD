@@ -916,7 +916,7 @@ body,
 /* The mobile navigation is fixed over the page. Let evacuation details grow
    naturally and reserve enough space for the last field/card edge to remain
    visible above that navigation. */
-@media (max-width: 819px) {
+@media (max-width: 1023px) {
   .admin-desktop-scale .evacuation-page-root {
     height: auto !important;
     min-height: 0 !important;
@@ -927,7 +927,7 @@ body,
 
 /* Keep the desktop admin interface at the comfortable density of 80% browser
    zoom while the browser itself stays at the standard 100% setting. */
-@media (min-width: 819.2px) {
+@media (min-width: 1024px) {
   .admin-desktop-scale {
     --admin-viewport-height: 125dvh;
     width: 100%;
@@ -1148,7 +1148,7 @@ body,
 /* On narrow portal screens, preserve every table column and make wide tables
    easy to inspect without sacrificing data. The containing table regions are
    horizontally scrollable, while tighter cells expose more columns at once. */
-@media (max-width: 819px) {
+@media (max-width: 1023px) {
   .admin-desktop-scale table,
   .barangay-desktop-scale table {
     font-size: 0.675rem;

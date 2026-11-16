@@ -29,7 +29,7 @@ import {
 import { api } from '../services/api';
 import { getCityForecastWeather, getCityWeatherSnapshot } from '../services/weatherService';
 import { getWeatherVisualByCode } from '../utils/weatherVisual';
-import { useResponsiveLayout } from '../utils/responsive';
+import { useResponsiveLayout, WEB_DESKTOP_CONTENT_WIDTH } from '../utils/responsive';
 import { keepIfEqual } from '../utils/stableData';
 
 type AlertItem = {
@@ -143,7 +143,7 @@ function publishedAt(value?: string) {
 export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
   const navigation = useNavigation();
   const isFocused = useIsFocused();
-  const { width: screenWidth, uiScale: designScale, horizontalPadding } = useResponsiveLayout();
+  const { width: screenWidth, uiScale: designScale, horizontalPadding, isWebDesktop } = useResponsiveLayout();
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [news, setNews] = useState<AnnouncementItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -261,7 +261,8 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
     ?? require('../../assets/Calamba_City_Hall_(Chipeco_Ave.,_Calamba,_Laguna)(2018-08-21).jpg');
   const heroHeight = Math.round(126 * designScale);
   const heroImageWidth = Math.round(heroHeight * (328 / 226));
-  const heroWidth = Math.min(720, Math.max(0, screenWidth - (horizontalPadding * 2)));
+  const pageMaxWidth = isWebDesktop ? WEB_DESKTOP_CONTENT_WIDTH : 720;
+  const heroWidth = Math.min(pageMaxWidth, Math.max(0, screenWidth - (horizontalPadding * 2)));
   const heroCopyLeft = 13 * designScale;
   const heroSealWidth = 116 * designScale;
   const heroCopyWidth = dashboardSeal
@@ -550,7 +551,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
         <TouchableOpacity
           activeOpacity={0.88}
           onPress={() => navigation.navigate('Weather' as never)}
-          style={[st.barangayHero, { height: heroHeight }]}
+          style={[st.barangayHero, { height: heroHeight, maxWidth: pageMaxWidth }]}
         >
             <Image
               source={visual.backgroundSource}
@@ -605,6 +606,7 @@ export default function HomeScreen({ barangayName = '' }: HomeScreenProps) {
         </TouchableOpacity>
 
         <View style={[st.contentPanel, {
+          maxWidth: pageMaxWidth,
           paddingBottom: 72 * designScale,
           marginTop: 6 * designScale,
         }]}>
@@ -828,7 +830,7 @@ const st = StyleSheet.create({
     backgroundColor: editorial.accent,
   },
   updateDetailDoneText: { color: '#ffffff', fontSize: 14, fontWeight: '800' },
-  scrollContent: { flexGrow: 1, width: '100%', backgroundColor: editorial.background },
+  scrollContent: { flexGrow: 1, width: '100%', boxSizing: 'border-box', backgroundColor: editorial.background },
 
   barangayHero: {
     width: '100%', maxWidth: 720, alignSelf: 'center',

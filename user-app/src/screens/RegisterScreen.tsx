@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
   keyboard: { flex: 1 },
   scrollView: { flex: 1, minHeight: 0 },
   scroll: { flexGrow: 1, justifyContent: 'flex-start', paddingBottom: 24 },
-  form: { width: '100%', padding: 18, borderRadius: 18, backgroundColor: authColors.white, borderWidth: 1, borderColor: authColors.border, shadowColor: authColors.navy, shadowOpacity: 0.07, shadowRadius: 13, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
+  form: { alignSelf: 'stretch', padding: 18, borderRadius: 18, backgroundColor: authColors.white, borderWidth: 1, borderColor: authColors.border, shadowColor: authColors.navy, shadowOpacity: 0.07, shadowRadius: 13, shadowOffset: { width: 0, height: 5 }, elevation: 3 },
   sectionLabel: { color: authColors.ink, fontSize: 12, fontWeight: '900', marginBottom: 10, letterSpacing: 0.25 },
   inputWrap: {
     minHeight: 46, borderWidth: 1, borderColor: authColors.border, borderRadius: 11, paddingHorizontal: 13,
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
   footerText: { color: '#555555', fontSize: 10 },
   footerLink: { color: authColors.blue, fontSize: 10, fontWeight: '900' },
   modalOverlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.62)' },
-  modalCard: { width: '100%', maxWidth: 390, padding: 20, borderRadius: 18, borderWidth: 1, borderColor: authColors.border, backgroundColor: '#fff' },
+  modalCard: { width: '100%', maxWidth: 390, boxSizing: 'border-box', padding: 20, borderRadius: 18, borderWidth: 1, borderColor: authColors.border, backgroundColor: '#fff' },
   modalIcon: { width: 52, height: 52, alignSelf: 'center', alignItems: 'center', justifyContent: 'center', borderRadius: 26, backgroundColor: '#fff0eb', marginBottom: 12 },
   modalTitle: { color: authColors.ink, fontSize: 20, fontWeight: '800', textAlign: 'center' },
   modalDescription: { color: '#526170', fontSize: 12, lineHeight: 18, textAlign: 'center', marginTop: 6, marginBottom: 14 },

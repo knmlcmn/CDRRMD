@@ -201,9 +201,46 @@ function NavigationTabButton({ name, focused, scale, onPress }: NavigationTabBut
 }
 
 function UserTabBar({ state, navigation }: BottomTabBarProps) {
-  const { width, uiScale: scale } = useResponsiveLayout();
+  const { width, uiScale: scale, isWebDesktop } = useResponsiveLayout();
 
   if (state.routes[state.index]?.name === 'Rescue Status') return null;
+
+  if (isWebDesktop) {
+    return (
+      <View style={styles.desktopNavShell}>
+        <View style={styles.desktopNavBrand}>
+          <Text style={styles.desktopNavBrandText}>CDRRMD</Text>
+          <Text style={styles.desktopNavBrandSub}>RESIDENT PORTAL</Text>
+        </View>
+        <View style={styles.desktopNavItems}>
+          {state.routes.filter((route) => route.name !== 'Rescue Status').map((route) => {
+            const focused = state.routes[state.index]?.key === route.key;
+            const isSos = route.name === 'SOS';
+            return (
+              <Pressable
+                key={route.key}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: focused }}
+                onPress={() => {
+                  const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+                  if (!focused && !event.defaultPrevented) {
+                    markNavigationStart(route.name);
+                    navigation.navigate(route.name);
+                  }
+                }}
+                style={[styles.desktopNavItem, focused && styles.desktopNavItemActive, isSos && styles.desktopNavItemSos]}
+              >
+                {isSos
+                  ? <SosNavigationIcon selected={focused} scale={1.2} />
+                  : <NavigationIcon name={route.name as NavigationIconName} selected={focused} scale={1.2} />}
+                <Text style={[styles.desktopNavLabel, focused && styles.desktopNavLabelActive]}>{route.name}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.tabBarShell, {
@@ -253,7 +290,7 @@ export default function App() {
 
 function AppContent() {
   const RescueStatusScreen = require('./src/screens/RescueStatusScreen').default;
-  const { uiScale } = useResponsiveLayout();
+  const { uiScale, isWebDesktop } = useResponsiveLayout();
   const [booting, setBooting] = useState(true);
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'forgot-password'>('login');
   const [session, setSession] = useState<SessionData | null>(null);
@@ -705,6 +742,7 @@ function AppContent() {
         tabBar={(props) => <UserTabBar {...props} />}
         screenOptions={() => ({
           headerShown: false,
+          sceneStyle: isWebDesktop ? styles.desktopScene : undefined,
         })}
       >
         <Tab.Screen name="Home">
@@ -739,8 +777,8 @@ function AppContent() {
         activeOpacity={0.85}
         hitSlop={8}
         onPress={() => void handleToggleTestMode()}
-        style={[styles.testModeButton, testModeEnabled && styles.testModeButtonEnabled, {
-          bottom: 62 * uiScale,
+        style={[styles.testModeButton, testModeEnabled && styles.testModeButtonEnabled, isWebDesktop && styles.desktopTestModeButton, {
+          bottom: isWebDesktop ? undefined : 62 * uiScale,
           right: 8 * uiScale,
           paddingHorizontal: 5 * uiScale,
           paddingVertical: 2 * uiScale,
@@ -802,6 +840,45 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     elevation: 3,
   },
+  desktopNavShell: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    zIndex: 900,
+    minHeight: 72,
+    paddingHorizontal: 32,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#d9e4ec',
+    shadowColor: '#0d3558',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  desktopNavBrand: { minWidth: 190 },
+  desktopNavBrandText: { color: '#0d3558', fontSize: 20, lineHeight: 23, fontWeight: '900' },
+  desktopNavBrandSub: { color: '#3777a8', fontSize: 9, lineHeight: 12, fontWeight: '900', letterSpacing: 1.5 },
+  desktopNavItems: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  desktopNavItem: {
+    minHeight: 44,
+    minWidth: 94,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  desktopNavItemActive: { backgroundColor: '#e7f2fa' },
+  desktopNavItemSos: { borderWidth: 1, borderColor: '#f2c7c7', backgroundColor: '#fff7f7' },
+  desktopNavLabel: { color: '#36576d', fontSize: 14, fontWeight: '700' },
+  desktopNavLabelActive: { color: '#0d3558', fontWeight: '900' },
+  desktopScene: { paddingTop: 72 },
+  desktopTestModeButton: { top: 82 },
   tabButton: {
     flex: 1,
     height: '100%',
