@@ -1,161 +1,42 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
-const backendRoot = path.resolve(__dirname, '..');
+const { resolveRescueJurisdiction } = require('../src/services/rescueJurisdictionService');
 
-function mockModule(relativePath, exports) {
-  const filename = require.resolve(path.join(backendRoot, relativePath));
-  require.cache[filename] = {
-    id: filename,
-    filename,
-    loaded: true,
-    exports,
-  };
-}
-
-function loadCreateReport({ resolvedBarangay, userBarangay = 'Palingon' }) {
-  const controllerPath = require.resolve(path.join(backendRoot, 'src/controllers/reportController.js'));
-  delete require.cache[controllerPath];
-
-  const poolQueries = [];
-  const transactionQueries = [];
-  const client = {
-    async query(sql, params) {
-      transactionQueries.push({ sql, params });
-      if (/INSERT INTO incident_reports/.test(sql)) {
-        return { rows: [{ id: 42, created_at: '2026-11-09T00:00:00.000Z' }] };
-      }
-      if (/UPDATE incident_reports/.test(sql) && /RETURNING id, report_code/.test(sql)) {
-        return {
-          rows: [{
-            id: 42,
-            report_code: 'RPT-2026-000042',
-            assigned_barangay: resolvedBarangay,
-            evacuation_area_id: 7,
-          }],
-        };
-      }
-      return { rows: [] };
-    },
-    release() {},
-  };
-  const pool = {
-    async query(sql, params) {
-      poolQueries.push({ sql, params });
-      if (/FROM users/.test(sql)) {
-        return {
-          rows: [{
-            id: 9,
-            first_name: 'Test',
-            last_name: 'Resident',
-            contact_number: '09170000000',
-            email: 'resident@example.test',
-            barangay_name: userBarangay,
-          }],
-        };
-      }
-      return { rows: [] };
-    },
-    async connect() {
-      return client;
-    },
-  };
-
-  mockModule('src/config/db.js', pool);
-  mockModule('src/models/userModel.js', {});
-  mockModule('src/services/barangayJurisdictionService.js', {
-    resolveBarangayAtLocation: () => resolvedBarangay,
-    resolveNearbyBarangayAtLocation: () => ({ name: 'Palingon' }),
-  });
-  mockModule('src/services/supportedBarangays.js', {
-    SUPPORTED_BARANGAYS: ['Palingon', 'Sampiruhan', 'Lingga', 'Parian', 'Looc', 'Uwisan'],
-    isSupportedBarangay: (value) => ['palingon', 'sampiruhan', 'lingga', 'parian', 'looc', 'uwisan']
-      .includes(String(value || '').toLowerCase()),
-  });
-  mockModule('src/services/rescuerDispatchService.js', {
-    assignNearestAvailableRescuer: async () => null,
-  });
-  mockModule('src/services/evacuationRoutingService.js', {
-    evacuationAreaStillHasCapacity: async () => true,
-    findNearestAvailableEvacuationArea: async () => ({
-      id: 7,
-      name: 'Palingon Elementary School',
-      barangay: resolvedBarangay,
-    }),
-  });
-  mockModule('src/services/floodSensorAlertService.js', {
-    syncFloodSensorAlerts: async () => {},
-  });
-  mockModule('src/services/expoPushService.js', {
-    isExpoPushToken: () => true,
-  });
-
-  const { createReport } = require(controllerPath);
-  return { createReport, poolQueries, transactionQueries };
-}
-
-function responseRecorder() {
-  return {
-    statusCode: 200,
-    body: null,
-    status(code) {
-      this.statusCode = code;
-      return this;
-    },
-    json(body) {
-      this.body = body;
-      return this;
-    },
-  };
-}
-
-function rescueRequest(overrides = {}) {
-  return {
-    user: { userId: 9, role: 'user' },
-    body: {
-      reportType: 'rescue',
-      location: 'Lat 14.200000, Lng 121.100000',
-      latitude: 14.2,
-      longitude: 121.1,
-      evacuationAreaId: 7,
-      evacuationAreaName: 'Palingon Elementary School',
-      incidentType: 'Request Rescue',
-      arePeopleTrapped: true,
-      estimatedPeople: 2,
-      imageBase64: 'mock-image-proof',
-      ...overrides,
-    },
-  };
-}
-
-test('client-supplied test-mode flag cannot bypass an outside-area rescue rejection', async () => {
-  const { createReport, transactionQueries } = loadCreateReport({
-    resolvedBarangay: null,
-    userBarangay: 'Palingon',
-  });
-  const response = responseRecorder();
-
-  await createReport(rescueRequest({ testModeBypassServiceArea: true }), response);
-
-  assert.equal(response.statusCode, 422);
-  assert.equal(response.body.code, 'OUTSIDE_BARANGAY_JURISDICTION');
-  assert.equal(transactionQueries.length, 0, 'invalid rescue must not begin a report transaction');
+test('Test Mode OFF accepts a point inside a supported polygon', () => {
+  const result = resolveRescueJurisdiction(14.214, 121.186, false);
+  assert.equal(result.handlingBarangay, 'Palingon');
+  assert.equal(result.outsideNormalServiceArea, false);
+  assert.equal(result.selectionMethod, 'containing-polygon');
 });
 
-test('resident GPS inside a supported barangay still creates a rescue report', async () => {
-  const { createReport, transactionQueries } = loadCreateReport({
-    resolvedBarangay: 'Palingon',
-  });
-  const response = responseRecorder();
+test('Test Mode OFF blocks a point outside every supported polygon', () => {
+  assert.equal(resolveRescueJurisdiction(14.6, 121.5, false), null);
+});
 
-  await createReport(rescueRequest(), response);
+test('Test Mode ON selects the nearest supported polygon boundary without a registered-barangay fallback', () => {
+  const result = resolveRescueJurisdiction(14.6, 121.5, true);
+  assert.equal(result.handlingBarangay, 'Looc');
+  assert.equal(result.outsideNormalServiceArea, true);
+  assert.equal(result.selectionMethod, 'nearest-polygon-boundary');
+  assert.ok(result.distanceToBoundaryKm > 0);
 
-  assert.equal(response.statusCode, 201);
-  assert.equal(response.body.report_code, 'RPT-2026-000042');
-  assert.equal(response.body.assigned_barangay, 'Palingon');
-  const insert = transactionQueries.find(({ sql }) => /INSERT INTO incident_reports/.test(sql));
-  assert.equal(insert.params[4], 'Palingon', 'stored jurisdiction must come from the resolved GPS barangay');
-  assert.ok(transactionQueries.some(({ sql }) => sql === 'BEGIN'));
-  assert.ok(transactionQueries.some(({ sql }) => sql === 'COMMIT'));
+  const source = fs.readFileSync(path.join(__dirname, '../src/services/rescueJurisdictionService.js'), 'utf8');
+  assert.doesNotMatch(source, /registered|userBarangay|barangay_name/);
+});
+
+test('report creation persists server jurisdiction, immutable submitted GPS, and outside-area audit state', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../src/controllers/reportController.js'), 'utf8');
+  assert.match(source, /const jurisdiction = resolveRescueJurisdiction\(lat, lon, geographicalBypassEnabled\)/);
+  assert.match(source, /const serviceAreaBarangay = jurisdiction\.handlingBarangay/);
+  assert.match(source, /outside_normal_service_area/);
+  assert.match(source, /handlingBarangaySelection: jurisdiction\.selectionMethod/);
+  assert.match(source, /locationText,\s*lat,\s*lon,\s*assignedBarangay/);
+  assert.doesNotMatch(source, /SET\s+latitude\s*=/);
+  assert.doesNotMatch(source, /SET\s+longitude\s*=/);
+  const migration = fs.readFileSync(path.join(__dirname, '../src/config/schemaMigrations.js'), 'utf8');
+  assert.match(migration, /incident_reports_immutable_rescue_location/);
+  assert.match(migration, /Reported rescue coordinates are immutable/);
 });

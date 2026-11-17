@@ -8,10 +8,13 @@ const controller = fs.readFileSync(path.join(backendRoot, 'src/controllers/rescu
 const dispatchService = fs.readFileSync(path.join(backendRoot, 'src/services/rescuerDispatchService.js'), 'utf8');
 const dbConfig = fs.readFileSync(path.join(backendRoot, 'src/config/db.js'), 'utf8');
 
-test('responder location updates preserve atomic rescue transitions', () => {
+test('responder location updates preserve atomic and same-barangay rescue transitions', () => {
   assert.match(controller, /await client\.query\('BEGIN'\)/);
   assert.match(controller, /FOR UPDATE OF br, ir/);
-  assert.match(controller, /allowOtherBarangaysWhenLocalFull: true/);
+  assert.match(controller, /WHERE id = \$4 AND status = 'accepted'/);
+  assert.match(controller, /evaluatePickupObservation/);
+  assert.doesNotMatch(controller, /incidentDistanceMeters <= 50/);
+  assert.doesNotMatch(controller, /allowOtherBarangays/);
   assert.match(controller, /await client\.query\('COMMIT'\)/);
   assert.match(controller, /await client\.query\('ROLLBACK'\)/);
 });
