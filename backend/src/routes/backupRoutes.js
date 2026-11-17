@@ -37,12 +37,8 @@ router.get('/', async (req, res) => {
             ir.location AS report_location, ir.notes AS report_notes, ir.admin_notes AS barangay_notes,
             (ir.image_base64 IS NOT NULL AND ir.image_base64 <> '') AS has_image,
             ir.are_people_trapped, ir.estimated_people,
-            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
-                      AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
-                   THEN reporter.current_latitude ELSE ir.latitude END AS report_latitude,
-            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
-                      AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
-                   THEN reporter.current_longitude ELSE ir.longitude END AS report_longitude,
+            ir.latitude AS report_latitude,
+            ir.longitude AS report_longitude,
             ir.evacuation_area_id, ir.evacuation_area_name,
             ea.latitude AS evacuation_latitude, ea.longitude AS evacuation_longitude,
             NULLIF(TRIM(CONCAT_WS(' ', reporter.first_name, reporter.last_name)), '') AS reporter_name,
@@ -122,12 +118,8 @@ router.get('/:id/rescuer-preview', async (req, res) => {
   const { rows } = await pool.query(
     `SELECT br.id, br.barangay_name, br.acknowledged_at,
             ir.notes, ir.admin_notes,
-            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
-                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
-              THEN reporter.current_latitude ELSE ir.latitude END AS latitude,
-            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
-                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
-              THEN reporter.current_longitude ELSE ir.longitude END AS longitude
+            ir.latitude AS latitude,
+            ir.longitude AS longitude
      FROM backup_requests br
      JOIN incident_reports ir ON ir.id = br.report_id
      LEFT JOIN users reporter ON reporter.id = ir.reported_by

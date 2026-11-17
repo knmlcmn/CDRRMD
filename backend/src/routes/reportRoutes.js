@@ -13,11 +13,13 @@ const {
 	markNotificationRead,
 	registerPushToken,
 	unregisterPushToken,
+	previewRescueRouting,
 } = require('../controllers/reportController');
 
 const router = express.Router();
 
 // Incident reporting and workflow endpoints.
+router.post('/routing-preview', auth, previewRescueRouting);
 router.post('/', auth, createReport);
 router.get('/mine', auth, getMyReports);
 router.get('/notifications/mine', auth, getMyNotifications);

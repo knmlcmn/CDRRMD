@@ -5,6 +5,8 @@ const {
   resolveBarangayAtLocation,
   resolveNearbyBarangayAtLocation,
 } = require('../services/barangayJurisdictionService');
+const { resolveRescueJurisdiction } = require('../services/rescueJurisdictionService');
+const { validateRescueLocationObservation } = require('../services/rescueLocationValidationService');
 const {
   SUPPORTED_BARANGAYS: FLOOD_ALERT_BARANGAYS,
   isSupportedBarangay,
@@ -115,6 +117,28 @@ function parseLocationCoordinates(rawLatitude, rawLongitude, locationText) {
   };
 }
 
+async function previewRescueRouting(req, res) {
+  if (req.user?.role !== 'user') {
+    return res.status(403).json({ message: 'Resident account access required.' });
+  }
+  const latitude = Number(req.body?.latitude);
+  const longitude = Number(req.body?.longitude);
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90
+    || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+    return res.status(400).json({ message: 'Valid GPS coordinates are required.' });
+  }
+  const testModeEnabled = req.body?.testModeEnabled === true
+    || req.body?.testModeBypassServiceArea === true;
+  const jurisdiction = resolveRescueJurisdiction(latitude, longitude, testModeEnabled);
+  if (!jurisdiction) {
+    return res.status(422).json({
+      message: 'This location is outside the six supported barangays. Enable Test Mode to continue with a real rescue request.',
+      code: 'OUTSIDE_BARANGAY_JURISDICTION',
+    });
+  }
+  return res.json(jurisdiction);
+}
+
 async function resolveNearestRescueTeam(client, latitude, longitude) {
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
     return null;
@@ -144,12 +168,17 @@ async function createReport(req, res) {
   if (!userId) {
     return res.status(401).json({ message: 'Invalid token payload.' });
   }
+  if (req.user?.role !== 'user') {
+    return res.status(403).json({ message: 'Resident account access required.' });
+  }
 
   const {
     reportType,
     location,
     latitude,
     longitude,
+    locationCapturedAt,
+    locationAccuracyMeters,
     evacuationAreaId,
     evacuationAreaName,
     incidentType,
@@ -160,6 +189,9 @@ async function createReport(req, res) {
     imageBase64,
     fullName,
     contactNumber,
+    testModeEnabled,
+    testModeBypassServiceArea,
+    outsideAreaRealDispatchAcknowledged,
     floodAlertNotificationId,
   } = req.body || {};
 
@@ -235,6 +267,21 @@ async function createReport(req, res) {
     return res.status(400).json({ message: 'Latitude/longitude must be valid numbers.' });
   }
 
+  if (normalizedType === 'rescue') {
+    const locationObservation = validateRescueLocationObservation({
+      latitude: lat,
+      longitude: lon,
+      capturedAt: locationCapturedAt,
+      accuracyMeters: locationAccuracyMeters,
+    });
+    if (!locationObservation.ok) {
+      return res.status(locationObservation.status).json({
+        message: locationObservation.message,
+        code: locationObservation.code,
+      });
+    }
+  }
+
   const userResult = await pool.query(
     `SELECT id, first_name, last_name, contact_number, email, barangay_name
      FROM users
@@ -248,17 +295,23 @@ async function createReport(req, res) {
     return res.status(404).json({ message: 'User not found.' });
   }
 
-  const locationBarangay = resolveBarangayAtLocation(lat, lon);
-  // Rescue jurisdiction always comes from the submitted GPS coordinates.
-  // Never allow an untrusted request field or stored profile barangay to
-  // substitute for authoritative boundary validation.
-  const serviceAreaBarangay = isSupportedBarangay(locationBarangay) ? locationBarangay : null;
-  if (!serviceAreaBarangay) {
+  const geographicalBypassEnabled = normalizedType === 'rescue'
+    && (testModeEnabled === true || testModeBypassServiceArea === true);
+  const jurisdiction = resolveRescueJurisdiction(lat, lon, geographicalBypassEnabled);
+  if (!jurisdiction) {
     return res.status(422).json({
-      message: 'This location is outside the supported barangay jurisdiction. The report cannot be submitted.',
+      message: 'Your fresh GPS location is outside the six supported barangays. Enable Test Mode to request a real out-of-area response.',
       code: 'OUTSIDE_BARANGAY_JURISDICTION',
     });
   }
+  if (jurisdiction.outsideNormalServiceArea && outsideAreaRealDispatchAcknowledged !== true) {
+    return res.status(428).json({
+      message: 'Confirm that this is a real emergency request outside the normal service area and that response availability is not guaranteed.',
+      code: 'OUTSIDE_AREA_REAL_DISPATCH_CONFIRMATION_REQUIRED',
+      handlingBarangay: jurisdiction.handlingBarangay,
+    });
+  }
+  const serviceAreaBarangay = jurisdiction.handlingBarangay;
 
   const submittedName = String(fullName || '').trim();
   const profileName = `${String(user.first_name || '').trim()} ${String(user.last_name || '').trim()}`.trim();
@@ -308,8 +361,7 @@ async function createReport(req, res) {
     let evacuationReassigned = false;
 
     if (normalizedType === 'rescue') {
-      // Use the report location's barangay first. If every local center is
-      // full, the routing service expands the search to other barangays.
+      // The operational destination must remain in the handling barangay.
       const availableArea = await findNearestAvailableEvacuationArea(
         client,
         lat,
@@ -319,13 +371,12 @@ async function createReport(req, res) {
           requirePreferredArea: false,
           requiredSlots: rescuePartySize,
           barangayName: assignedBarangay,
-          allowOtherBarangaysWhenLocalFull: true,
         },
       );
       if (!availableArea) {
         await client.query('ROLLBACK');
         return res.status(409).json({
-          message: 'The road-recommended evacuation center is no longer available. Please calculate a new route and try again.',
+          message: `No active, capacity-eligible, road-reachable evacuation center in Barangay ${assignedBarangay} could be verified. Hazard clearance and incident-specific suitability require operational review.`,
           code: 'NO_AVAILABLE_EVACUATION_AREA',
         });
       }
@@ -362,9 +413,10 @@ async function createReport(req, res) {
         status,
         evacuation_area_id,
         evacuation_area_name,
-        evacuees_reserved
+        evacuees_reserved,
+        outside_normal_service_area
       )
-      VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      VALUES ('', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING id, created_at`,
       [
         normalizedType,
@@ -383,6 +435,7 @@ async function createReport(req, res) {
         resolvedAreaId,
         resolvedAreaName,
         normalizedType === 'rescue' ? rescuePartySize : 0,
+        jurisdiction.outsideNormalServiceArea,
       ],
     );
 
@@ -395,34 +448,36 @@ async function createReport(req, res) {
            updated_at = NOW(),
            updated_by = $3
        WHERE id = $2
-       RETURNING id, report_code, report_type, location, latitude, longitude, assigned_barangay, incident_type, water_level, are_people_trapped, estimated_people, notes, image_base64, reported_by, status, evacuation_area_id, evacuation_area_name, evacuees_reserved, created_at, updated_at`,
+       RETURNING id, report_code, report_type, location, latitude, longitude, assigned_barangay, outside_normal_service_area, incident_type, water_level, are_people_trapped, estimated_people, notes, image_base64, reported_by, status, evacuation_area_id, evacuation_area_name, evacuees_reserved, created_at, updated_at`,
       [reportCode, created.id, userId],
     );
 
     const report = updated.rows[0];
 
-    try {
-      await createStatusLog(
-        client,
-        report.id,
-        null,
-        normalizedStatus,
-        userId,
-        'Report submitted by user',
-        {
-          fullName: finalFullName,
-          contactNumber: finalContact,
-          reportType: normalizedType,
-          evacuationAreaId: resolvedAreaId,
-          evacuationAreaName: resolvedAreaName,
-          evacuationReassigned,
-          floodAlertNotificationId: verifiedFloodAlertProof?.id || null,
-        },
-      );
-    } catch (logError) {
-      // Keep report creation successful even if audit logging fails.
-      console.error('Failed to write initial report status log:', logError.message);
-    }
+    await createStatusLog(
+      client,
+      report.id,
+      null,
+      normalizedStatus,
+      userId,
+      'Report submitted by user',
+      {
+        fullName: finalFullName,
+        contactNumber: finalContact,
+        reportType: normalizedType,
+        evacuationAreaId: resolvedAreaId,
+        evacuationAreaName: resolvedAreaName,
+        evacuationReassigned,
+        evacuationSelectionBasis: 'active center with coordinates, available capacity, and OSRM road reachability',
+        hazardClearanceVerified: false,
+        incidentSuitabilityVerified: false,
+        testModeEnabled: geographicalBypassEnabled,
+        outsideNormalServiceArea: jurisdiction.outsideNormalServiceArea,
+        handlingBarangaySelection: jurisdiction.selectionMethod,
+        distanceToHandlingBoundaryKm: jurisdiction.distanceToBoundaryKm ?? null,
+        floodAlertNotificationId: verifiedFloodAlertProof?.id || null,
+      },
+    );
 
     try {
       await createNotification(
@@ -452,6 +507,9 @@ async function createReport(req, res) {
     return res.status(201).json({
       ...report,
       message: 'Report submitted successfully.',
+      evacuation_selection_advisory: normalizedType === 'rescue'
+        ? 'Road reachability and capacity were verified. Hazard clearance and incident-specific suitability data are not available and require operational review.'
+        : null,
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -477,6 +535,7 @@ async function getMyReports(req, res) {
       r.latitude,
       r.longitude,
       r.assigned_barangay,
+      r.outside_normal_service_area,
       r.incident_type,
       r.water_level,
       r.are_people_trapped,
@@ -545,6 +604,7 @@ async function getReports(req, res) {
       r.latitude,
       r.longitude,
       r.assigned_barangay,
+      r.outside_normal_service_area,
       r.incident_type,
       r.water_level,
       r.are_people_trapped,
@@ -709,7 +769,7 @@ async function updateReportStatus(req, res) {
   const declineExplanation = String(req.body?.declineExplanation || '').trim();
 
   const currentResult = await pool.query(
-    `SELECT id, status, report_code, report_type, reported_by, latitude, longitude, assigned_barangay, evacuation_area_id, evacuation_area_name, evacuees_reserved
+    `SELECT id, status, report_code, report_type, reported_by, latitude, longitude, assigned_barangay, outside_normal_service_area, evacuation_area_id, evacuation_area_name, evacuees_reserved
      FROM incident_reports
      WHERE id = $1
      LIMIT 1`,
@@ -811,7 +871,6 @@ async function updateReportStatus(req, res) {
               requiredSlots: Math.max(1, Number(current.evacuees_reserved || 1)),
               excludeReportId: current.id,
               barangayName: current.assigned_barangay,
-              allowOtherBarangays: true,
             })
           : null;
 
@@ -826,7 +885,6 @@ async function updateReportStatus(req, res) {
               requiredSlots: Math.max(1, Number(current.evacuees_reserved || 1)),
               excludeReportId: current.id,
               barangayName: current.assigned_barangay,
-              allowOtherBarangaysWhenLocalFull: true,
             },
           );
         }
@@ -957,24 +1015,20 @@ async function updateReportStatus(req, res) {
         ? 'Barangay accepted the report and automatically dispatched the nearest available Barangay Rescuer.'
         : `Barangay declined the report: ${declineExplanation}`;
 
-      try {
-        await createStatusLog(
-          client,
-          reportId,
-          oldStatus,
-          effectiveBarangayStatus,
-          req.user.userId,
-          actionNote,
-          {
-            barangayName: req.user?.barangayName || null,
-            notes: nextAdminNotes || null,
-            declineReason: nextDeclineReason || null,
-            declineExplanation: nextDeclineExplanation || null,
-          },
-        );
-      } catch (logError) {
-        console.error('Failed to write report status log:', logError.message);
-      }
+      await createStatusLog(
+        client,
+        reportId,
+        oldStatus,
+        effectiveBarangayStatus,
+        req.user.userId,
+        actionNote,
+        {
+          barangayName: req.user?.barangayName || null,
+          notes: nextAdminNotes || null,
+          declineReason: nextDeclineReason || null,
+          declineExplanation: nextDeclineExplanation || null,
+        },
+      );
 
       // Automatic assignment already notifies accepted requests. Declines need
       // their own notification because no dispatch is created.
@@ -1011,7 +1065,6 @@ async function updateReportStatus(req, res) {
           requiredSlots: effectiveEvacueesReserved,
           excludeReportId: current.id,
           barangayName: current.assigned_barangay,
-          allowOtherBarangaysWhenLocalFull: true,
         },
       );
 
@@ -1046,7 +1099,6 @@ async function updateReportStatus(req, res) {
             requiredSlots: effectiveEvacueesReserved,
             excludeReportId: current.id,
             barangayName: current.assigned_barangay,
-            allowOtherBarangaysWhenLocalFull: true,
           },
         );
 
@@ -1124,27 +1176,22 @@ async function updateReportStatus(req, res) {
             ? 'Rescue completed successfully.'
             : `Report declined: ${declineExplanation}`;
 
-    try {
-      await createStatusLog(
-        client,
-        reportId,
-        oldStatus,
-        nextStatus,
-        req.user.userId,
-        actionNote,
-        {
-          assignTeam: effectiveAssignTeam || null,
-          evacuationAreaId: effectiveEvacuationAreaId,
-          evacuationAreaName: effectiveEvacuationAreaName,
-          notes: notes || null,
-          declineReason: declineReason || null,
-          declineExplanation: declineExplanation || null,
-        },
-      );
-    } catch (logError) {
-      // Keep status transition successful even if audit log insert fails.
-      console.error('Failed to write report status log:', logError.message);
-    }
+    await createStatusLog(
+      client,
+      reportId,
+      oldStatus,
+      nextStatus,
+      req.user.userId,
+      actionNote,
+      {
+        assignTeam: effectiveAssignTeam || null,
+        evacuationAreaId: effectiveEvacuationAreaId,
+        evacuationAreaName: effectiveEvacuationAreaName,
+        notes: notes || null,
+        declineReason: declineReason || null,
+        declineExplanation: declineExplanation || null,
+      },
+    );
 
     const userMessage =
       nextStatus === 'accepted'
@@ -1193,7 +1240,7 @@ async function getReportLogs(req, res) {
   }
 
   const reportResult = await pool.query(
-    'SELECT id, reported_by FROM incident_reports WHERE id = $1 LIMIT 1',
+    'SELECT id, reported_by, assigned_barangay FROM incident_reports WHERE id = $1 LIMIT 1',
     [reportId],
   );
 
@@ -1202,7 +1249,10 @@ async function getReportLogs(req, res) {
     return res.status(404).json({ message: 'Report not found.' });
   }
 
-  if (req.user?.role !== 'admin' && req.user?.userId !== report.reported_by) {
+  const isHandlingBarangay = req.user?.role === 'barangay'
+    && String(req.user?.barangayName || '').trim().toLowerCase()
+      === String(report.assigned_barangay || '').trim().toLowerCase();
+  if (req.user?.role !== 'admin' && req.user?.userId !== report.reported_by && !isHandlingBarangay) {
     return res.status(403).json({ message: 'Access denied.' });
   }
 
@@ -1412,6 +1462,7 @@ async function unregisterPushToken(req, res) {
 }
 
 module.exports = {
+  previewRescueRouting,
   createReport,
   getMyReports,
   getReports,

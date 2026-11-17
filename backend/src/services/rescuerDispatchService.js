@@ -99,15 +99,10 @@ async function assignNearestAvailableRescuer(client, dispatchId, dispatchType, c
   const dispatchResult = await client.query(
     `SELECT br.id, br.report_id, br.barangay_name, br.assigned_rescuer_id, br.assigned_at,
             ir.status, ir.reported_by, ir.report_code,
-            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
-                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
-              THEN reporter.current_latitude ELSE ir.latitude END AS latitude,
-            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
-                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
-              THEN reporter.current_longitude ELSE ir.longitude END AS longitude
+            ir.latitude AS latitude,
+            ir.longitude AS longitude
      FROM backup_requests br
      JOIN incident_reports ir ON ir.id = br.report_id
-     LEFT JOIN users reporter ON reporter.id = ir.reported_by
      WHERE br.id = $1 AND br.dispatch_type = $2
        AND br.arrived_at IS NULL AND br.declined_at IS NULL
      FOR UPDATE OF br, ir`,

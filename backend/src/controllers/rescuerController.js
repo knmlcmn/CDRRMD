@@ -8,6 +8,10 @@ const {
 } = require('../services/evacuationRoutingService');
 const { loadHardwareSensorSnapshot } = require('../services/hardwareSensorService');
 const { listVisibleLiveRescuers } = require('../services/rescuerPresenceService');
+const {
+  REQUIRED_SAMPLES,
+  evaluatePickupObservation,
+} = require('../services/pickupInferenceService');
 
 function requireRole(req, role) {
   if (req.user?.role !== role) {
@@ -270,14 +274,10 @@ async function listMyIncidents(req, res) {
             ir.id, ir.report_code, ir.report_type, ir.incident_type, ir.status,
             ir.location,
             ir.latitude AS reported_latitude, ir.longitude AS reported_longitude,
-            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
-                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
-              THEN reporter.current_latitude ELSE ir.latitude END AS latitude,
-            CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
-                AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
-              THEN reporter.current_longitude ELSE ir.longitude END AS longitude,
+            ir.latitude AS latitude,
+            ir.longitude AS longitude,
             reporter.location_updated_at AS resident_location_updated_at,
-            ir.notes, ir.estimated_people, ir.evacuees_reserved,
+            ir.notes, ir.estimated_people, ir.evacuees_reserved, ir.outside_normal_service_area,
             ir.assigned_barangay, ir.evacuation_area_id, ir.evacuation_area_name,
             ea.latitude AS evacuation_latitude, ea.longitude AS evacuation_longitude,
             NULLIF(TRIM(CONCAT_WS(' ', reporter.first_name, reporter.last_name)), '') AS reporter_name,
@@ -443,6 +443,8 @@ async function updateMyLocation(req, res) {
   const scope = responseScope(req);
   const latitude = Number(req.body?.latitude);
   const longitude = Number(req.body?.longitude);
+  const accuracyMeters = Number(req.body?.accuracyMeters);
+  const capturedAt = req.body?.capturedAt;
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
     || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
     throw httpError(400, 'Valid latitude and longitude are required.');
@@ -461,18 +463,15 @@ async function updateMyLocation(req, res) {
 
     const assignmentResult = await client.query(
       `SELECT br.id AS backup_request_id, br.report_id, br.responder_acknowledged_at, br.picked_up_at,
+              br.pickup_proximity_started_at, br.pickup_proximity_sample_count,
+              br.pickup_last_observed_at,
               ir.status, ir.reported_by, ir.report_code, ir.assigned_barangay, ir.evacuees_reserved,
               ir.evacuation_area_id, ir.evacuation_area_name,
-              CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
-                  AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
-                THEN reporter.current_latitude ELSE ir.latitude END AS incident_latitude,
-              CASE WHEN reporter.location_updated_at >= NOW() - INTERVAL '5 minutes'
-                  AND reporter.current_latitude IS NOT NULL AND reporter.current_longitude IS NOT NULL
-                THEN reporter.current_longitude ELSE ir.longitude END AS incident_longitude,
+              ir.latitude AS incident_latitude,
+              ir.longitude AS incident_longitude,
               ea.latitude AS evacuation_latitude, ea.longitude AS evacuation_longitude
        FROM backup_requests br
        JOIN incident_reports ir ON ir.id = br.report_id
-       LEFT JOIN users reporter ON reporter.id = ir.reported_by
        LEFT JOIN evacuation_areas ea ON ea.id = ir.evacuation_area_id
        WHERE br.assigned_rescuer_id = $1
          AND br.dispatch_type = $2
@@ -497,35 +496,130 @@ async function updateMyLocation(req, res) {
     const wasPickedUp = Boolean(assignment.picked_up_at);
     let pickupConfirmed = false;
     let rerouted = false;
+    let pickupInference = null;
 
-    // The server performs the transition atomically with the GPS update. A
-    // browser accuracy estimate must not block two markers that have met.
-    if (!assignment.picked_up_at && incidentDistanceMeters <= 50) {
-      const destinationArea = await findNearestAvailableEvacuationArea(
-        client,
-        Number(assignment.incident_latitude),
-        Number(assignment.incident_longitude),
-        {
-          requiredSlots: Math.max(1, Number(assignment.evacuees_reserved || 1)),
-          excludeReportId: assignment.report_id,
-          barangayName: assignment.assigned_barangay,
-          allowOtherBarangaysWhenLocalFull: true,
-        },
-      );
+    if (!assignment.picked_up_at && assignment.status === 'accepted') {
+      pickupInference = evaluatePickupObservation({
+        capturedAt,
+        accuracyMeters,
+        distanceMeters: incidentDistanceMeters,
+        acknowledgedAt: assignment.responder_acknowledged_at,
+        previousObservedAt: assignment.pickup_last_observed_at,
+        proximityStartedAt: assignment.pickup_proximity_started_at,
+        proximitySampleCount: assignment.pickup_proximity_sample_count,
+      });
+      if (pickupInference.accepted) {
+        await client.query(
+          `UPDATE backup_requests
+           SET pickup_proximity_started_at = $1,
+               pickup_proximity_sample_count = $2,
+               pickup_last_observed_at = $3,
+               pickup_last_latitude = $4,
+               pickup_last_longitude = $5,
+               pickup_last_accuracy_m = $6
+           WHERE id = $7`,
+          [
+            pickupInference.proximityStartedAt,
+            pickupInference.proximitySampleCount,
+            pickupInference.observedAt,
+            latitude,
+            longitude,
+            accuracyMeters,
+            assignment.backup_request_id,
+          ],
+        );
+      }
+    }
+
+    if (!assignment.picked_up_at && assignment.status === 'accepted' && pickupInference?.qualified) {
+      const requiredSlots = Math.max(1, Number(assignment.evacuees_reserved || 1));
+      let destinationArea = assignment.evacuation_area_id
+        ? await evacuationAreaStillHasCapacity(client, assignment.evacuation_area_id, {
+            requiredSlots,
+            excludeReportId: assignment.report_id,
+            barangayName: assignment.assigned_barangay,
+          })
+        : null;
       if (!destinationArea) {
-        throw httpError(409, 'No reachable evacuation center currently has enough available capacity.');
+        destinationArea = await findNearestAvailableEvacuationArea(
+          client,
+          Number(assignment.incident_latitude),
+          Number(assignment.incident_longitude),
+          {
+            requiredSlots,
+            excludeReportId: assignment.report_id,
+            barangayName: assignment.assigned_barangay,
+          },
+        );
+      }
+      if (!destinationArea) {
+        await client.query(
+          `UPDATE backup_requests
+           SET pickup_proximity_started_at = NULL,
+               pickup_proximity_sample_count = 0
+           WHERE id = $1`,
+          [assignment.backup_request_id],
+        );
+        await client.query(
+          `INSERT INTO report_status_logs
+             (report_id, old_status, new_status, changed_by, action_note, metadata)
+           SELECT $1, 'accepted', 'accepted', $2, $3, $4::jsonb
+           WHERE NOT EXISTS (
+             SELECT 1 FROM report_status_logs
+             WHERE report_id = $1
+               AND metadata->>'eventCode' = 'NO_VERIFIED_EVACUATION_DESTINATION'
+               AND created_at >= NOW() - INTERVAL '10 minutes'
+           )`,
+          [
+            assignment.report_id,
+            req.user.userId,
+            'Automatic pickup inference remained pending because no verified evacuation destination was available.',
+            JSON.stringify({
+              eventCode: 'NO_VERIFIED_EVACUATION_DESTINATION',
+              backupRequestId: assignment.backup_request_id,
+              automaticPickupDeferred: true,
+              reason: 'No active same-barangay destination with valid coordinates and available capacity could be verified.',
+            }),
+          ],
+        );
+        await client.query('COMMIT');
+        return res.json({
+          ...locationResult.rows[0],
+          backupRequestId: assignment.backup_request_id,
+          pickupConfirmed: false,
+          operationalException: {
+            code: 'NO_VERIFIED_EVACUATION_DESTINATION',
+            message: 'Pickup was not inferred because no active evacuation center in the handling barangay has verified coordinates, available capacity, and a reachable road route. Suitability and hazard clearance require operational review.',
+          },
+          pickupInference: {
+            accepted: true,
+            qualified: true,
+            reason: pickupInference.reason,
+            sampleCount: pickupInference.proximitySampleCount,
+            requiredSamples: REQUIRED_SAMPLES,
+          },
+        });
       }
       assignment.evacuation_area_id = Number(destinationArea.id);
       assignment.evacuation_area_name = destinationArea.name;
       assignment.evacuation_latitude = Number(destinationArea.latitude);
       assignment.evacuation_longitude = Number(destinationArea.longitude);
-      await client.query(
+      const transitionResult = await client.query(
         `UPDATE incident_reports
          SET evacuation_area_id = $1, evacuation_area_name = $2,
              status = 'in_progress', updated_at = NOW(), updated_by = $3
-         WHERE id = $4`,
+         WHERE id = $4 AND status = 'accepted'
+         RETURNING id`,
         [destinationArea.id, destinationArea.name, req.user.userId, assignment.report_id],
       );
+      if (!transitionResult.rows[0]) {
+        await client.query('COMMIT');
+        return res.json({
+          ...locationResult.rows[0],
+          pickupConfirmed: false,
+          pickupInference: { reason: 'status-already-transitioned' },
+        });
+      }
       const pickupResult = await client.query(
         `UPDATE backup_requests SET picked_up_at = COALESCE(picked_up_at, NOW())
          WHERE id = $1 RETURNING picked_up_at`,
@@ -535,12 +629,12 @@ async function updateMyLocation(req, res) {
       await client.query(
         `INSERT INTO report_status_logs (report_id, old_status, new_status, changed_by, action_note, metadata)
          VALUES ($1, $2, 'in_progress', $3, $4, $5::jsonb)`,
-        [assignment.report_id, assignment.status, req.user.userId, `Responder reached the resident. Routing to ${assignment.evacuation_area_name}.`, JSON.stringify({ backupRequestId: assignment.backup_request_id, evacuationAreaId: assignment.evacuation_area_id, pickedUp: true, automatic: true })],
+        [assignment.report_id, 'accepted', req.user.userId, `Sustained responder proximity inferred pickup. Routing to ${assignment.evacuation_area_name}.`, JSON.stringify({ backupRequestId: assignment.backup_request_id, evacuationAreaId: assignment.evacuation_area_id, pickedUp: true, automatic: true, inference: 'fresh accurate incident-associated GPS samples showed sustained proximity; GPS alone does not prove physical pickup', sampleCount: pickupInference.proximitySampleCount, sustainedMs: pickupInference.sustainedMs })],
       );
       await client.query(
         `INSERT INTO user_notifications (user_id, report_id, title, body)
          VALUES ($1, $2, $3, $4)`,
-        [assignment.reported_by, assignment.report_id, `Report ${assignment.report_code || assignment.report_id} updated`, `Your responder reached you. The route now leads to ${assignment.evacuation_area_name}.`],
+        [assignment.reported_by, assignment.report_id, `Report ${assignment.report_code || assignment.report_id} updated`, `Pickup was inferred from sustained responder proximity. The route now leads to ${assignment.evacuation_area_name}.`],
       );
       pickupConfirmed = true;
     }
@@ -550,14 +644,14 @@ async function updateMyLocation(req, res) {
       const currentArea = await evacuationAreaStillHasCapacity(
         client,
         assignment.evacuation_area_id,
-        { requiredSlots, excludeReportId: assignment.report_id, barangayName: assignment.assigned_barangay, allowOtherBarangays: true },
+        { requiredSlots, excludeReportId: assignment.report_id, barangayName: assignment.assigned_barangay },
       );
       if (!currentArea) {
         const replacementArea = await findNearestAvailableEvacuationArea(
           client,
           latitude,
           longitude,
-          { requiredSlots, excludeReportId: assignment.report_id, barangayName: assignment.assigned_barangay, allowOtherBarangaysWhenLocalFull: true },
+          { requiredSlots, excludeReportId: assignment.report_id, barangayName: assignment.assigned_barangay },
         );
         if (!replacementArea) {
           throw httpError(409, 'The assigned evacuation center is full and no reachable alternative currently has enough capacity.');
@@ -605,6 +699,13 @@ async function updateMyLocation(req, res) {
       backupRequestId: assignment.backup_request_id,
       distanceMeters: currentDistanceMeters == null ? null : Math.round(currentDistanceMeters),
       pickupConfirmed,
+      pickupInference: pickupInference ? {
+        accepted: pickupInference.accepted,
+        qualified: pickupInference.qualified,
+        reason: pickupInference.reason,
+        sampleCount: pickupInference.proximitySampleCount || 0,
+        requiredSamples: REQUIRED_SAMPLES,
+      } : null,
       rerouted,
       evacuationAreaId: assignment.evacuation_area_id,
       evacuationAreaName: assignment.evacuation_area_name,
