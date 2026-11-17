@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { beginPerformanceStage, endPerformanceStage } from '../utils/performanceDiagnosticsCore';
 
-export type LiveLocation = { latitude: number; longitude: number; capturedAt: number };
+export type LiveLocation = { latitude: number; longitude: number; capturedAt: number; accuracyMeters?: number | null };
 export type LiveLocationSubscription = { remove: () => void };
 
 export type LocationAccessResult =
@@ -16,6 +16,7 @@ function toLiveLocation(position: Location.LocationObject): LiveLocation {
     latitude: position.coords.latitude,
     longitude: position.coords.longitude,
     capturedAt: position.timestamp,
+    accuracyMeters: position.coords.accuracy,
   };
 }
 
@@ -43,21 +44,28 @@ function permissionMessage(canAskAgain: boolean) {
   return 'Location access is required to use this app. Select Try Again and allow the location request.';
 }
 
-async function requestWebLocation(): Promise<LocationAccessResult> {
+async function requestWebLocation(requireFreshAccurate = false): Promise<LocationAccessResult> {
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     return { ok: false, message: 'Location is not supported by this browser.' };
   }
 
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
-      (position) => resolve({
-        ok: true,
-        location: {
+      (position) => {
+        if (requireFreshAccurate && (!Number.isFinite(position.coords.accuracy) || position.coords.accuracy > 50)) {
+          resolve({ ok: false, message: 'A fresh GPS fix accurate to 50 meters is required before creating a real rescue request.' });
+          return;
+        }
+        resolve({
+          ok: true,
+          location: {
           latitude: position.coords.latitude,
           longitude: position.coords.longitude,
           capturedAt: position.timestamp,
-        },
-      }),
+          accuracyMeters: position.coords.accuracy,
+          },
+        });
+      },
       (error) => resolve({
         ok: false,
         message: error.code === error.PERMISSION_DENIED
@@ -70,12 +78,15 @@ async function requestWebLocation(): Promise<LocationAccessResult> {
 }
 
 /** Permission alone is insufficient when the device location service is off. */
-export async function requireLiveLocation(requestPermission: boolean): Promise<LocationAccessResult> {
+export async function requireLiveLocation(
+  requestPermission: boolean,
+  options: { requireFreshAccurate?: boolean } = {},
+): Promise<LocationAccessResult> {
   try {
     // Calling the browser geolocation API directly from the modal button is
     // what triggers the browser/device permission prompt on the web build.
     if (Platform.OS === 'web') {
-      return await requestWebLocation();
+      return await requestWebLocation(Boolean(options.requireFreshAccurate));
     }
 
     const permissionMarker = beginPerformanceStage('location-permission-readiness');
@@ -100,20 +111,22 @@ export async function requireLiveLocation(requestPermission: boolean): Promise<L
 
     // Both portals maintain a location watcher. Reuse its recent accurate fix
     // before waking GPS and waiting for another satellite/network position.
-    const cacheMarker = beginPerformanceStage('location-cache-readiness');
-    const recent = await Location.getLastKnownPositionAsync({
-      maxAge: 30_000,
-      requiredAccuracy: 200,
-    }).catch(() => null);
-    endPerformanceStage(cacheMarker, { success: Boolean(recent) });
-    if (recent) return { ok: true, location: toLiveLocation(recent) };
+    if (!options.requireFreshAccurate) {
+      const cacheMarker = beginPerformanceStage('location-cache-readiness');
+      const recent = await Location.getLastKnownPositionAsync({
+        maxAge: 30_000,
+        requiredAccuracy: 200,
+      }).catch(() => null);
+      endPerformanceStage(cacheMarker, { success: Boolean(recent) });
+      if (recent) return { ok: true, location: toLiveLocation(recent) };
+    }
 
     const currentMarker = beginPerformanceStage('location-current-position');
     let position: Location.LocationObject;
     try {
       position = await withLocationTimeout(
         Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
+          accuracy: options.requireFreshAccurate ? Location.Accuracy.High : Location.Accuracy.Balanced,
           mayShowUserSettingsDialog: true,
         }),
         LOCATION_TIMEOUT_MS,
@@ -124,7 +137,14 @@ export async function requireLiveLocation(requestPermission: boolean): Promise<L
       throw error;
     }
 
-    return { ok: true, location: toLiveLocation(position) };
+    const location = toLiveLocation(position);
+    if (options.requireFreshAccurate
+      && (Date.now() - location.capturedAt > 30_000
+        || location.accuracyMeters == null
+        || location.accuracyMeters > 50)) {
+      return { ok: false, message: 'A fresh GPS fix accurate to 50 meters is required before creating a real rescue request.' };
+    }
+    return { ok: true, location };
   } catch (error: any) {
     const rawMessage = String(error?.message || '').toLowerCase();
     return {

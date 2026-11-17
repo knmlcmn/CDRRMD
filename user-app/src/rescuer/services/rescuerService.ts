@@ -43,12 +43,18 @@ export function sendHeartbeat() {
   return heartbeatDispatcher.trigger();
 }
 
-export function updateResponderLocation(latitude: number, longitude: number) {
+export function updateResponderLocation(
+  latitude: number,
+  longitude: number,
+  capturedAt: number,
+  accuracyMeters?: number | null,
+) {
   return api.patch<{
     pickupConfirmed?: boolean;
     rerouted?: boolean;
     evacuationAreaName?: string | null;
-  }>('/rescuers/location', { latitude, longitude });
+    operationalException?: { code: string; message: string } | null;
+  }>('/rescuers/location', { latitude, longitude, capturedAt, accuracyMeters });
 }
 
 export function updateMyProfile(payload: {

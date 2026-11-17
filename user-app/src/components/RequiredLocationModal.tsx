@@ -53,7 +53,7 @@ export default function RequiredLocationModal({ loading, message, activeSession 
             <MaterialCommunityIcons name={testModeEnabled ? 'toggle-switch' : 'toggle-switch-off-outline'} size={24} color={testModeEnabled ? '#991b1b' : '#475569'} />
             <View style={styles.testModeCopy}>
               <Text style={styles.testModeTitle}>Test Mode: {testModeEnabled ? 'On' : 'Off'}</Text>
-              <Text style={styles.testModeHelp}>Allows app access outside the six barangays for testing.</Text>
+              <Text style={styles.testModeHelp}>Allows a real rescue request outside the six normal service areas. It is not a simulation.</Text>
             </View>
           </TouchableOpacity>
           <Text style={styles.requiredNote}>

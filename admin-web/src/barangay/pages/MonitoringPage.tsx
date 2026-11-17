@@ -608,6 +608,7 @@ export default function MonitoringPage({ barangayName, onLogout, onOpenDashboard
           <p><strong>ID:</strong> {selectedReport.report_code || `RPT-${String(selectedReport.id).padStart(6, '0')}`}</p>
           <p><strong>Status:</strong> {formatIncidentStatus(selectedReport.status, Boolean(selectedReport.picked_up_at))}</p>
           <p><strong>Location:</strong> {selectedReport.location}</p>
+          {selectedReport.outside_normal_service_area ? <p style={{ color: '#b91c1c', fontWeight: 800 }}><strong>OUTSIDE NORMAL SERVICE AREA</strong> — real dispatch to reported GPS</p> : null}
           {selectedReport.water_level ? <p><strong>Water Level:</strong> {selectedReport.water_level}</p> : null}
           {selectedReport.are_people_trapped ? <p><strong>People Trapped:</strong> {selectedReport.estimated_people ?? 'Unknown'}</p> : null}
           {isRescueAwaitingPickup(selectedReport) && selectedReport.assigned_rescuer_id ? (
