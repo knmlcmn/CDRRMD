@@ -8,6 +8,10 @@ const profile = eas.build?.['production-v10-performance'];
 
 const failures = [];
 if (app?.version !== '1.0.4') failures.push('Expo app version must remain 1.0.4.');
+if (app?.android?.versionCode !== 10) failures.push('Android versionCode must remain 10.');
+if (app?.android?.package !== 'ph.gov.calambacity.cdrrmd') failures.push('Android package identity changed.');
+if (app?.owner !== 'polmokmoktomi') failures.push('Expo owner must remain polmokmoktomi.');
+if (app?.extra?.eas?.projectId !== '5bfee76a-32ab-4691-a88f-98236817fba8') failures.push('EAS project ID changed.');
 if (app?.runtimeVersion?.policy !== 'appVersion') failures.push('Runtime policy must remain appVersion.');
 if (app?.updates?.enabled !== true) failures.push('Expo Updates must remain enabled.');
 if (!app?.updates?.url) failures.push('Expo Updates URL is required.');

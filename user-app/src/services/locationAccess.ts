@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { beginPerformanceStage, endPerformanceStage } from '../utils/performanceDiagnosticsCore';
+import { validateRescueGpsObservation } from './rescueLocationContract';
 
 export type LiveLocation = { latitude: number; longitude: number; capturedAt: number; accuracyMeters?: number | null };
 export type LiveLocationSubscription = { remove: () => void };
@@ -52,18 +53,19 @@ async function requestWebLocation(requireFreshAccurate = false): Promise<Locatio
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        if (requireFreshAccurate && (!Number.isFinite(position.coords.accuracy) || position.coords.accuracy > 50)) {
+        const location: LiveLocation = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          capturedAt: position.timestamp,
+          accuracyMeters: position.coords.accuracy,
+        };
+        if (requireFreshAccurate && !validateRescueGpsObservation(location).ok) {
           resolve({ ok: false, message: 'A fresh GPS fix accurate to 50 meters is required before creating a real rescue request.' });
           return;
         }
         resolve({
           ok: true,
-          location: {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          capturedAt: position.timestamp,
-          accuracyMeters: position.coords.accuracy,
-          },
+          location,
         });
       },
       (error) => resolve({
@@ -138,10 +140,7 @@ export async function requireLiveLocation(
     }
 
     const location = toLiveLocation(position);
-    if (options.requireFreshAccurate
-      && (Date.now() - location.capturedAt > 30_000
-        || location.accuracyMeters == null
-        || location.accuracyMeters > 50)) {
+    if (options.requireFreshAccurate && !validateRescueGpsObservation(location).ok) {
       return { ok: false, message: 'A fresh GPS fix accurate to 50 meters is required before creating a real rescue request.' };
     }
     return { ok: true, location };

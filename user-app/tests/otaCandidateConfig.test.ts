@@ -38,3 +38,13 @@ test('production Firebase configuration matches the Android application identity
   );
   assert.ok(packages.includes(app.expo.android.package));
 });
+
+test('production OTA workflow is manual, SHA-pinned, and v10-channel only', async () => {
+  const workflow = await readFile(resolve(root, '../.github/workflows/eas-update-production.yml'), 'utf8');
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(workflow, /\n\s*push:/);
+  assert.match(workflow, /PUBLISH_RUNTIME_1_0_4/);
+  assert.match(workflow, /test "\$\(git rev-parse HEAD\)" = "\$REVIEWED_RELEASE_SHA"/);
+  assert.match(workflow, /--channel production-v10-performance/);
+  assert.doesNotMatch(workflow, /--channel production --platform android/);
+});

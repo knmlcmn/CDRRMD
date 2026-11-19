@@ -9,6 +9,7 @@ const screenPath = resolve(
   '../src/screens/RescueMapScreen.tsx',
 );
 const apiPath = resolve(dirname(fileURLToPath(import.meta.url)), '../src/services/api.ts');
+const locationPath = resolve(dirname(fileURLToPath(import.meta.url)), '../src/services/locationAccess.ts');
 
 test('Request Rescue renders its native shell before location and map readiness', async () => {
   const screen = await readFile(screenPath, 'utf8');
@@ -96,9 +97,11 @@ test('Test Mode uses server routing and requires explicit real-dispatch acknowle
 test('rescue submission sends fresh GPS metadata and old-backend fallback stays server-authoritative', async () => {
   const screen = await readFile(screenPath, 'utf8');
   const apiSource = await readFile(apiPath, 'utf8');
+  const locationSource = await readFile(locationPath, 'utf8');
   assert.match(screen, /locationCapturedAt: submissionLocation\.capturedAt/);
   assert.match(screen, /locationAccuracyMeters: submissionLocation\.accuracyMeters/);
   assert.match(screen, /requireLiveLocation\(true, \{ requireFreshAccurate: true \}\)/);
+  assert.match(locationSource, /validateRescueGpsObservation\(location\)/);
   assert.match(apiSource, /status !== 404 && status !== 405/);
   assert.match(apiSource, /if \(testModeEnabled\)/);
   assert.match(apiSource, /ROUTING_PREVIEW_UPGRADE_REQUIRED/);
