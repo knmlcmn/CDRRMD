@@ -53,6 +53,7 @@ type Props = {
 const MODERATE_WATER_LEVEL = 40;
 const HIGH_WATER_LEVEL = 61;
 const NOTIFICATION_POLL_INTERVAL_MS = 10_000;
+const WEB_ALERT_DURATION_MS = 60_000;
 
 export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved, onSendRescue }: Props) {
   const { height: viewportHeight, width: viewportWidth } = useWindowDimensions();
@@ -65,6 +66,8 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
   const cachedNotificationsRef = useRef<FloodNotification[]>([]);
   const lastNotificationCheckAtRef = useRef(0);
   const consecutiveSafeReadingsRef = useRef(0);
+  const webAlertVisibleUntilRef = useRef(0);
+  const timedOutWebAlertKeysRef = useRef(new Set<string>());
   const warningPulse = useRef(new Animated.Value(0)).current;
 
   const checkAlerts = useCallback(async () => {
@@ -132,6 +135,8 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
       // A safe cycle closes the current sensor event. A later rise is a new
       // emergency and may alert again even at a previously acknowledged level.
       acknowledgedEventsRef.current.delete(liveEventKey);
+      timedOutWebAlertKeysRef.current.delete(`${liveEventKey}:moderate`);
+      timedOutWebAlertKeysRef.current.delete(`${liveEventKey}:high`);
     }
 
     const matchingUnread = selectEligibleFloodNotifications({
@@ -192,6 +197,12 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
         live_event_key: liveEventKey,
       };
     }
+    const nextAlertEffectKey = nextAlert
+      ? `${nextAlert.live_event_key || nextAlert.notification_event_key || nextAlert.id}:${normalizeFloodSeverity(nextAlert.severity)}`
+      : '';
+    if (Platform.OS === 'web' && timedOutWebAlertKeysRef.current.has(nextAlertEffectKey)) {
+      nextAlert = null;
+    }
 
     setAlert((current) => {
       if (!nextAlert) {
@@ -203,6 +214,9 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
         const notificationNoLongerEligible = Boolean(
           current?.notification_event_key && !currentLiveEventKey,
         );
+        if (Platform.OS === 'web' && current && Date.now() < webAlertVisibleUntilRef.current) {
+          return current;
+        }
         return confirmedSafe || movedToDifferentSensor || notificationNoLongerEligible || isFloodEventAcknowledged(
           acknowledgedEventsRef.current,
           currentLiveEventKey || current?.notification_event_key,
@@ -313,6 +327,16 @@ export default function ResidentFloodAlert({ barangayName, onTestAccountRemoved,
       if (Platform.OS !== 'web') Vibration.cancel();
     };
   }, [activeAlertEffectKey, warningPulse]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !alert) return undefined;
+    webAlertVisibleUntilRef.current = Date.now() + WEB_ALERT_DURATION_MS;
+    const timer = setTimeout(() => {
+      timedOutWebAlertKeysRef.current.add(activeAlertEffectKey);
+      setAlert((visibleAlert) => visibleAlert === alert ? null : visibleAlert);
+    }, WEB_ALERT_DURATION_MS);
+    return () => clearTimeout(timer);
+  }, [activeAlertEffectKey, alert]);
 
   async function dismiss() {
     const current = alert;
