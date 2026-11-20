@@ -476,6 +476,7 @@ export default function AssignmentsScreen({
 
       {selected ? <Card>
         <Text style={styles.sectionTitle}>{selected.report_code}</Text>
+        {selected.outside_normal_service_area ? <Text style={styles.outsideAreaWarning}>OUTSIDE NORMAL SERVICE AREA — real dispatch to the reported GPS. Response conditions require operational judgment.</Text> : null}
         <DetailRow label="Status" value={phase(selected)} />
         <DetailRow label="Resident" value={selected.reporter_name || '-'} />
         <DetailRow label="Contact" value={selected.reporter_contact || '-'} />
@@ -483,9 +484,10 @@ export default function AssignmentsScreen({
         <DetailRow label="Incident" value={selected.incident_type.replace(/_/g, ' ')} />
         <DetailRow label="Location" value={selected.location} />
         <DetailRow label="Destination" value={selected.picked_up_at ? selected.evacuation_area_name || 'Nearest available center' : 'Resident pinned location'} />
+        <Text style={styles.suitabilityAdvisory}>The assigned center has capacity and a road-reachable route. Hazard clearance and incident-specific suitability data are not available; follow Barangay operational guidance.</Text>
         <DetailRow label="Distance" value={route.distanceKm == null ? 'Calculating…' : `${route.distanceKm.toFixed(2)} km`} />
         <DetailRow label="ETA" value={route.etaMinutes == null ? 'Calculating…' : `${route.etaMinutes} minutes`} />
-        <Text style={styles.instructions}>{!selected.responder_acknowledged_at ? 'Review the route, then dispatch when ready.' : selected.picked_up_at ? `Follow the route to ${selected.evacuation_area_name || 'the assigned evacuation center'}. Evacuation personnel will confirm arrival.` : 'Follow the route to the resident. Pickup is confirmed automatically within 50 meters.'}</Text>
+        <Text style={styles.instructions}>{!selected.responder_acknowledged_at ? 'Review the route, then dispatch when ready.' : selected.picked_up_at ? `Follow the route to ${selected.evacuation_area_name || 'the assigned evacuation center'}. Evacuation personnel will confirm arrival.` : 'Follow the route to the resident. The server may infer pickup only after multiple fresh, accurate, sustained proximity observations; GPS alone cannot prove physical pickup.'}</Text>
         {!selected.responder_acknowledged_at ? <PrimaryButton disabled={busy || !location} label={busy ? 'Dispatching…' : location ? 'Dispatch' : 'Waiting for GPS…'} onPress={() => void dispatch(selected)} /> : null}
       </Card> : null}
 
@@ -563,6 +565,8 @@ const styles = StyleSheet.create({
   assignmentMeta: { color: '#475569', fontSize: 11, marginTop: 2 },
   phase: { color: '#1d4ed8', fontSize: 10, fontWeight: '900', marginLeft: 8, textAlign: 'right', maxWidth: 100 },
   instructions: { marginVertical: 12, padding: 10, borderRadius: 9, backgroundColor: '#eff6ff', color: '#1e3a8a', fontSize: 11, lineHeight: 16 },
+  outsideAreaWarning: { marginTop: 8, padding: 10, borderRadius: 9, backgroundColor: '#fef2f2', color: '#991b1b', fontSize: 11, lineHeight: 16, fontWeight: '800' },
+  suitabilityAdvisory: { marginTop: 8, color: '#92400e', fontSize: 10, lineHeight: 15, fontWeight: '700' },
   historyItem: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#cbd5e1' },
   modalBackdrop: { flex: 1, justifyContent: 'center', padding: 14, backgroundColor: 'rgba(2, 6, 23, 0.68)' },
   modalCard: { width: '100%', maxWidth: 1000, maxHeight: '94%', alignSelf: 'center', overflow: 'hidden', backgroundColor: '#fff', borderRadius: 24, borderTopWidth: 5, borderTopColor: rescuerColors.blue },
