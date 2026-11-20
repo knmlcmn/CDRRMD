@@ -18,6 +18,7 @@ export type Assignment = {
   estimated_people: number | null;
   evacuees_reserved: number;
   assigned_barangay: string;
+  outside_normal_service_area?: boolean;
   evacuation_area_id: number | null;
   evacuation_area_name: string | null;
   evacuation_latitude: number | null;
@@ -37,6 +38,7 @@ export type AssignmentHistory = {
   status: string;
   location: string;
   assigned_barangay: string;
+  outside_normal_service_area?: boolean;
   evacuation_area_name: string | null;
   reporter_name: string | null;
   assigned_at: string;

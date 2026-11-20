@@ -532,3 +532,48 @@ export async function assignAuthBarangayFromLocation(
     return api.put('/auth/location-barangay', payload, { signal });
   }
 }
+
+export async function previewRescueRouting(
+  latitude: number,
+  longitude: number,
+  testModeEnabled: boolean,
+  signal?: AbortSignal,
+) {
+  try {
+    return await api.post<{
+    handlingBarangay: string;
+    outsideNormalServiceArea: boolean;
+    selectionMethod: 'containing-polygon' | 'nearest-polygon-boundary';
+    distanceToBoundaryKm: number | null;
+    }>('/reports/routing-preview', { latitude, longitude, testModeEnabled }, { signal });
+  } catch (error: any) {
+    const status = Number(error?.response?.status || 0);
+    if (signal?.aborted || (status !== 404 && status !== 405)) throw error;
+    if (testModeEnabled) {
+      throw Object.assign(new Error('The server must be updated before real out-of-area rescue requests can be created.'), {
+        response: {
+          status: 426,
+          data: {
+            code: 'ROUTING_PREVIEW_UPGRADE_REQUIRED',
+            message: 'The server must be updated before Test Mode can create a real out-of-area rescue request.',
+          },
+        },
+      });
+    }
+
+    // Old servers can still authoritatively validate an in-polygon location.
+    // Never use this fallback for Test Mode because the old endpoint cannot
+    // perform nearest-polygon-boundary selection.
+    const legacyResponse = await assignAuthBarangayFromLocation(latitude, longitude, signal);
+    const handlingBarangay = String(legacyResponse.data?.barangayName || '').trim();
+    return {
+      ...legacyResponse,
+      data: {
+        handlingBarangay,
+        outsideNormalServiceArea: false,
+        selectionMethod: 'containing-polygon' as const,
+        distanceToBoundaryKm: null,
+      },
+    };
+  }
+}

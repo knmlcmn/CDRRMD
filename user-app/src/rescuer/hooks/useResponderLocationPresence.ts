@@ -51,12 +51,18 @@ export function useResponderLocationPresence(onAuthError: () => void) {
       if (publishBusy || now - lastPublishedAt < MIN_PUBLISH_INTERVAL_MS) return;
       publishBusy = true;
       try {
-        const { data } = await updateResponderLocation(nextLocation.latitude, nextLocation.longitude);
+        const { data } = await updateResponderLocation(
+          nextLocation.latitude,
+          nextLocation.longitude,
+          nextLocation.capturedAt,
+          nextLocation.accuracyMeters,
+        );
         if (!mounted || run !== foregroundRun || AppState.currentState !== 'active') return;
         lastPublishedAt = Date.now();
         latestPublishedLocation = nextLocation;
         setLocation(nextLocation);
         setLocationError('');
+        if (data.operationalException?.message) setNotice(data.operationalException.message);
         if (data.rerouted) {
           setNotice(`Route updated to ${data.evacuationAreaName || 'the nearest available evacuation center'}.`);
         }

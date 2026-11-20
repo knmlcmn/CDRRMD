@@ -26,6 +26,8 @@ type RescueReport = {
   created_at?: string;
   updated_at?: string;
   assigned_team?: string | null;
+  assigned_barangay?: string | null;
+  outside_normal_service_area?: boolean;
   decline_explanation?: string | null;
   evacuation_area_id?: number | null;
   evacuation_area_name?: string | null;
@@ -394,6 +396,7 @@ export default function RescueStatusScreen() {
         {error ? <Text style={st.errorText}>{error}</Text> : null}
 
         <View style={st.mainCard}>
+          {report?.outside_normal_service_area ? <Text style={st.outsideAreaWarning}>OUTSIDE NORMAL SERVICE AREA — this is a real request handled by Barangay {report.assigned_barangay || 'the selected service barangay'}. Response availability is not guaranteed.</Text> : null}
           <View style={[st.topRow, isSmall && st.topRowSmall]}>
             <Text style={st.statusText}>Status: <Text style={st.statusStrong}>{statusLabel}</Text></Text>
             {showRouteMetrics ? <Text style={st.etaText}>{etaMinutes ? `${Math.max(1, etaMinutes - 1)} - ${etaMinutes + 3} mins` : '--'}</Text> : null}
@@ -511,6 +514,7 @@ const st = StyleSheet.create({
     borderWidth: 1,
     borderColor: editorial.border,
   },
+  outsideAreaWarning: { marginBottom: 12, padding: 10, borderRadius: 9, backgroundColor: '#fef2f2', color: '#991b1b', fontSize: 12, lineHeight: 17, fontWeight: '800' },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   topRowSmall: { alignItems: 'flex-start', flexDirection: 'column', gap: 5 },
   statusText: { color: '#1f8b30', fontSize: 18, fontWeight: '500' },

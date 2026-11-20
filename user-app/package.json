@@ -13,6 +13,8 @@
     "android": "expo start --android --port 8081",
     "ios": "expo start --ios",
     "ota:production": "npx eas-cli update --channel production --platform android --environment production",
+    "ota:production-v10": "npm run verify:ota:v10 && npx eas-cli update --channel production-v10-performance --platform android --environment production",
+    "verify:ota:v10": "node scripts/verifyV10OtaConfig.js",
     "build:production:android": "npx eas-cli build --platform android --profile production",
     "preweb": "npm run clear:port",
     "web": "expo start --web --port 8081",

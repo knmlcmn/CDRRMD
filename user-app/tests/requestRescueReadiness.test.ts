@@ -8,6 +8,8 @@ const screenPath = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../src/screens/RescueMapScreen.tsx',
 );
+const apiPath = resolve(dirname(fileURLToPath(import.meta.url)), '../src/services/api.ts');
+const locationPath = resolve(dirname(fileURLToPath(import.meta.url)), '../src/services/locationAccess.ts');
 
 test('Request Rescue renders its native shell before location and map readiness', async () => {
   const screen = await readFile(screenPath, 'utf8');
@@ -71,18 +73,38 @@ test('submission fails closed when authoritative capacity is unavailable or omit
   assert.match(submit, /selected evacuation center is no longer in the live capacity list/);
 });
 
-test('HTTP 400 barangay rejection remains authoritative and does not start OSRM routing', async () => {
+test('HTTP 422 outside-area rejection remains authoritative and does not start OSRM routing', async () => {
   const screen = await readFile(screenPath, 'utf8');
   const selection = screen.slice(screen.indexOf('const beginRescueRequest'), screen.indexOf('useEffect(() => () =>'));
   assert.match(selection, /barangayValidationStatus = Number\(error\?\.response\?\.status \|\| 0\)/);
-  assert.match(selection, /barangayValidationStatus === 400/);
-  assert.match(selection, /could not match your current GPS location to an authorized Calamba barangay/);
+  assert.match(selection, /barangayValidationStatus === 422/);
+  assert.match(selection, /outside the six supported barangays/);
   assert.doesNotMatch(selection, /session\?\.user\?\.barangayName/);
   assert.ok(selection.indexOf('if (!reportBarangay)') < selection.indexOf("beginPerformanceStage('evacuation-road-routing')"));
 });
 
-test('rescue submission cannot request a test-mode service-area bypass', async () => {
+test('Test Mode uses server routing and requires explicit real-dispatch acknowledgement outside the service area', async () => {
   const screen = await readFile(screenPath, 'utf8');
   const submit = screen.slice(screen.indexOf('async function handleSubmitRescue'), screen.indexOf('function statusLabel'));
   assert.doesNotMatch(submit, /testModeBypassServiceArea/);
+  assert.match(screen, /previewRescueRouting/);
+  assert.match(submit, /testModeEnabled/);
+  assert.match(submit, /outsideAreaRealDispatchAcknowledged: outsideDispatchConfirmed/);
+  assert.match(screen, /creates a real rescue request and real rescuer dispatch/);
+  assert.match(screen, /Response availability is not guaranteed/);
+});
+
+test('rescue submission sends fresh GPS metadata and old-backend fallback stays server-authoritative', async () => {
+  const screen = await readFile(screenPath, 'utf8');
+  const apiSource = await readFile(apiPath, 'utf8');
+  const locationSource = await readFile(locationPath, 'utf8');
+  assert.match(screen, /locationCapturedAt: submissionLocation\.capturedAt/);
+  assert.match(screen, /locationAccuracyMeters: submissionLocation\.accuracyMeters/);
+  assert.match(screen, /requireLiveLocation\(true, \{ requireFreshAccurate: true \}\)/);
+  assert.match(locationSource, /validateRescueGpsObservation\(location\)/);
+  assert.match(apiSource, /status !== 404 && status !== 405/);
+  assert.match(apiSource, /if \(testModeEnabled\)/);
+  assert.match(apiSource, /ROUTING_PREVIEW_UPGRADE_REQUIRED/);
+  assert.match(apiSource, /assignAuthBarangayFromLocation\(latitude, longitude, signal\)/);
+  assert.doesNotMatch(apiSource, /resolveNearbyBarangay|registeredBarangay/);
 });
