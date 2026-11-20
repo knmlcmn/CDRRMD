@@ -300,7 +300,7 @@ async function createReport(req, res) {
   const jurisdiction = resolveRescueJurisdiction(lat, lon, geographicalBypassEnabled);
   if (!jurisdiction) {
     return res.status(422).json({
-      message: 'Your fresh GPS location is outside the six supported barangays. Enable Test Mode to request a real out-of-area response.',
+      message: 'Your reported GPS location is outside the six supported barangays. Enable Test Mode to request a real out-of-area response.',
       code: 'OUTSIDE_BARANGAY_JURISDICTION',
     });
   }

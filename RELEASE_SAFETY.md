@@ -57,13 +57,13 @@ Before the maintenance window:
 9. At the maintenance window, quiesce application writers and take a new backup.
    Do not migrate if backup or isolated-restore verification is incomplete.
 
-## Legacy Android clients
+## Android client compatibility
 
-Missing GPS timestamp/accuracy fields do not authenticate an APK version. A
-server bridge accepting such requests would also accept an updated or modified
-client that deliberately omitted the fields, bypassing strict validation. No
-bridge is included. Runtime 1.0.3 devices must be replaced or otherwise proven
-out of service before the strict backend is activated.
+Rescue requests require real valid coordinates. Location capture time and
+accuracy are advisory metadata and may be absent on older Android clients;
+they are not authentication signals and do not independently block rescue.
+The backend still rejects missing or invalid coordinates and remains
+authoritative for service-area and Test Mode decisions.
 
 ## Read-only identity verification
 

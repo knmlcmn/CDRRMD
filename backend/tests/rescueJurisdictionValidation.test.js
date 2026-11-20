@@ -12,6 +12,13 @@ test('Test Mode OFF accepts a point inside a supported polygon', () => {
   assert.equal(result.selectionMethod, 'containing-polygon');
 });
 
+test('Test Mode ON uses the same containing polygon for an in-area request', () => {
+  const result = resolveRescueJurisdiction(14.214, 121.186, true);
+  assert.equal(result.handlingBarangay, 'Palingon');
+  assert.equal(result.outsideNormalServiceArea, false);
+  assert.equal(result.selectionMethod, 'containing-polygon');
+});
+
 test('Test Mode OFF blocks a point outside every supported polygon', () => {
   assert.equal(resolveRescueJurisdiction(14.6, 121.5, false), null);
 });

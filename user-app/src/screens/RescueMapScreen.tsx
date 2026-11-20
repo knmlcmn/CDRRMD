@@ -1557,12 +1557,12 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
   );
 
   const beginRescueRequest = useCallback(async () => {
-    const freshLocationResult = await requireLiveLocation(true, { requireFreshAccurate: true });
-    if (!freshLocationResult.ok) {
-      showNotice('Fresh GPS required', freshLocationResult.message);
+    const currentLocationResult = await requireLiveLocation(true, { requireCurrentPosition: true });
+    if (!currentLocationResult.ok) {
+      showNotice('Location required', currentLocationResult.message);
       return;
     }
-    const rescueLocation = freshLocationResult.location;
+    const rescueLocation = currentLocationResult.location;
     setUserLocation(rescueLocation);
 
     const lifecycle = recommendationLifecycle.begin(RESCUE_PIPELINE_TIMEOUT_MS);
@@ -2005,9 +2005,9 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       setApiAuthorizationToken(token);
       const fullName = `${session?.user?.firstName || ''} ${session?.user?.lastName || ''}`.trim() || session?.user?.username || '';
       const contactNumber = session?.user?.contactNumber || '';
-      const submissionLocationResult = await requireLiveLocation(true, { requireFreshAccurate: true });
+      const submissionLocationResult = await requireLiveLocation(true, { requireCurrentPosition: true });
       if (!submissionLocationResult.ok) {
-        showNotice('Fresh GPS required', submissionLocationResult.message);
+        showNotice('Location required', submissionLocationResult.message);
         return;
       }
       const submissionLocation = submissionLocationResult.location;

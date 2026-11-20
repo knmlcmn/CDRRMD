@@ -94,14 +94,17 @@ test('Test Mode uses server routing and requires explicit real-dispatch acknowle
   assert.match(screen, /Response availability is not guaranteed/);
 });
 
-test('rescue submission sends fresh GPS metadata and old-backend fallback stays server-authoritative', async () => {
+test('rescue submission requires real coordinates while treating accuracy and capture time as advisory', async () => {
   const screen = await readFile(screenPath, 'utf8');
   const apiSource = await readFile(apiPath, 'utf8');
   const locationSource = await readFile(locationPath, 'utf8');
   assert.match(screen, /locationCapturedAt: submissionLocation\.capturedAt/);
   assert.match(screen, /locationAccuracyMeters: submissionLocation\.accuracyMeters/);
-  assert.match(screen, /requireLiveLocation\(true, \{ requireFreshAccurate: true \}\)/);
-  assert.match(locationSource, /validateRescueGpsObservation\(location\)/);
+  assert.match(screen, /requireLiveLocation\(true, \{ requireCurrentPosition: true \}\)/);
+  assert.match(locationSource, /Valid GPS coordinates could not be detected/);
+  assert.doesNotMatch(locationSource, /50 meters|requiredFreshAccurate|requireFreshAccurate/);
+  assert.match(locationSource, /permission\.status !== 'granted'/);
+  assert.match(locationSource, /!servicesEnabled/);
   assert.match(apiSource, /status !== 404 && status !== 405/);
   assert.match(apiSource, /if \(testModeEnabled\)/);
   assert.match(apiSource, /ROUTING_PREVIEW_UPGRADE_REQUIRED/);
