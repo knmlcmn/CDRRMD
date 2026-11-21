@@ -1,11 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  CLIENT_RESCUE_LOCATION_MAX_AGE_MS,
-  CLIENT_RESCUE_LOCATION_MAX_FUTURE_SKEW_MS,
-  RESCUE_LOCATION_MAX_ACCURACY_METERS,
-  validateRescueGpsObservation,
-} from '../src/services/rescueLocationContract.ts';
+import { validateRescueGpsObservation } from '../src/services/rescueLocationContract.ts';
 
 const now = 1_800_000_000_000;
 const valid = {
@@ -15,50 +10,47 @@ const valid = {
   accuracyMeters: 20,
 };
 
-test('accepts a fresh rescue GPS observation at the accuracy boundary', () => {
-  assert.deepEqual(validateRescueGpsObservation({
-    ...valid,
-    capturedAt: now - CLIENT_RESCUE_LOCATION_MAX_AGE_MS,
-    accuracyMeters: RESCUE_LOCATION_MAX_ACCURACY_METERS,
-  }, now), { ok: true });
-});
-
-test('rejects missing or inaccurate rescue GPS accuracy', () => {
-  assert.deepEqual(validateRescueGpsObservation({ ...valid, accuracyMeters: null }, now), {
-    ok: false,
-    code: 'MISSING_ACCURACY',
-  });
-  assert.deepEqual(validateRescueGpsObservation({ ...valid, accuracyMeters: 50.01 }, now), {
-    ok: false,
-    code: 'INACCURATE',
-  });
-  assert.deepEqual(validateRescueGpsObservation({ ...valid, accuracyMeters: -1 }, now), {
-    ok: false,
-    code: 'INACCURATE',
+test('accepts coordinates and preserves usable advisory metadata', () => {
+  assert.deepEqual(validateRescueGpsObservation(valid), {
+    ok: true,
+    capturedAtAdvisory: now,
+    accuracyMetersAdvisory: 20,
   });
 });
 
-test('rejects stale, invalid, or implausibly future rescue GPS timestamps', () => {
+test('accepts weak, stale, future, or missing advisory metadata', () => {
+  assert.deepEqual(validateRescueGpsObservation({ ...valid, capturedAt: now - 600_000, accuracyMeters: 500 }), {
+    ok: true,
+    capturedAtAdvisory: now - 600_000,
+    accuracyMetersAdvisory: 500,
+  });
   assert.deepEqual(validateRescueGpsObservation({
     ...valid,
-    capturedAt: now - CLIENT_RESCUE_LOCATION_MAX_AGE_MS - 1,
-  }, now), { ok: false, code: 'STALE_TIMESTAMP' });
-  assert.deepEqual(validateRescueGpsObservation({
-    ...valid,
-    capturedAt: now + CLIENT_RESCUE_LOCATION_MAX_FUTURE_SKEW_MS + 1,
-  }, now), { ok: false, code: 'STALE_TIMESTAMP' });
-  assert.deepEqual(validateRescueGpsObservation({ ...valid, capturedAt: Number.NaN }, now), {
-    ok: false,
-    code: 'STALE_TIMESTAMP',
+    capturedAt: now + 600_000,
+    accuracyMeters: 75,
+  }), {
+    ok: true,
+    capturedAtAdvisory: now + 600_000,
+    accuracyMetersAdvisory: 75,
+  });
+  assert.deepEqual(validateRescueGpsObservation({ ...valid, capturedAt: null, accuracyMeters: null }), {
+    ok: true,
+    capturedAtAdvisory: null,
+    accuracyMetersAdvisory: null,
+  });
+  assert.deepEqual(validateRescueGpsObservation({ ...valid, capturedAt: Number.NaN, accuracyMeters: -1 }), {
+    ok: true,
+    capturedAtAdvisory: null,
+    accuracyMetersAdvisory: null,
   });
 });
 
 test('rejects invalid rescue coordinates before submission', () => {
-  assert.deepEqual(validateRescueGpsObservation({ ...valid, latitude: 91 }, now), {
+  assert.deepEqual(validateRescueGpsObservation({ ...valid, latitude: 91 }), {
     ok: false,
     code: 'INVALID_COORDINATES',
   });
-  assert.deepEqual(validateRescueGpsObservation({ ...valid, longitude: Number.NaN }, now), {
+  assert.deepEqual(validateRescueGpsObservation({ ...valid, longitude: Number.NaN }), {
     ok: false,
     code: 'INVALID_COORDINATES',
   });

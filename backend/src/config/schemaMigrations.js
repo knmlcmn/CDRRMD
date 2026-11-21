@@ -356,9 +356,63 @@ const MIGRATIONS = [
         WHERE category = 'flood_sensor' AND push_sent_at IS NULL;
     `,
   },
+  {
+    version: 10,
+    name: 'add_outside_area_rescue_and_pickup_inference_state',
+    sql: `
+      ALTER TABLE incident_reports
+        ADD COLUMN IF NOT EXISTS outside_normal_service_area BOOLEAN NOT NULL DEFAULT FALSE;
+
+      ALTER TABLE backup_requests
+        ADD COLUMN IF NOT EXISTS pickup_proximity_started_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS pickup_proximity_sample_count INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS pickup_last_observed_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS pickup_last_latitude DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS pickup_last_longitude DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS pickup_last_accuracy_m DOUBLE PRECISION;
+
+      CREATE INDEX IF NOT EXISTS incident_reports_outside_service_area_idx
+        ON incident_reports (assigned_barangay_id, created_at DESC)
+        WHERE outside_normal_service_area = TRUE;
+
+      CREATE OR REPLACE FUNCTION prevent_rescue_report_location_change()
+      RETURNS TRIGGER AS $$
+      BEGIN
+        IF OLD.report_type = 'rescue'
+          AND (NEW.latitude IS DISTINCT FROM OLD.latitude
+            OR NEW.longitude IS DISTINCT FROM OLD.longitude) THEN
+          RAISE EXCEPTION 'Reported rescue coordinates are immutable';
+        END IF;
+        RETURN NEW;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS incident_reports_immutable_rescue_location ON incident_reports;
+      CREATE TRIGGER incident_reports_immutable_rescue_location
+        BEFORE UPDATE OF latitude, longitude ON incident_reports
+        FOR EACH ROW EXECUTE FUNCTION prevent_rescue_report_location_change();
+    `,
+  },
 ];
 
-async function runSchemaMigrations(pool) {
+const DEFAULT_ADVISORY_LOCK_TIMEOUT_MS = 5_000;
+const DEFAULT_MIGRATION_STATEMENT_TIMEOUT_MS = 30_000;
+
+function positiveTimeout(value, fallback) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function runSchemaMigrations(pool, options = {}) {
+  const advisoryLockTimeoutMs = positiveTimeout(
+    options.advisoryLockTimeoutMs,
+    DEFAULT_ADVISORY_LOCK_TIMEOUT_MS,
+  );
+  const migrationStatementTimeoutMs = positiveTimeout(
+    options.migrationStatementTimeoutMs,
+    DEFAULT_MIGRATION_STATEMENT_TIMEOUT_MS,
+  );
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
       version INTEGER PRIMARY KEY,
@@ -371,7 +425,13 @@ async function runSchemaMigrations(pool) {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+      // PostgreSQL lock_timeout does not bound advisory-lock waits. Apply a
+      // shorter statement timeout specifically around acquisition, then
+      // restore the per-migration statement timeout after the lock is held.
+      await client.query("SELECT set_config('statement_timeout', $1, true)", [`${advisoryLockTimeoutMs}ms`]);
       await client.query("SELECT pg_advisory_xact_lock(hashtext('cddrmd_schema_migrations'))");
+      await client.query("SELECT set_config('statement_timeout', $1, true)", [`${migrationStatementTimeoutMs}ms`]);
+      await client.query("SELECT set_config('lock_timeout', $1, true)", [`${advisoryLockTimeoutMs}ms`]);
       const alreadyApplied = await client.query(
         'SELECT 1 FROM schema_migrations WHERE version = $1',
         [migration.version],
@@ -395,4 +455,7 @@ async function runSchemaMigrations(pool) {
 }
 
 module.exports = runSchemaMigrations;
+module.exports.MIGRATIONS = MIGRATIONS;
+module.exports.DEFAULT_ADVISORY_LOCK_TIMEOUT_MS = DEFAULT_ADVISORY_LOCK_TIMEOUT_MS;
+module.exports.DEFAULT_MIGRATION_STATEMENT_TIMEOUT_MS = DEFAULT_MIGRATION_STATEMENT_TIMEOUT_MS;
 

@@ -27,6 +27,7 @@ type RescueRequestNotice = {
   email?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
+  outside_normal_service_area?: boolean;
   evacuation_area_name?: string | null;
   evacuation_latitude?: number | string | null;
   evacuation_longitude?: number | string | null;
@@ -266,11 +267,13 @@ export default function BarangayPortal({ token, barangayName, onLogout, onAuthEr
           <p className="rescue-request-eyebrow">Urgent Rescue Request</p>
           <h2 className="rescue-request-title">{residentName}</h2>
           <p className="rescue-request-subtitle">{String(activeRescueRequest.incident_type || 'Emergency rescue').replace(/_/g, ' ')}</p>
+          {activeRescueRequest.outside_normal_service_area ? <p className="rescue-request-description"><strong>OUTSIDE NORMAL SERVICE AREA</strong> — this is a real dispatch to the resident's reported GPS. Response availability and operational suitability require review.</p> : null}
           <dl className="rescue-request-details">
             <div><dt>Contact</dt><dd>{activeRescueRequest.contact_number || activeRescueRequest.email || 'Not provided'}</dd></div>
             <div><dt>People</dt><dd>{activeRescueRequest.estimated_people || 1}</dd></div>
             <div><dt>Rescue location</dt><dd><button type="button" className="rescue-request-detail-button" onClick={() => rescueMapRef.current?.focusResident()}>{activeRescueRequest.location}</button></dd></div>
             <div><dt>Assigned evacuation</dt><dd>{activeRescueRequest.evacuation_area_name || 'Automatic nearest center'}</dd></div>
+            <div><dt>Destination verification</dt><dd>Capacity and road reachability only. Hazard clearance and incident suitability data require operational review.</dd></div>
             <AssignedRescuerField responderLabel="Barangay Rescuer" rescuer={assignedRescuer} loading={assignmentPreviewLoading} onSelect={assignedRescuerLocation ? () => rescueMapRef.current?.focusRescuer() : undefined} />
             <div><dt>Shortest route</dt><dd>{rescueRouteMetrics ? `${rescueRouteMetrics.distanceKm.toFixed(2)} km · about ${rescueRouteMetrics.etaMinutes} min` : rescueRouteMetrics === null ? 'Road route unavailable' : 'Calculating…'}</dd></div>
           </dl>

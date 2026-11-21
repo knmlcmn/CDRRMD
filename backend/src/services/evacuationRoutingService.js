@@ -1,6 +1,15 @@
 const { findShortestReachableDestination } = require('./roadRoutingService');
+const { isSupportedBarangay } = require('./supportedBarangays');
 
 const ROUTING_LOCK_ID = 880021;
+
+function hasValidDestinationCoordinates(area) {
+  const latitude = Number(area?.latitude);
+  const longitude = Number(area?.longitude);
+  return Number.isFinite(latitude) && latitude >= -90 && latitude <= 90
+    && Number.isFinite(longitude) && longitude >= -180 && longitude <= 180
+    && latitude !== 0 && longitude !== 0;
+}
 
 async function lockEvacuationCapacity(client) {
   await client.query('SELECT pg_advisory_xact_lock($1)', [ROUTING_LOCK_ID]);
@@ -30,7 +39,7 @@ async function findNearestAvailableEvacuationArea(
     requiredSlots = 1,
     excludeReportId = null,
     barangayName = null,
-    allowOtherBarangaysWhenLocalFull = false,
+    allowOtherBarangays = false,
   } = {},
 ) {
   await lockEvacuationCapacity(client);
@@ -50,12 +59,17 @@ async function findNearestAvailableEvacuationArea(
        FROM evacuation_areas ea
        LEFT JOIN (${summarySql}) stats ON stats.evacuation_area_id = ea.id
        WHERE ea.id = $1 AND ea.is_active = TRUE
-         AND LOWER(ea.barangay) = LOWER($${excludesReport ? 3 : 2})
+         ${allowOtherBarangays ? '' : `AND LOWER(ea.barangay) = LOWER($${excludesReport ? 3 : 2})`}
+         AND ea.latitude BETWEEN -90 AND 90 AND ea.latitude <> 0
+         AND ea.longitude BETWEEN -180 AND 180 AND ea.longitude <> 0
        LIMIT 1`,
-      excludesReport ? [preferredId, excludedId, requiredBarangay] : [preferredId, requiredBarangay],
+      allowOtherBarangays
+        ? (excludesReport ? [preferredId, excludedId] : [preferredId])
+        : (excludesReport ? [preferredId, excludedId, requiredBarangay] : [preferredId, requiredBarangay]),
     );
     const area = preferred.rows[0];
-    if (area && Number(area.total_evacuees) + requiredSlots <= Number(area.capacity)) {
+    if (area && (!allowOtherBarangays || isSupportedBarangay(area.barangay))
+      && Number(area.total_evacuees) + requiredSlots <= Number(area.capacity)) {
       const reachable = await findShortestReachableDestination(
         { latitude, longitude },
         [{ ...area, latitude: Number(area.latitude), longitude: Number(area.longitude) }],
@@ -76,25 +90,18 @@ async function findNearestAvailableEvacuationArea(
      WHERE ea.is_active = TRUE
        AND ea.latitude IS NOT NULL
        AND ea.longitude IS NOT NULL
-       AND LOWER(ea.barangay) = LOWER($${excludesReport ? 3 : 2})
+       AND ea.latitude BETWEEN -90 AND 90 AND ea.latitude <> 0
+       AND ea.longitude BETWEEN -180 AND 180 AND ea.longitude <> 0
+       ${allowOtherBarangays ? '' : `AND LOWER(ea.barangay) = LOWER($${excludesReport ? 3 : 2})`}
        AND (ea.evacuees + COALESCE(stats.incoming_total, 0) + $1) <= ea.capacity
      ORDER BY ea.id`,
-    excludesReport ? [requiredSlots, excludedId, requiredBarangay] : [requiredSlots, requiredBarangay],
+    allowOtherBarangays
+      ? (excludesReport ? [requiredSlots, excludedId] : [requiredSlots])
+      : (excludesReport ? [requiredSlots, excludedId, requiredBarangay] : [requiredSlots, requiredBarangay]),
   );
-  const candidateRows = available.rows.length > 0 || !allowOtherBarangaysWhenLocalFull
-    ? available.rows
-    : (await client.query(
-      `SELECT ea.id, ea.name, ea.barangay, ea.latitude, ea.longitude, ea.capacity,
-              (ea.evacuees + COALESCE(stats.incoming_total, 0))::int AS total_evacuees
-       FROM evacuation_areas ea
-       LEFT JOIN (${availableSummarySql}) stats ON stats.evacuation_area_id = ea.id
-       WHERE ea.is_active = TRUE
-         AND ea.latitude IS NOT NULL
-         AND ea.longitude IS NOT NULL
-         AND (ea.evacuees + COALESCE(stats.incoming_total, 0) + $1) <= ea.capacity
-       ORDER BY ea.id`,
-      excludesReport ? [requiredSlots, excludedId] : [requiredSlots],
-    )).rows;
+  const candidateRows = allowOtherBarangays
+    ? available.rows.filter((area) => isSupportedBarangay(area.barangay))
+    : available.rows;
   const routed = await findShortestReachableDestination(
     { latitude, longitude },
     candidateRows.map((area) => ({
@@ -129,6 +136,8 @@ async function evacuationAreaStillHasCapacity(
      FROM evacuation_areas ea
      LEFT JOIN (${summarySql}) stats ON stats.evacuation_area_id = ea.id
      WHERE ea.id = $1 AND ea.is_active = TRUE
+       AND ea.latitude BETWEEN -90 AND 90 AND ea.latitude <> 0
+       AND ea.longitude BETWEEN -180 AND 180 AND ea.longitude <> 0
        ${allowOtherBarangays ? '' : `AND LOWER(ea.barangay) = LOWER(${barangayParameter})`}
        AND (ea.evacuees + COALESCE(stats.incoming_total, 0) + ${slotsParameter}) <= ea.capacity
      LIMIT 1`,
@@ -136,11 +145,14 @@ async function evacuationAreaStillHasCapacity(
       ? (excludesReport ? [id, excludedId, slots] : [id, slots])
       : (excludesReport ? [id, excludedId, slots, requiredBarangay] : [id, slots, requiredBarangay]),
   );
-  return result.rows[0] || null;
+  const area = result.rows[0] || null;
+  return hasValidDestinationCoordinates(area)
+    && (!allowOtherBarangays || isSupportedBarangay(area.barangay)) ? area : null;
 }
 
 module.exports = {
   evacuationAreaStillHasCapacity,
   findNearestAvailableEvacuationArea,
+  hasValidDestinationCoordinates,
   lockEvacuationCapacity,
 };

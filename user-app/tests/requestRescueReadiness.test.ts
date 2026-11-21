@@ -73,6 +73,26 @@ test('submission fails closed when authoritative capacity is unavailable or omit
   assert.match(submit, /selected evacuation center is no longer in the live capacity list/);
 });
 
+test('routing considers supported cross-barangay centers but still requires verified road data', async () => {
+  const screen = await readFile(screenPath, 'utf8');
+  const selection = screen.slice(screen.indexOf('async function resolveBestRoadPlan'), screen.indexOf('function buildLeafletHtml'));
+  const submit = screen.slice(screen.indexOf('async function handleSubmitRescue'), screen.indexOf('function statusLabel'));
+  assert.match(selection, /isInSupportedRoutingBarangay\(area\) && hasCapacityFor/);
+  assert.doesNotMatch(selection, /isInBarangay/);
+  assert.match(selection, /fetchBestRoadRouteProgressively/);
+  assert.match(selection, /if \(!bestRoute\) \{\s*return null/);
+  assert.doesNotMatch(submit, /must use an evacuation center in the same barangay/);
+  assert.match(submit, /outside the six supported barangays/);
+});
+
+test('Flood Hazard remains off after weather layers are cleared until explicitly toggled', async () => {
+  const screen = await readFile(screenPath, 'utf8');
+  assert.match(screen, /if \(activeKey !== null\) visibility\.floodHazard = false/);
+  assert.doesNotMatch(screen, /visibility\.floodHazard = activeKey === null/);
+  assert.match(screen, /if \(key === 'floodHazard'\) \{\s*visibility\.floodHazard = !Boolean\(visibility\.floodHazard\)/);
+  assert.doesNotMatch(screen, /nextVisibility\.floodHazard = !Boolean/);
+});
+
 test('HTTP 422 outside-area rejection remains authoritative and does not start OSRM routing', async () => {
   const screen = await readFile(screenPath, 'utf8');
   const selection = screen.slice(screen.indexOf('const beginRescueRequest'), screen.indexOf('useEffect(() => () =>'));
@@ -94,14 +114,17 @@ test('Test Mode uses server routing and requires explicit real-dispatch acknowle
   assert.match(screen, /Response availability is not guaranteed/);
 });
 
-test('rescue submission sends fresh GPS metadata and old-backend fallback stays server-authoritative', async () => {
+test('rescue submission requires real coordinates while treating accuracy and capture time as advisory', async () => {
   const screen = await readFile(screenPath, 'utf8');
   const apiSource = await readFile(apiPath, 'utf8');
   const locationSource = await readFile(locationPath, 'utf8');
   assert.match(screen, /locationCapturedAt: submissionLocation\.capturedAt/);
   assert.match(screen, /locationAccuracyMeters: submissionLocation\.accuracyMeters/);
-  assert.match(screen, /requireLiveLocation\(true, \{ requireFreshAccurate: true \}\)/);
-  assert.match(locationSource, /validateRescueGpsObservation\(location\)/);
+  assert.match(screen, /requireLiveLocation\(true, \{ requireCurrentPosition: true \}\)/);
+  assert.match(locationSource, /Valid GPS coordinates could not be detected/);
+  assert.doesNotMatch(locationSource, /50 meters|requiredFreshAccurate|requireFreshAccurate/);
+  assert.match(locationSource, /permission\.status !== 'granted'/);
+  assert.match(locationSource, /!servicesEnabled/);
   assert.match(apiSource, /status !== 404 && status !== 405/);
   assert.match(apiSource, /if \(testModeEnabled\)/);
   assert.match(apiSource, /ROUTING_PREVIEW_UPGRADE_REQUIRED/);

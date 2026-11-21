@@ -45,7 +45,7 @@ function permissionMessage(canAskAgain: boolean) {
   return 'Location access is required to use this app. Select Try Again and allow the location request.';
 }
 
-async function requestWebLocation(requireFreshAccurate = false): Promise<LocationAccessResult> {
+async function requestWebLocation(): Promise<LocationAccessResult> {
   if (typeof navigator === 'undefined' || !navigator.geolocation) {
     return { ok: false, message: 'Location is not supported by this browser.' };
   }
@@ -59,8 +59,8 @@ async function requestWebLocation(requireFreshAccurate = false): Promise<Locatio
           capturedAt: position.timestamp,
           accuracyMeters: position.coords.accuracy,
         };
-        if (requireFreshAccurate && !validateRescueGpsObservation(location).ok) {
-          resolve({ ok: false, message: 'A fresh GPS fix accurate to 50 meters is required before creating a real rescue request.' });
+        if (!validateRescueGpsObservation(location).ok) {
+          resolve({ ok: false, message: 'Valid GPS coordinates could not be detected. Keep Location on and try again.' });
           return;
         }
         resolve({
@@ -82,13 +82,13 @@ async function requestWebLocation(requireFreshAccurate = false): Promise<Locatio
 /** Permission alone is insufficient when the device location service is off. */
 export async function requireLiveLocation(
   requestPermission: boolean,
-  options: { requireFreshAccurate?: boolean } = {},
+  options: { requireCurrentPosition?: boolean } = {},
 ): Promise<LocationAccessResult> {
   try {
     // Calling the browser geolocation API directly from the modal button is
     // what triggers the browser/device permission prompt on the web build.
     if (Platform.OS === 'web') {
-      return await requestWebLocation(Boolean(options.requireFreshAccurate));
+      return await requestWebLocation();
     }
 
     const permissionMarker = beginPerformanceStage('location-permission-readiness');
@@ -111,16 +111,20 @@ export async function requireLiveLocation(
       };
     }
 
-    // Both portals maintain a location watcher. Reuse its recent accurate fix
-    // before waking GPS and waiting for another satellite/network position.
-    if (!options.requireFreshAccurate) {
+    // Both portals maintain a location watcher. Rescue actions request a
+    // current observation, while ordinary readiness checks may reuse a recent
+    // fix. Accuracy and capture time remain advisory metadata.
+    if (!options.requireCurrentPosition) {
       const cacheMarker = beginPerformanceStage('location-cache-readiness');
       const recent = await Location.getLastKnownPositionAsync({
         maxAge: 30_000,
         requiredAccuracy: 200,
       }).catch(() => null);
       endPerformanceStage(cacheMarker, { success: Boolean(recent) });
-      if (recent) return { ok: true, location: toLiveLocation(recent) };
+      if (recent) {
+        const location = toLiveLocation(recent);
+        if (validateRescueGpsObservation(location).ok) return { ok: true, location };
+      }
     }
 
     const currentMarker = beginPerformanceStage('location-current-position');
@@ -128,7 +132,7 @@ export async function requireLiveLocation(
     try {
       position = await withLocationTimeout(
         Location.getCurrentPositionAsync({
-          accuracy: options.requireFreshAccurate ? Location.Accuracy.High : Location.Accuracy.Balanced,
+          accuracy: options.requireCurrentPosition ? Location.Accuracy.High : Location.Accuracy.Balanced,
           mayShowUserSettingsDialog: true,
         }),
         LOCATION_TIMEOUT_MS,
@@ -140,8 +144,8 @@ export async function requireLiveLocation(
     }
 
     const location = toLiveLocation(position);
-    if (options.requireFreshAccurate && !validateRescueGpsObservation(location).ok) {
-      return { ok: false, message: 'A fresh GPS fix accurate to 50 meters is required before creating a real rescue request.' };
+    if (!validateRescueGpsObservation(location).ok) {
+      return { ok: false, message: 'Valid GPS coordinates could not be detected. Keep Location on and try again.' };
     }
     return { ok: true, location };
   } catch (error: any) {

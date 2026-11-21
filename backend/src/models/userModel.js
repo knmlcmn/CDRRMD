@@ -843,13 +843,9 @@ async function listReportsByAssignedBarangay(barangayName, currentWeekOnly = fal
   const result = await pool.query(
     `SELECT
        ir.id, ir.report_code, ir.report_type, ir.location,
-       CASE WHEN u.location_updated_at >= NOW() - INTERVAL '5 minutes'
-              AND u.current_latitude IS NOT NULL AND u.current_longitude IS NOT NULL
-            THEN u.current_latitude ELSE ir.latitude END AS latitude,
-       CASE WHEN u.location_updated_at >= NOW() - INTERVAL '5 minutes'
-              AND u.current_latitude IS NOT NULL AND u.current_longitude IS NOT NULL
-            THEN u.current_longitude ELSE ir.longitude END AS longitude,
-       ir.assigned_barangay, ir.incident_type, ir.water_level,
+       ir.latitude AS latitude,
+       ir.longitude AS longitude,
+       ir.assigned_barangay, ir.outside_normal_service_area, ir.incident_type, ir.water_level,
        ir.are_people_trapped, ir.estimated_people, ir.notes,
        (ir.image_base64 IS NOT NULL AND ir.image_base64 <> '') AS has_image,
        ir.status, ir.evacuation_area_id, ir.evacuation_area_name,

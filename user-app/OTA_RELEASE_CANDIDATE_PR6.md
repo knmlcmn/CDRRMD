@@ -19,11 +19,13 @@ from this dirty preparation worktree.
 
 ## Rescue request contract
 
-The client obtains a new high-accuracy observation immediately before submit
-and sends `latitude`, `longitude`, `locationCapturedAt`, and
-`locationAccuracyMeters`. Client validation permits observations at most 30
-seconds old and accuracy of 50 meters or better, leaving a 15-second buffer
-inside the backend's 45-second limit.
+The client requires Location Services, foreground permission, and real valid
+coordinates before rescue routing or submission. It requests a current
+observation and sends `latitude`, `longitude`, `locationCapturedAt`, and
+`locationAccuracyMeters`, but capture time and accuracy are advisory metadata:
+weak, stale, or missing metadata does not by itself reject a rescue request.
+The backend remains authoritative for the six supported barangays and permits
+real out-of-area rescue requests only when Test Mode is enabled.
 
 ## Release gate
 
