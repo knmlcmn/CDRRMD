@@ -35,6 +35,10 @@ two-launch verification.
 - The backend and maps accept live responder presence for at most 45 seconds;
   admin and barangay maps poll every 5 seconds and never route from an expired
   coordinate.
+- Dispatch ranking uses responder GPS only inside that same 45-second window;
+  otherwise it uses the existing coarse barangay/CDRRMD fallback, not the stale
+  last-known coordinate. Pickup inference independently requires a fresh,
+  accurate, sustained observation.
 - The v10 APK has only coarse/fine foreground location permissions. It has no
   background-location task, background permission, or location foreground
   service, so background, locked-screen, and device-idle GPS reporting must not

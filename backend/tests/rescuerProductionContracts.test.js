@@ -21,7 +21,7 @@ test('responder location updates preserve atomic transitions with verified suppo
 
 test('heartbeat and location endpoints both refresh responder presence', () => {
   assert.match(controller, /SET is_active = TRUE, last_seen_at = NOW\(\)/);
-  assert.match(controller, /location_updated_at = NOW\(\), last_seen_at = NOW\(\), is_active = TRUE/);
+  assert.match(controller, /location_updated_at = COALESCE\(\$4::timestamptz, NOW\(\)\), last_seen_at = NOW\(\), is_active = TRUE/);
   assert.match(dispatchService, /last_seen_at >= NOW\(\) - INTERVAL '45 seconds'/);
 });
 
