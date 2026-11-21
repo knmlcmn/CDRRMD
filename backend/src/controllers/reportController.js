@@ -361,7 +361,8 @@ async function createReport(req, res) {
     let evacuationReassigned = false;
 
     if (normalizedType === 'rescue') {
-      // The operational destination must remain in the handling barangay.
+      // Cross-barangay destinations remain within the supported jurisdiction
+      // and are accepted only when the road router verifies reachability.
       const availableArea = await findNearestAvailableEvacuationArea(
         client,
         lat,
@@ -371,12 +372,13 @@ async function createReport(req, res) {
           requirePreferredArea: false,
           requiredSlots: rescuePartySize,
           barangayName: assignedBarangay,
+          allowOtherBarangays: true,
         },
       );
       if (!availableArea) {
         await client.query('ROLLBACK');
         return res.status(409).json({
-          message: `No active, capacity-eligible, road-reachable evacuation center in Barangay ${assignedBarangay} could be verified. Hazard clearance and incident-specific suitability require operational review.`,
+          message: 'No active, capacity-eligible evacuation center in the six supported barangays has a verified road route. Hazard clearance and incident-specific suitability require operational review.',
           code: 'NO_AVAILABLE_EVACUATION_AREA',
         });
       }
@@ -871,6 +873,7 @@ async function updateReportStatus(req, res) {
               requiredSlots: Math.max(1, Number(current.evacuees_reserved || 1)),
               excludeReportId: current.id,
               barangayName: current.assigned_barangay,
+              allowOtherBarangays: true,
             })
           : null;
 
@@ -885,6 +888,7 @@ async function updateReportStatus(req, res) {
               requiredSlots: Math.max(1, Number(current.evacuees_reserved || 1)),
               excludeReportId: current.id,
               barangayName: current.assigned_barangay,
+              allowOtherBarangays: true,
             },
           );
         }
@@ -1065,6 +1069,7 @@ async function updateReportStatus(req, res) {
           requiredSlots: effectiveEvacueesReserved,
           excludeReportId: current.id,
           barangayName: current.assigned_barangay,
+          allowOtherBarangays: true,
         },
       );
 
@@ -1099,6 +1104,7 @@ async function updateReportStatus(req, res) {
             requiredSlots: effectiveEvacueesReserved,
             excludeReportId: current.id,
             barangayName: current.assigned_barangay,
+            allowOtherBarangays: true,
           },
         );
 

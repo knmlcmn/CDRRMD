@@ -538,6 +538,7 @@ async function updateMyLocation(req, res) {
             requiredSlots,
             excludeReportId: assignment.report_id,
             barangayName: assignment.assigned_barangay,
+            allowOtherBarangays: true,
           })
         : null;
       if (!destinationArea) {
@@ -549,6 +550,7 @@ async function updateMyLocation(req, res) {
             requiredSlots,
             excludeReportId: assignment.report_id,
             barangayName: assignment.assigned_barangay,
+            allowOtherBarangays: true,
           },
         );
       }
@@ -578,7 +580,7 @@ async function updateMyLocation(req, res) {
               eventCode: 'NO_VERIFIED_EVACUATION_DESTINATION',
               backupRequestId: assignment.backup_request_id,
               automaticPickupDeferred: true,
-              reason: 'No active same-barangay destination with valid coordinates and available capacity could be verified.',
+              reason: 'No active destination in the six supported barangays with valid coordinates and available capacity could be verified.',
             }),
           ],
         );
@@ -589,7 +591,7 @@ async function updateMyLocation(req, res) {
           pickupConfirmed: false,
           operationalException: {
             code: 'NO_VERIFIED_EVACUATION_DESTINATION',
-            message: 'Pickup was not inferred because no active evacuation center in the handling barangay has verified coordinates, available capacity, and a reachable road route. Suitability and hazard clearance require operational review.',
+            message: 'Pickup was not inferred because no active evacuation center in the six supported barangays has verified coordinates, available capacity, and a reachable road route. Suitability and hazard clearance require operational review.',
           },
           pickupInference: {
             accepted: true,
@@ -644,14 +646,24 @@ async function updateMyLocation(req, res) {
       const currentArea = await evacuationAreaStillHasCapacity(
         client,
         assignment.evacuation_area_id,
-        { requiredSlots, excludeReportId: assignment.report_id, barangayName: assignment.assigned_barangay },
+        {
+          requiredSlots,
+          excludeReportId: assignment.report_id,
+          barangayName: assignment.assigned_barangay,
+          allowOtherBarangays: true,
+        },
       );
       if (!currentArea) {
         const replacementArea = await findNearestAvailableEvacuationArea(
           client,
           latitude,
           longitude,
-          { requiredSlots, excludeReportId: assignment.report_id, barangayName: assignment.assigned_barangay },
+          {
+            requiredSlots,
+            excludeReportId: assignment.report_id,
+            barangayName: assignment.assigned_barangay,
+            allowOtherBarangays: true,
+          },
         );
         if (!replacementArea) {
           throw httpError(409, 'The assigned evacuation center is full and no reachable alternative currently has enough capacity.');

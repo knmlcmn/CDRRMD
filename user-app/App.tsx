@@ -26,6 +26,7 @@ import {
   SessionData,
 } from './src/services/session';
 import { AppProfile, ensureAccountForSession, patchAccountProfile } from './src/services/appAccount';
+import { applyAuthoritativeJurisdiction } from './src/services/authJurisdiction';
 import {
   assignAuthBarangayFromLocation,
   getAuthMe,
@@ -455,14 +456,11 @@ function AppContent() {
     // A resident request may finish after logout or after a responder signs in.
     // It must not update React state, storage, or the shared authorization header.
     if (sessionRef.current !== currentSession) return;
-    const assignedUser = response.data?.user as SessionData['user'] | undefined;
-    if (!assignedUser?.id || !assignedUser.barangayName) {
-      throw new Error('The current activity barangay could not be determined.');
-    }
+    const assignedUser = applyAuthoritativeJurisdiction(currentSession.user, response.data);
 
     const nextSession: SessionData = {
       ...currentSession,
-      user: { ...currentSession.user, ...assignedUser },
+      user: assignedUser,
     };
     const ensured = await ensureAccountForSession(nextSession);
     if (sessionRef.current !== currentSession) return;
@@ -512,13 +510,10 @@ function AppContent() {
         result.location.latitude,
         result.location.longitude,
       );
-      const assignedUser = response.data?.user as SessionData['user'] | undefined;
-      if (!assignedUser?.id || !assignedUser.barangayName) {
-        throw new Error('The current activity barangay could not be determined.');
-      }
+      const assignedUser = applyAuthoritativeJurisdiction(ensured.session.user, response.data);
       const assignedSession = {
         ...ensured.session,
-        user: { ...ensured.session.user, ...assignedUser },
+        user: assignedUser,
       };
       ensured = await ensureAccountForSession(assignedSession);
       lastBarangaySyncRef.current = Date.now();

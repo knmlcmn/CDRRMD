@@ -15,12 +15,14 @@ test('only authenticated residents can create rescue reports', () => {
   assert.match(reportController, /Resident account access required/);
 });
 
-test('evacuation selection evaluates every eligible same-barangay center', () => {
-  assert.match(routingService, /LOWER\(ea\.barangay\) = LOWER/);
+test('evacuation selection permits only explicitly enabled supported cross-barangay routing', () => {
+  assert.match(routingService, /allowOtherBarangays/);
+  assert.match(routingService, /isSupportedBarangay/);
   assert.match(routingService, /candidateRows\.map/);
   assert.doesNotMatch(routingService, /LIMIT 3/);
-  assert.doesNotMatch(rescuerController, /allowOtherBarangays/);
-  assert.doesNotMatch(reportController, /allowOtherBarangays/);
+  assert.match(rescuerController, /allowOtherBarangays: true/);
+  assert.match(reportController, /allowOtherBarangays: true/);
+  assert.match(routingService, /findShortestReachableDestination/);
 });
 
 test('dispatch acknowledgement is restricted to the assigned responder', () => {

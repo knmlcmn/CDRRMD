@@ -29,6 +29,7 @@ import { requireLiveLocation } from '../services/locationAccess';
 import { createSingleFlight } from '../utils/singleFlight';
 import { createAbortableLifecycle } from '../utils/abortableLifecycle';
 import { beginPerformanceStage, endPerformanceStage } from '../utils/performanceDiagnostics';
+import { SUPPORTED_BARANGAYS } from '../constants/barangays';
 
 type Coordinate = { latitude: number; longitude: number };
 type EvacuationArea = {
@@ -118,8 +119,14 @@ function isAreaFull(area: EvacuationArea) {
   return !hasCapacityFor(area, 1);
 }
 
-function isInBarangay(area: EvacuationArea, barangayName: string) {
-  return String(area.barangay || '').trim().toLowerCase() === String(barangayName || '').trim().toLowerCase();
+const SUPPORTED_ROUTING_BARANGAYS = new Set(
+  SUPPORTED_BARANGAYS.map((name) => name.toLocaleLowerCase('en-US')),
+);
+
+function isInSupportedRoutingBarangay(area: EvacuationArea) {
+  return SUPPORTED_ROUTING_BARANGAYS.has(
+    String(area.barangay || '').trim().toLocaleLowerCase('en-US'),
+  );
 }
 
 const CALAMBA_BOUNDS = {
@@ -168,13 +175,11 @@ function formatEtaText(etaMinutes: number) {
 async function resolveBestRoadPlan(
   userLocation: Coordinate,
   evacuationAreas: EvacuationArea[],
-  barangayName: string,
   peopleCount = 1,
   signal?: AbortSignal,
 ): Promise<RescuePlan | null> {
-  const localAvailableAreas = evacuationAreas.filter((area) =>
-    isInBarangay(area, barangayName) && hasCapacityFor(area, peopleCount));
-  const eligibleAreas = localAvailableAreas;
+  const eligibleAreas = evacuationAreas.filter((area) =>
+    isInSupportedRoutingBarangay(area) && hasCapacityFor(area, peopleCount));
   // OSRM table cost grows with every destination. Geographic shortlisting is
   // local CPU work; final selection still uses verified road distance.
   const availableAreas = rankNearestEligibleEvacuationCenters(
@@ -333,7 +338,7 @@ function buildLeafletHtml(
         visibility.temperatureOverlay = activeKey === 'temperatureOverlay';
         visibility.humidityOverlay = activeKey === 'humidityOverlay';
         visibility.windOverlay = activeKey === 'windOverlay';
-        visibility.floodHazard = activeKey === null;
+        if (activeKey !== null) visibility.floodHazard = false;
       }
       normalizeDataLayerVisibility();
       var calambaCenter = [${CALAMBA_NOMINATIM.latitude}, ${CALAMBA_NOMINATIM.longitude}];
@@ -1232,6 +1237,7 @@ function buildLeafletHtml(
             item.addEventListener('click', function() {
               var key = definition.key;
               if (key === 'floodHazard') {
+                visibility.floodHazard = !Boolean(visibility.floodHazard);
                 visibility.rainOverlay = false;
                 visibility.temperatureOverlay = false;
                 visibility.humidityOverlay = false;
@@ -1648,8 +1654,8 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       return;
     }
     setRescueBarangay(reportBarangay);
-    if (!latestAreas.some((area) => isInBarangay(area, reportBarangay) && !isAreaFull(area))) {
-      showNotice('No verified evacuation destination', `No active center in Barangay ${reportBarangay} currently has verified coordinates and available capacity. Road reachability does not establish flood safety; operational suitability must be reviewed.`);
+    if (!latestAreas.some((area) => isInSupportedRoutingBarangay(area) && hasCapacityFor(area, peopleCount))) {
+      showNotice('No verified evacuation destination', 'No active center in the six supported barangays currently has verified coordinates and available capacity. Road reachability does not establish flood safety; operational suitability must be reviewed.');
       setRoutingRecommendation(false);
       lifecycle.finish();
       endPerformanceStage(totalMarker, { success: false, candidateCount: latestAreas.length, attemptNumber });
@@ -1658,7 +1664,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
 
     const routeMarker = beginPerformanceStage('evacuation-road-routing');
     try {
-      const plan = await resolveBestRoadPlan(rescueLocation, latestAreas, reportBarangay, peopleCount, lifecycle.signal);
+      const plan = await resolveBestRoadPlan(rescueLocation, latestAreas, peopleCount, lifecycle.signal);
       if (!isCurrent()) return;
       endPerformanceStage(routeMarker, { success: Boolean(plan), candidateCount: latestAreas.length });
       if (!plan) {
@@ -1923,9 +1929,10 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       };
       if (payload.type === 'layer-visibility' && payload.visibility) {
         const nextVisibility = { ...layerVisibilityRef.current, ...payload.visibility };
-        nextVisibility.floodHazard = !Boolean(
-          nextVisibility.rainOverlay || nextVisibility.temperatureOverlay || nextVisibility.humidityOverlay || nextVisibility.windOverlay
-        );
+        if (nextVisibility.rainOverlay || nextVisibility.temperatureOverlay
+          || nextVisibility.humidityOverlay || nextVisibility.windOverlay) {
+          nextVisibility.floodHazard = false;
+        }
         layerVisibilityRef.current = nextVisibility;
         return;
       }
@@ -1962,9 +1969,9 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       return;
     }
 
-    if (!isInBarangay(refreshedSelected, rescueBarangay)) {
+    if (!isInSupportedRoutingBarangay(refreshedSelected)) {
       setSelectedAreaId(null);
-      showNotice('Select a local center', `Rescue requests from Barangay ${rescueBarangay} must use an evacuation center in the same barangay.`);
+      showNotice('Unsupported evacuation center', 'The selected evacuation center is outside the six supported barangays. Please calculate a new route.');
       setSubmitting(false);
       return;
     }
@@ -1972,7 +1979,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     if (!hasCapacityFor(refreshedSelected, peopleCount)) {
       setRoutingRecommendation(true);
       try {
-        const plan = await resolveBestRoadPlan(userLocation, latestAreas, rescueBarangay, peopleCount);
+        const plan = await resolveBestRoadPlan(userLocation, latestAreas, peopleCount);
         if (plan) {
           applyRoadPlan(plan);
           showNotice(
@@ -2068,7 +2075,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
         setRoutingRecommendation(true);
         try {
           const refreshedAreas = await loadEvacuationAreas(true, false);
-          const replacementPlan = await resolveBestRoadPlan(userLocation, refreshedAreas, rescueBarangay, peopleCount);
+          const replacementPlan = await resolveBestRoadPlan(userLocation, refreshedAreas, peopleCount);
           if (replacementPlan) {
             applyRoadPlan(replacementPlan);
             showNotice(
