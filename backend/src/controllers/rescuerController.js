@@ -445,6 +445,16 @@ async function updateMyLocation(req, res) {
   const longitude = Number(req.body?.longitude);
   const accuracyMeters = Number(req.body?.accuracyMeters);
   const capturedAt = req.body?.capturedAt;
+  const hasCapturedAt = Object.prototype.hasOwnProperty.call(req.body || {}, 'capturedAt');
+  const capturedAtMs = Number.isFinite(Number(capturedAt))
+    ? Number(capturedAt)
+    : Date.parse(String(capturedAt || ''));
+  // Legacy deployed clients did not send capture time. Preserve their receipt-
+  // time behavior, but never turn an explicitly stale/future/invalid timestamp
+  // into a fresh dispatch coordinate.
+  const locationObservedAt = hasCapturedAt
+    ? (Number.isFinite(capturedAtMs) ? new Date(capturedAtMs) : new Date(0))
+    : null;
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)
     || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
     throw httpError(400, 'Valid latitude and longitude are required.');
@@ -454,10 +464,10 @@ async function updateMyLocation(req, res) {
     await client.query('BEGIN');
     const locationResult = await client.query(
       `UPDATE users SET current_latitude = $1, current_longitude = $2,
-         location_updated_at = NOW(), last_seen_at = NOW(), is_active = TRUE
+         location_updated_at = COALESCE($4::timestamptz, NOW()), last_seen_at = NOW(), is_active = TRUE
        WHERE id = $3 AND role IN ('rescuer', 'barangay_rescuer') AND COALESCE(is_archived, FALSE) = FALSE
        RETURNING location_updated_at`,
-      [latitude, longitude, req.user.userId],
+      [latitude, longitude, req.user.userId, locationObservedAt],
     );
     if (!locationResult.rows[0]) throw httpError(404, 'Responder account not found.');
 

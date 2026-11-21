@@ -1,6 +1,15 @@
 const { httpError } = require('../utils/httpError');
 
 const CDRRMD_BASE = { latitude: 14.194052, longitude: 121.159688 };
+const TRUSTED_LOCATION_SQL = `(
+  u.location_updated_at BETWEEN NOW() - INTERVAL '45 seconds' AND NOW() + INTERVAL '5 seconds'
+  AND u.current_latitude BETWEEN -90 AND 90
+  AND u.current_longitude BETWEEN -180 AND 180
+)`;
+
+function dispatchCoordinateSql(column, boundaryColumn, fallbackParameter) {
+  return `COALESCE(CASE WHEN ${TRUSTED_LOCATION_SQL} THEN u.${column} END, ${boundaryColumn}, ${fallbackParameter}::double precision)`;
+}
 
 function dispatchConfig(dispatchType) {
   if (dispatchType === 'barangay_responder') {
@@ -35,18 +44,20 @@ async function findNearestAvailableRescuer(client, {
   const config = dispatchConfig(dispatchType);
   const fallbackLatitude = dispatchType === 'cddrmd_backup' ? CDRRMD_BASE.latitude : null;
   const fallbackLongitude = dispatchType === 'cddrmd_backup' ? CDRRMD_BASE.longitude : null;
+  const rescuerLatitudeSql = dispatchCoordinateSql('current_latitude', 'bb.centroid_lat', '$5');
+  const rescuerLongitudeSql = dispatchCoordinateSql('current_longitude', 'bb.centroid_lon', '$6');
   const { rows } = await client.query(
     `SELECT u.id, u.username, u.first_name, u.last_name, u.created_at, u.barangay_name,
-            COALESCE(u.current_latitude, bb.centroid_lat, $5::double precision) AS rescuer_latitude,
-            COALESCE(u.current_longitude, bb.centroid_lon, $6::double precision) AS rescuer_longitude,
+            ${rescuerLatitudeSql} AS rescuer_latitude,
+            ${rescuerLongitudeSql} AS rescuer_longitude,
             CASE
-              WHEN COALESCE(u.current_latitude, bb.centroid_lat, $5::double precision) IS NULL
-                OR COALESCE(u.current_longitude, bb.centroid_lon, $6::double precision) IS NULL
+              WHEN ${rescuerLatitudeSql} IS NULL
+                OR ${rescuerLongitudeSql} IS NULL
               THEN NULL
               ELSE 6371 * 2 * ASIN(SQRT(
-                POWER(SIN(RADIANS(COALESCE(u.current_latitude, bb.centroid_lat, $5::double precision) - $3) / 2), 2) +
-                COS(RADIANS($3)) * COS(RADIANS(COALESCE(u.current_latitude, bb.centroid_lat, $5::double precision))) *
-                POWER(SIN(RADIANS(COALESCE(u.current_longitude, bb.centroid_lon, $6::double precision) - $4) / 2), 2)
+                POWER(SIN(RADIANS(${rescuerLatitudeSql} - $3) / 2), 2) +
+                COS(RADIANS($3)) * COS(RADIANS(${rescuerLatitudeSql})) *
+                POWER(SIN(RADIANS(${rescuerLongitudeSql} - $4) / 2), 2)
               ))
             END AS distance_km
      FROM users u
@@ -62,7 +73,9 @@ async function findNearestAvailableRescuer(client, {
            AND active.arrived_at IS NULL AND active.declined_at IS NULL
            AND active.id <> $7
        )
-     ORDER BY distance_km ASC NULLS LAST, u.location_updated_at DESC NULLS LAST, u.id
+     ORDER BY distance_km ASC NULLS LAST,
+       CASE WHEN ${TRUSTED_LOCATION_SQL} THEN u.location_updated_at END DESC NULLS LAST,
+       u.id
      ${lock ? 'FOR UPDATE OF u SKIP LOCKED' : ''}
      LIMIT 1`,
     [
