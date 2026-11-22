@@ -2,6 +2,10 @@ const fs = require('fs');
 const path = require('path');
 const { getCalambaWindField } = require('../services/openMeteoWindService');
 const { loadHardwareSensorSnapshot } = require('../services/hardwareSensorService');
+const {
+  polygonizeBoundaryFeatureCollection,
+  polygonizeBoundaryGeometry,
+} = require('../services/gisBoundaryGeometry');
 const { setPublicCache } = require('../utils/httpCache');
 
 const CALAMBA_CENTER = {
@@ -214,45 +218,38 @@ function buildRiskLookupByBarangayName() {
   return lookup;
 }
 
-function mergeMissingBarangayFeatures(sourceGeoJson) {
+function prepareBarangayBoundaryFeatures(sourceGeoJson) {
   const sourceFeatures = Array.isArray(sourceGeoJson?.features) ? sourceGeoJson.features : [];
-  const riskSource = getCachedBarangayBoundaries();
-  const riskFeatures = Array.isArray(riskSource?.features) ? riskSource.features : [];
+  const riskLookup = buildRiskLookupByBarangayName();
+  const expectedKeys = new Set(riskLookup.keys());
+  const sourceKeys = new Set(sourceFeatures.map((feature) => canonicalBarangayKey(feature?.properties?.barangay_name)).filter(Boolean));
+  const missingKeys = Array.from(expectedKeys).filter((key) => !sourceKeys.has(key));
+  if (missingKeys.length > 0) {
+    throw new Error(`Boundary source is missing supported barangays: ${missingKeys.join(', ')}.`);
+  }
 
-  const byCanonical = new Map();
-  sourceFeatures.forEach((feature) => {
+  const polygonized = polygonizeBoundaryFeatureCollection(sourceGeoJson);
+  const features = polygonized.features.map((feature) => {
     const key = canonicalBarangayKey(feature?.properties?.barangay_name);
-    if (!key || byCanonical.has(key)) {
-      return;
-    }
-    byCanonical.set(key, feature);
-  });
-
-  riskFeatures.forEach((feature) => {
-    const key = canonicalBarangayKey(feature?.properties?.barangay_name);
-    if (!key || byCanonical.has(key)) {
-      return;
-    }
-
-    const normalizedRisk = String(feature?.properties?.flood_risk_level || 'LOW').trim().toUpperCase();
-    byCanonical.set(key, {
-      type: 'Feature',
+    return {
+      ...feature,
       properties: {
-        barangay_name: normalizeDisplayBarangayName(feature?.properties?.barangay_name),
-        flood_risk_level: normalizedRisk === 'HIGH' ? 'HIGH' : normalizedRisk === 'MODERATE' ? 'MEDIUM' : normalizedRisk === 'MEDIUM' ? 'MEDIUM' : 'LOW',
-        geometry_source: 'fallback-risk-polygon',
+        ...(feature.properties || {}),
+        flood_risk_level: riskLookup.get(key) || 'LOW',
       },
-      geometry: feature?.geometry || null,
-    });
+    };
   });
 
   return {
-    type: 'FeatureCollection',
-    features: Array.from(byCanonical.values()),
+    ...polygonized,
+    features,
     metadata: {
       source: sourceGeoJson?.metadata?.source || 'OpenStreetMap Overpass administrative relations',
       generatedAt: new Date().toISOString(),
-      mergedWithRiskFallback: true,
+      geometryType: 'Polygon/MultiPolygon',
+      reconstruction: 'Exact source segments joined at matching endpoints; no synthetic coordinates or convex hulls.',
+      boundaryAccuracy: 'OpenStreetMap administrative relations are topologically validated for visualization but are not an official cadastral or CLUP boundary dataset.',
+      floodRenderingPurpose: 'Barangay polygons constrain the hardware water-level status visualization; they are not detailed flood-susceptibility zones.',
     },
   };
 }
@@ -423,119 +420,19 @@ function extractSamplePointsFromGeometry(geometry) {
   return sampled.length > 0 ? sampled : [centroid];
 }
 
-function cross(o, a, b) {
-  return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-}
-
-function buildConvexHull(points) {
-  const normalized = points
-    .map((point) => [Number(point[0]), Number(point[1])])
-    .filter((point) => Number.isFinite(point[0]) && Number.isFinite(point[1]))
-    .sort((a, b) => (a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]));
-
-  const unique = [];
-  for (let i = 0; i < normalized.length; i += 1) {
-    const point = normalized[i];
-    const prev = unique[unique.length - 1];
-    if (!prev || prev[0] !== point[0] || prev[1] !== point[1]) {
-      unique.push(point);
-    }
-  }
-
-  if (unique.length < 3) {
-    return [];
-  }
-
-  const lower = [];
-  for (let i = 0; i < unique.length; i += 1) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], unique[i]) <= 0) {
-      lower.pop();
-    }
-    lower.push(unique[i]);
-  }
-
-  const upper = [];
-  for (let i = unique.length - 1; i >= 0; i -= 1) {
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], unique[i]) <= 0) {
-      upper.pop();
-    }
-    upper.push(unique[i]);
-  }
-
-  lower.pop();
-  upper.pop();
-  const hull = lower.concat(upper);
-  if (hull.length < 3) {
-    return [];
-  }
-
-  hull.push(hull[0]);
-  return hull;
-}
-
 function toPolygonGeometry(geometry) {
-  if (!geometry || !geometry.type) {
+  try {
+    return polygonizeBoundaryGeometry(geometry, 'Barangay overlay geometry');
+  } catch {
     return null;
   }
-
-  if (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon') {
-    return geometry;
-  }
-
-  if (geometry.type === 'LineString' || geometry.type === 'MultiLineString') {
-    const sourceLines = geometry.type === 'LineString' ? [geometry.coordinates] : geometry.coordinates;
-    const remaining = (Array.isArray(sourceLines) ? sourceLines : [])
-      .map((line) => (Array.isArray(line) ? line : [])
-        .map((point) => [Number(point?.[0]), Number(point?.[1])])
-        .filter((point) => Number.isFinite(point[0]) && Number.isFinite(point[1])))
-      .filter((line) => line.length > 1);
-    const rings = [];
-    const pointsMatch = (left, right) =>
-      Math.abs(left[0] - right[0]) < 1e-7 && Math.abs(left[1] - right[1]) < 1e-7;
-
-    while (remaining.length > 0) {
-      const ring = remaining.shift().slice();
-      while (!pointsMatch(ring[0], ring[ring.length - 1])) {
-        const end = ring[ring.length - 1];
-        const nextIndex = remaining.findIndex((line) =>
-          pointsMatch(line[0], end) || pointsMatch(line[line.length - 1], end));
-        if (nextIndex < 0) break;
-
-        const next = remaining.splice(nextIndex, 1)[0];
-        if (!pointsMatch(next[0], end)) next.reverse();
-        ring.push(...next.slice(1));
-      }
-
-      if (ring.length >= 4 && pointsMatch(ring[0], ring[ring.length - 1])) {
-        rings.push(ring);
-      }
-    }
-
-    if (rings.length === 1) {
-      return { type: 'Polygon', coordinates: [rings[0]] };
-    }
-    if (rings.length > 1) {
-      return { type: 'MultiPolygon', coordinates: rings.map((ring) => [ring]) };
-    }
-  }
-
-  const points = extractGeometryCoordinates(geometry);
-  const hull = buildConvexHull(points);
-  if (hull.length < 4) {
-    return null;
-  }
-
-  return {
-    type: 'Polygon',
-    coordinates: [hull],
-  };
 }
 
 async function getCalambaBoundaryOutlinesForOverlay() {
   if (!cachedBarangayBoundaryOutlines) {
     const persisted = loadPersistedBoundaryOutlines();
     if (persisted) {
-      cachedBarangayBoundaryOutlines = mergeMissingBarangayFeatures(persisted);
+      cachedBarangayBoundaryOutlines = prepareBarangayBoundaryFeatures(persisted);
       cachedBarangayBoundaryOutlinesAt = Date.now();
     }
   }
@@ -548,17 +445,18 @@ async function getCalambaBoundaryOutlinesForOverlay() {
   try {
     const next = await buildCalambaBarangayBoundaryGeoJson();
     if (Array.isArray(next?.features) && next.features.length > 0) {
-      const merged = mergeMissingBarangayFeatures(next);
+      const merged = prepareBarangayBoundaryFeatures(next);
       cachedBarangayBoundaryOutlines = merged;
       cachedBarangayBoundaryOutlinesAt = now;
       persistBoundaryOutlines(merged);
       return merged;
     }
   } catch {
-    // Ignore and fallback to cached risk polygons.
+    // Keep the last topologically validated administrative boundaries.
   }
 
-  return mergeMissingBarangayFeatures(getCachedBarangayBoundaries());
+  if (cachedBarangayBoundaryOutlines) return cachedBarangayBoundaryOutlines;
+  throw new Error('No validated barangay boundary source is available.');
 }
 
 function isPointInsideCalambaBoundary(lat, lon) {
@@ -797,7 +695,7 @@ async function buildCalambaRainImpactPayload() {
     fetchWeatherSignalForRainImpact(),
     loadHardwareSensorSnapshot(),
   ]);
-  const source = mergeMissingBarangayFeatures(await getCalambaBoundaryOutlinesForOverlay());
+  const source = prepareBarangayBoundaryFeatures(await getCalambaBoundaryOutlinesForOverlay());
   const features = Array.isArray(source?.features) ? source.features : [];
   const climateByBarangay = new Map(
     hardwareSnapshot.sensors
@@ -899,7 +797,7 @@ async function buildCalambaRainImpactPayload() {
           thunderstorm_probability_pct: impact.thunderstormProbabilityPct,
           typhoon_forecast_impact: impact.typhoonForecastImpact,
         },
-        geometry: toPolygonGeometry(feature.geometry) || feature.geometry,
+        geometry: toPolygonGeometry(feature.geometry),
       };
     })
     .filter(Boolean);
@@ -1061,14 +959,14 @@ async function getCalambaBarangayBoundaries(req, res) {
     if (!cachedBarangayBoundaryOutlines) {
       const persisted = loadPersistedBoundaryOutlines();
       if (persisted) {
-        cachedBarangayBoundaryOutlines = mergeMissingBarangayFeatures(persisted);
+        cachedBarangayBoundaryOutlines = prepareBarangayBoundaryFeatures(persisted);
         cachedBarangayBoundaryOutlinesAt = Date.now();
       }
     }
 
     const now = Date.now();
     if (cachedBarangayBoundaryOutlines && now - cachedBarangayBoundaryOutlinesAt < BARANGAY_BOUNDARY_CACHE_TTL_MS) {
-      return res.json(mergeMissingBarangayFeatures(cachedBarangayBoundaryOutlines));
+      return res.json(cachedBarangayBoundaryOutlines);
     }
 
     const next = await buildCalambaBarangayBoundaryGeoJson();
@@ -1076,7 +974,7 @@ async function getCalambaBarangayBoundaries(req, res) {
       throw new Error('No barangay boundary outlines were returned by Overpass.');
     }
 
-    const merged = mergeMissingBarangayFeatures(next);
+    const merged = prepareBarangayBoundaryFeatures(next);
     cachedBarangayBoundaryOutlines = merged;
     cachedBarangayBoundaryOutlinesAt = now;
     persistBoundaryOutlines(merged);
@@ -1084,12 +982,12 @@ async function getCalambaBarangayBoundaries(req, res) {
   } catch (error) {
     console.error('Failed to load Calamba barangay boundaries:', error.message);
     if (cachedBarangayBoundaryOutlines) {
-      return res.json(mergeMissingBarangayFeatures(cachedBarangayBoundaryOutlines));
+      return res.json(cachedBarangayBoundaryOutlines);
     }
 
     const persisted = loadPersistedBoundaryOutlines();
     if (persisted) {
-      return res.json(mergeMissingBarangayFeatures(persisted));
+      return res.json(prepareBarangayBoundaryFeatures(persisted));
     }
 
     return res.status(503).json({ message: 'Failed to load Calamba barangay boundaries from OSM source.' });
