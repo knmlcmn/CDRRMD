@@ -24,6 +24,7 @@ import { rankNearestEligibleEvacuationCenters } from '../services/evacuationSele
 import { loadSession } from '../services/session';
 import { MAX_MAP_CONTENT_WIDTH, useResponsiveLayout, WEB_DESKTOP_MAP_WIDTH } from '../utils/responsive';
 import { keepIfEqual } from '../utils/stableData';
+import { buildPopulationDensityMapRuntimeScript } from '../utils/populationDensityMapRuntime';
 import { buildHardwareFloodRuntimeScript } from '../utils/waterLevelHazard';
 import { requireLiveLocation } from '../services/locationAccess';
 import { createSingleFlight } from '../utils/singleFlight';
@@ -77,6 +78,7 @@ type UserMapLayerVisibility = {
   temperatureOverlay: boolean;
   humidityOverlay: boolean;
   windOverlay: boolean;
+  populationDensity: boolean;
 };
 
 type Props = {
@@ -322,18 +324,15 @@ function buildLeafletHtml(
         rainOverlay: false,
         temperatureOverlay: false,
         humidityOverlay: false,
-        windOverlay: false
+        windOverlay: false,
+        populationDensity: false
       }, data.layerVisibility || {});
       function normalizeDataLayerVisibility() {
-        var activeKey = Boolean(visibility.rainOverlay)
-          ? 'rainOverlay'
-          : Boolean(visibility.temperatureOverlay)
-            ? 'temperatureOverlay'
-            : Boolean(visibility.humidityOverlay)
-              ? 'humidityOverlay'
-              : Boolean(visibility.windOverlay)
-                ? 'windOverlay'
-                : null;
+        var weatherKeys = ['rainOverlay', 'temperatureOverlay', 'humidityOverlay', 'windOverlay'];
+        var activeKey = Boolean(visibility.populationDensity)
+          ? 'populationDensity'
+          : weatherKeys.find(function(key) { return Boolean(visibility[key]); }) || null;
+        visibility.populationDensity = activeKey === 'populationDensity';
         visibility.rainOverlay = activeKey === 'rainOverlay';
         visibility.temperatureOverlay = activeKey === 'temperatureOverlay';
         visibility.humidityOverlay = activeKey === 'humidityOverlay';
@@ -472,8 +471,7 @@ function buildLeafletHtml(
           '<div class="row"><span class="legend-map-icon" style="background:#ef4444"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-user.svg" /></span>Your Location</div>' +
           '<div class="row"><span class="legend-map-icon" style="background:#e11d48"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" /></span>Evacuation Area</div>' +
           '<div class="row"><span class="legend-map-icon" style="background:#14b8a6"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" /></span>Selected Center</div>' +
-          '<div class="row"><span class="legend-map-line"></span>Rescue Route</div>' +
-          '<div class="row"><span class="legend-map-boundary"></span>Calamba Boundary</div>';
+          '<div class="row"><span class="legend-map-line"></span>Rescue Route</div>';
 
         var noLayers = !floodOn && !weatherOn && !rainOn;
         return (
@@ -1135,6 +1133,11 @@ function buildLeafletHtml(
             var props = (feature && feature.properties) ? feature.properties : {};
             var name = props.barangay_name || props.barangayName || props.name || 'Barangay';
             var style = hardwareFloodBoundaryStyle(name, false);
+            var geometryType = feature && feature.geometry ? feature.geometry.type : '';
+            if (geometryType !== 'Polygon' && geometryType !== 'MultiPolygon') {
+              style.fill = false;
+              style.fillOpacity = 0;
+            }
             if (Boolean(visibility.temperatureOverlay) || Boolean(visibility.humidityOverlay)) {
               style.fill = false;
               style.fillOpacity = 0;
@@ -1185,7 +1188,7 @@ function buildLeafletHtml(
         var weatherLayerVisible = Boolean(
           visibility.rainOverlay || visibility.temperatureOverlay || visibility.humidityOverlay || visibility.windOverlay
         );
-        setLayerVisible(boundaryLayer, Boolean(visibility.boundary));
+        setLayerVisible(boundaryLayer, false);
         setLayerVisible(areaLayer, Boolean(visibility.evacuationAreas));
         setLayerVisible(userLayer, Boolean(visibility.userMarker));
         setLayerVisible(routeLayer, Boolean(visibility.route));
@@ -1199,9 +1202,14 @@ function buildLeafletHtml(
         renderLegendControl();
       }
 
+      var layerControl = null;
+      var populationDensityAvailable = false;
+      var thematicLayerKeys = ['populationDensity', 'floodHazard', 'rainOverlay', 'temperatureOverlay', 'humidityOverlay', 'windOverlay'];
+
       function renderLayerControl() {
-        var control = L.control({ position: 'topright' });
-        control.onAdd = function() {
+        if (layerControl) map.removeControl(layerControl);
+        layerControl = L.control({ position: 'topright' });
+        layerControl.onAdd = function() {
           var wrap = L.DomUtil.create('div', 'layer-control');
           var button = L.DomUtil.create('button', 'layer-control-button', wrap);
           button.type = 'button';
@@ -1212,7 +1220,6 @@ function buildLeafletHtml(
           title.textContent = 'Map Layers';
           var grid = L.DomUtil.create('div', 'layer-icon-grid', panel);
           var definitions = [
-            { key: 'boundary', label: 'Calamba Boundary', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.8"><rect x="4" y="4" width="5" height="5" rx="1"/><rect x="15" y="4" width="5" height="5" rx="1"/><rect x="4" y="15" width="5" height="5" rx="1"/><rect x="15" y="15" width="5" height="5" rx="1"/><path d="M9 6.5h6M6.5 9v6M17.5 9v6M9 17.5h6" stroke-dasharray="2 2"/></svg>' },
             { key: 'floodHazard', label: 'Flood Hazard', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="1.8" stroke-linecap="round"><path d="M2 15c3 0 3-3 6-3s3 3 6 3 3-3 6-3 3 3 4 3"/><path d="M2 20c3 0 3-3 6-3s3 3 6 3 3-3 6-3 3 3 4 3"/><path d="M5 10l4-5 3 3 3-4 4 6"/></svg>' },
             { key: 'evacuationAreas', label: 'Evacuation Areas', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#10d9a0" stroke-width="1.8"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0z"/><circle cx="12" cy="10" r="2.5"/></svg>' },
             { key: 'userMarker', label: 'Your Location', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#fb7185" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>' },
@@ -1222,6 +1229,9 @@ function buildLeafletHtml(
             { key: 'humidityOverlay', label: 'Relative Humidity', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="1.8"><path d="M12 2.5S5.5 9.5 5.5 15a6.5 6.5 0 0 0 13 0C18.5 9.5 12 2.5 12 2.5z"/></svg>' },
             { key: 'windOverlay', label: 'Wind Forecast', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#facc15" stroke-width="1.8" stroke-linecap="round"><path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h8"/></svg>' },
           ];
+          if (populationDensityAvailable) {
+            definitions.unshift({ key: 'populationDensity', label: 'Population Density', icon: '<svg class="layer-icon-svg" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.8"><rect x="4" y="4" width="5" height="5" rx="1"/><rect x="15" y="4" width="5" height="5" rx="1"/><rect x="4" y="15" width="5" height="5" rx="1"/><rect x="15" y="15" width="5" height="5" rx="1"/><path d="M9 6.5h6M6.5 9v6M17.5 9v6M9 17.5h6" stroke-dasharray="2 2"/></svg>' });
+          }
           function refreshLayerTiles() {
             grid.querySelectorAll('.layer-icon-item').forEach(function(item) {
               item.classList.toggle('layer-icon-on', Boolean(visibility[item.dataset.key]));
@@ -1236,18 +1246,33 @@ function buildLeafletHtml(
             item.innerHTML = definition.icon + '<span class="layer-icon-label">' + definition.label + '</span>';
             item.addEventListener('click', function() {
               var key = definition.key;
-              if (key === 'floodHazard') {
-                visibility.floodHazard = !Boolean(visibility.floodHazard);
+              if (key === 'populationDensity') {
+                var nextPopulationState = !Boolean(visibility.populationDensity);
+                visibility.populationDensity = nextPopulationState;
+                visibility.floodHazard = false;
                 visibility.rainOverlay = false;
                 visibility.temperatureOverlay = false;
                 visibility.humidityOverlay = false;
                 visibility.windOverlay = false;
+                if (window.cdrrmdPopulationDensityLayer) {
+                  window.cdrrmdPopulationDensityLayer.setVisible(nextPopulationState);
+                }
+              } else if (key === 'floodHazard') {
+                visibility.floodHazard = !Boolean(visibility.floodHazard);
+                visibility.populationDensity = false;
+                visibility.rainOverlay = false;
+                visibility.temperatureOverlay = false;
+                visibility.humidityOverlay = false;
+                visibility.windOverlay = false;
+                if (window.cdrrmdPopulationDensityLayer) window.cdrrmdPopulationDensityLayer.setVisible(false);
               } else if (key === 'rainOverlay' || key === 'temperatureOverlay' || key === 'humidityOverlay' || key === 'windOverlay') {
                 var nextWeatherState = !Boolean(visibility[key]);
+                visibility.populationDensity = false;
                 visibility.rainOverlay = nextWeatherState && key === 'rainOverlay';
                 visibility.temperatureOverlay = nextWeatherState && key === 'temperatureOverlay';
                 visibility.humidityOverlay = nextWeatherState && key === 'humidityOverlay';
                 visibility.windOverlay = nextWeatherState && key === 'windOverlay';
+                if (window.cdrrmdPopulationDensityLayer) window.cdrrmdPopulationDensityLayer.setVisible(false);
               } else {
                 visibility[key] = !Boolean(visibility[key]);
               }
@@ -1274,8 +1299,18 @@ function buildLeafletHtml(
           L.DomEvent.disableClickPropagation(wrap);
           return wrap;
         };
-        control.addTo(map);
+        layerControl.addTo(map);
       }
+
+      window.addEventListener('cdrrmd:population-density-ready', function(event) {
+        populationDensityAvailable = Boolean(event && event.detail && event.detail.enabled);
+        if (!populationDensityAvailable) visibility.populationDensity = false;
+        renderLayerControl();
+      });
+
+      window.addEventListener('cdrrmd:population-density-visibility', function(event) {
+        visibility.populationDensity = Boolean(event && event.detail && event.detail.visible);
+      });
 
       var userPinIcon = L.divIcon({
         className: '',
@@ -1389,6 +1424,7 @@ function buildLeafletHtml(
       renderRescueData(data);
 
       loadBarangayFloodLayer();
+      ${buildPopulationDensityMapRuntimeScript('data.floodHazardUrl')}
       if (Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
       setInterval(function() {
         if (document.visibilityState === 'visible' && Boolean(visibility.floodHazard)) refreshHardwareFloodLevels();
@@ -1447,6 +1483,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     temperatureOverlay: false,
     humidityOverlay: false,
     windOverlay: false,
+    populationDensity: false,
   });
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const recordSyncInFlightRef = useRef(false);

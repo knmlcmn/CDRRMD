@@ -17,6 +17,7 @@ const authRoutes = require('./routes/authRoutes');
 const contentRoutes = require('./routes/contentRoutes');
 const weatherRoutes = require('./routes/weatherRoutes');
 const floodRiskRoutes = require('./routes/floodRiskRoutes');
+const gisRoutes = require('./routes/gisRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const barangayRoutes = require('./routes/barangayRoutes');
@@ -136,6 +137,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/content', contentRoutes);
 app.use('/api/weather', weatherRoutes);
 app.use('/api/flood-risk', floodRiskRoutes);
+app.use('/api/gis', gisRoutes);
 app.use('/api/admins', adminRoutes);
 app.use('/api/reports', reportRoutes);
 app.use(

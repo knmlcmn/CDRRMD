@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CDRRMD Operations Map Layer Panel Preview</title>
+    <style>
+      html, body, iframe { border: 0; height: 100%; margin: 0; width: 100%; }
+      body { background: #0f172a; }
+    </style>
+  </head>
+  <body>
+    <iframe id="preview" title="Operations Map local preview"></iframe>
+    <script type="module">
+      import { buildCalambaMapHtml } from '/src/utils/calambaMapHtml.ts';
+
+      const apiBase = 'http://127.0.0.1:4000/api';
+      const params = new URLSearchParams(location.search);
+      const requestedLayer = params.get('layer') || 'populationDensity';
+      const switchFromPopulation = params.get('switch') === 'flood';
+      const frame = document.querySelector('#preview');
+      const mapHtml = buildCalambaMapHtml(
+        [{ id: 1, name: 'Palingon Evacuation Center', barangay: 'Palingon', place_type: 'Evacuation Site', address: 'Palingon, Calamba', capacity: 150, evacuees: 18, evacuation_status: 'available', latitude: 14.2156, longitude: 121.1836, is_active: true, created_at: '' }],
+        { latitude: 14.2085, longitude: 121.168 },
+        [
+          { latitude: 14.2085, longitude: 121.168 },
+          { latitude: 14.212, longitude: 121.174 },
+          { latitude: 14.216, longitude: 121.181 },
+        ],
+        { latitude: 14.216, longitude: 121.181 },
+        'LOCAL-PREVIEW',
+        [{ reportCode: 'LOCAL-PREVIEW', latitude: 14.216, longitude: 121.181, status: 'Accepted', reportType: 'Rescue' }],
+        apiBase + '/flood-risk/calamba/barangays',
+        apiBase + '/flood-risk/calamba/raster',
+        apiBase + '/flood-risk/calamba/rain-impact',
+        apiBase + '/weather/wind-field',
+        {
+          boundary: true,
+          floodHazard: true,
+          evacuationAreas: true,
+          incidentMarkers: true,
+          responderRoute: true,
+          weatherOverlay: false,
+          temperatureOverlay: false,
+          humidityOverlay: false,
+          windOverlay: false,
+        },
+        'Live CDRRMD Rescuer location',
+        {
+          focusOnResponder: false,
+          allowLiveRouteUpdates: true,
+          responderKind: 'cddrmd',
+          largeLayerControl: true,
+          showForecastTimeline: false,
+          showForecastLayers: true,
+          showRecenterControl: true,
+          sensorRefreshIntervalMs: 5000,
+        },
+      );
+      const transparentPixel = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+      frame.srcdoc = mapHtml.replace(/https:\/\/unpkg\.com\/boxicons[^"']+/g, transparentPixel);
+
+      frame.addEventListener('load', () => {
+        const findTile = (key) => frame.contentDocument?.querySelector('.layer-icon-item[data-key="' + key + '"]');
+        const waitForPanel = window.setInterval(() => {
+          const populationTile = findTile('populationDensity');
+          if (!populationTile) return;
+          window.clearInterval(waitForPanel);
+          if (switchFromPopulation) {
+            populationTile.click();
+            window.setTimeout(() => findTile('floodHazard')?.click(), 350);
+          } else {
+            findTile(requestedLayer)?.click();
+          }
+          window.setTimeout(() => frame.contentDocument?.querySelector('.layer-ctrl-btn')?.click(), 500);
+        }, 100);
+      });
+    </script>
+  </body>
+</html>

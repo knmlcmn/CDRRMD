@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CDRRMD Population Density — Local Preview</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <style>
+      * { box-sizing: border-box; }
+      body { background: #0f172a; color: #e2e8f0; font: 14px/1.45 Arial, sans-serif; margin: 0; }
+      header { align-items: center; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; padding: 14px 18px; }
+      h1 { font-size: 18px; margin: 0; }
+      .sub { color: #94a3b8; font-size: 12px; }
+      .toolbar { display: flex; flex-wrap: wrap; gap: 7px; }
+      button, select { background: #1e293b; border: 1px solid #475569; border-radius: 7px; color: #fff; cursor: pointer; padding: 7px 9px; }
+      button.active { background: #0369a1; border-color: #38bdf8; }
+      main { padding: 0 18px 18px; }
+      #map { border: 1px solid #334155; border-radius: 12px; height: min(70vh, 720px); overflow: hidden; }
+      .status { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin: 10px 0; }
+      .card { background: #172033; border: 1px solid #334155; border-radius: 9px; padding: 8px 10px; }
+      .pass { color: #86efac; font-weight: 700; }
+      .pending { color: #fde68a; font-weight: 700; }
+      .preview-label { background: rgba(15,23,42,.88); border: 1px solid #64748b; border-radius: 999px; color: #fff; font: 700 10px/1 Arial,sans-serif; padding: 3px 6px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>Population Density GIS — Local Preview</h1>
+        <div class="sub">Live local endpoint · existing polygons are visualization-only · population layer starts OFF</div>
+      </div>
+      <div class="toolbar">
+        <select id="role" aria-label="Portal preview">
+          <option value="admin">Admin</option>
+          <option value="barangay">Barangay (Palingon)</option>
+          <option value="rescuer">Rescuer</option>
+          <option value="resident">Resident</option>
+        </select>
+        <button data-mode="flood" class="active">Flood Hazard</button>
+        <button data-mode="temperature">Temperature</button>
+        <button data-mode="humidity">Humidity</button>
+      </div>
+    </header>
+    <main>
+      <div class="status">
+        <div class="card">Portal: <strong id="portal-state">Admin</strong></div>
+        <div class="card">Hardware mode: <strong id="hardware-state">Flood Hazard</strong></div>
+        <div class="card">Sensor polling: <strong id="poll-state">0 cycles</strong></div>
+        <div class="card">Population isolation: <strong id="integrity-state" class="pending">CHECKING</strong></div>
+      </div>
+      <div id="map"></div>
+    </main>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script type="module">
+      import { buildPopulationDensityMapRuntimeScript } from '/src/utils/populationDensityMapRuntime.ts';
+
+      const API_BASE = 'http://127.0.0.1:4000/api';
+      const query = new URLSearchParams(location.search);
+      const roleSelect = document.querySelector('#role');
+      const role = ['admin', 'barangay', 'rescuer', 'resident'].includes(query.get('role')) ? query.get('role') : 'admin';
+      roleSelect.value = role;
+      document.querySelector('#portal-state').textContent = role === 'barangay' ? 'Barangay — Palingon' : role[0].toUpperCase() + role.slice(1);
+
+      var payload = { barangayBoundaryGeoJsonUrl: API_BASE + '/flood-risk/calamba/barangays' };
+      var mapBehavior = { jurisdictionBarangayName: role === 'barangay' ? 'Palingon' : null };
+      var map = L.map('map', { minZoom: 11, maxZoom: 18 }).setView([14.2145, 121.177], role === 'barangay' ? 15 : 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '' }).addTo(map);
+
+      const operationalLayer = L.layerGroup().addTo(map);
+      const navigationLayer = L.layerGroup().addTo(map);
+      let boundaryData = null;
+      let currentMode = ['flood', 'temperature', 'humidity'].includes(query.get('mode')) ? query.get('mode') : 'flood';
+      let pollCycles = 0;
+      const readings = Object.freeze({ flood: 'HW-01 · 42%', temperature: '29.4°C', humidity: '78%' });
+      const colors = Object.freeze({ flood: '#22c55e', temperature: '#fb7185', humidity: '#38bdf8' });
+      const baseline = JSON.stringify({ readings, colors });
+
+      document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === currentMode));
+      document.querySelector('#hardware-state').textContent = document.querySelector('[data-mode="' + currentMode + '"]').textContent;
+
+      function normalize(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+      function renderOperationalLayer() {
+        operationalLayer.clearLayers();
+        if (!boundaryData) return;
+        const features = boundaryData.features.filter((feature) => !mapBehavior.jurisdictionBarangayName || normalize(feature.properties.barangay_name) === normalize(mapBehavior.jurisdictionBarangayName));
+        L.geoJSON({ type: 'FeatureCollection', features }, {
+          style: { color: colors[currentMode], fillColor: colors[currentMode], fillOpacity: .22, weight: 3 },
+          onEachFeature(feature, layer) {
+            layer.bindPopup('<strong>' + feature.properties.barangay_name + '</strong><br>' + document.querySelector('[data-mode="' + currentMode + '"]').textContent + ': ' + readings[currentMode]);
+            const center = layer.getBounds().getCenter();
+            L.marker(center, { interactive: false, icon: L.divIcon({ className: '', html: '<span class="preview-label">' + readings[currentMode] + '</span>' }) }).addTo(operationalLayer);
+          },
+        }).addTo(operationalLayer);
+      }
+
+      function renderNavigation() {
+        navigationLayer.clearLayers();
+        if (role !== 'rescuer' && role !== 'resident') return;
+        const user = role === 'rescuer' ? [14.2085, 121.168] : [14.216, 121.181];
+        const destination = role === 'rescuer' ? [14.216, 121.181] : [14.2224, 121.1748];
+        L.circleMarker(user, { radius: 8, color: '#fff', weight: 3, fillColor: role === 'rescuer' ? '#ea580c' : '#dc2626', fillOpacity: 1 })
+          .bindPopup(role === 'rescuer' ? 'Live rescuer GPS marker' : 'Resident GPS marker').addTo(navigationLayer);
+        L.circleMarker(destination, { radius: 7, color: '#fff', weight: 2, fillColor: '#16a34a', fillOpacity: 1 })
+          .bindPopup(role === 'rescuer' ? 'Resident rescue marker' : 'Evacuation destination').addTo(navigationLayer);
+        L.polyline([user, [14.213, 121.173], destination], { color: '#22c55e', opacity: .9, weight: 6 }).bindPopup('Navigation route retained').addTo(navigationLayer);
+      }
+
+      document.querySelectorAll('[data-mode]').forEach((button) => button.addEventListener('click', () => {
+        currentMode = button.dataset.mode;
+        document.querySelectorAll('[data-mode]').forEach((item) => item.classList.toggle('active', item === button));
+        document.querySelector('#hardware-state').textContent = button.textContent;
+        renderOperationalLayer();
+      }));
+      roleSelect.addEventListener('change', () => {
+        const next = new URL(location.href);
+        next.searchParams.set('role', roleSelect.value);
+        location.href = next;
+      });
+
+      fetch(payload.barangayBoundaryGeoJsonUrl).then((response) => response.json()).then((data) => {
+        boundaryData = data;
+        renderOperationalLayer();
+        renderNavigation();
+      });
+
+      eval(buildPopulationDensityMapRuntimeScript('payload.barangayBoundaryGeoJsonUrl', 'mapBehavior.jurisdictionBarangayName'));
+
+      const pollTimer = setInterval(() => {
+        pollCycles += 1;
+        document.querySelector('#poll-state').textContent = pollCycles + ' cycles';
+        const intact = baseline === JSON.stringify({ readings, colors });
+        const integrity = document.querySelector('#integrity-state');
+        integrity.textContent = intact ? 'PASS — unchanged' : 'FAIL';
+        integrity.className = intact ? 'pass' : '';
+      }, 1000);
+      window.addEventListener('pagehide', () => clearInterval(pollTimer), { once: true });
+
+      if (query.get('population') === 'on') {
+        const waitForPopulation = setInterval(() => {
+          if (!window.cdrrmdPopulationDensityLayer?.isEnabled()) return;
+          clearInterval(waitForPopulation);
+          window.cdrrmdPopulationDensityLayer.setVisible(true);
+          const popupName = query.get('popup');
+          if (popupName) setTimeout(() => {
+            map.eachLayer((group) => group.eachLayer?.((layer) => {
+              if (layer.getTooltip?.()?.getContent?.().startsWith(popupName + ':')) layer.openPopup();
+            }));
+          }, 300);
+        }, 100);
+      }
+    </script>
+  </body>
+</html>
