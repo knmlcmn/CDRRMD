@@ -1,6 +1,5 @@
 import type { EvacuationAreaItem } from '../types';
 import { buildHardwareFloodRuntimeScript } from './waterLevelHazard';
-import { buildPopulationDensityMapRuntimeScript } from './populationDensityMapRuntime';
 
 export type Coordinate = { latitude: number; longitude: number };
 export type MonitoringLayerVisibility = {
@@ -1490,7 +1489,6 @@ export function buildCalambaMapHtml(
       renderBoundary();
       renderFloodHazardLayer();
       renderBarangayBoundaries();
-      ${buildPopulationDensityMapRuntimeScript('payload.barangayBoundaryGeoJsonUrl')}
       setRainIntensityFromMmPerHour(0);
       refreshRainImpactData();
       setInterval(function() {

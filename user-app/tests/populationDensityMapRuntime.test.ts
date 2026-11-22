@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildPopulationDensityMapRuntimeScript } from '../src/utils/populationDensityMapRuntime.ts';
+import { buildPopulationDensityMapRuntimeScript } from '../../admin-web/src/utils/populationDensityMapRuntime.ts';
 
 test('population density runtime derives a server-gated endpoint and starts hidden', () => {
   const script = buildPopulationDensityMapRuntimeScript('payload.barangayBoundaryGeoJsonUrl');
