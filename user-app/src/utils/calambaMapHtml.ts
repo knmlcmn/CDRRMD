@@ -1,5 +1,6 @@
 import type { EvacuationAreaItem } from '../types';
 import { buildHardwareFloodRuntimeScript } from './waterLevelHazard';
+import { buildPopulationDensityMapRuntimeScript } from './populationDensityMapRuntime';
 
 export type Coordinate = { latitude: number; longitude: number };
 export type MonitoringLayerVisibility = {
@@ -1324,6 +1325,9 @@ export function buildCalambaMapHtml(
       function applyLayerVisibility() {
         var showFloodHazard = focusModeActive ? false : Boolean(visibility.floodHazard) && !Boolean(visibility.weatherOverlay);
         var showWeather = focusModeActive ? false : Boolean(visibility.weatherOverlay);
+        if ((showFloodHazard || showWeather) && window.cdrrmdPopulationDensityLayer && window.cdrrmdPopulationDensityLayer.isVisible()) {
+          window.cdrrmdPopulationDensityLayer.setVisible(false);
+        }
         var showBarangayBoundary = focusModeActive ? true : Boolean(visibility.floodHazard) || Boolean(visibility.weatherOverlay);
         var showTemperature = focusModeActive ? false : Boolean(visibility.weatherOverlay);
         var showAreas = focusModeActive ? false : Boolean(visibility.evacuationAreas);
@@ -1489,6 +1493,13 @@ export function buildCalambaMapHtml(
       renderBoundary();
       renderFloodHazardLayer();
       renderBarangayBoundaries();
+      ${buildPopulationDensityMapRuntimeScript('payload.barangayBoundaryGeoJsonUrl', 'null', true)}
+      window.addEventListener('cdrrmd:population-density-visibility', function(event) {
+        if (!event || !event.detail || !event.detail.visible) return;
+        visibility.floodHazard = false;
+        visibility.weatherOverlay = false;
+        applyLayerVisibility();
+      });
       setRainIntensityFromMmPerHour(0);
       refreshRainImpactData();
       setInterval(function() {

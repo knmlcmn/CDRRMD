@@ -13,37 +13,41 @@ const barangayDashboardSource = readFileSync(localPath('../../admin-web/src/bara
 const barangayMonitoringSource = readFileSync(localPath('../../admin-web/src/barangay/pages/MonitoringPage.tsx'), 'utf8');
 const populationRuntimeSource = readFileSync(localPath('../../admin-web/src/utils/populationDensityMapRuntime.ts'), 'utf8');
 
-test('Admin and Barangay Operations Maps expose feature-gated Population Density in first position', () => {
-  assert.doesNotMatch(adminMapSource, /key:\s*'boundary',\s*label:\s*'Calamba Boundary'/);
-  assert.match(adminMapSource, /definitions\.unshift\(\{ key: 'populationDensity', label: 'Population Density'/);
-  assert.match(adminMapSource, /populationDensityAvailable/);
-  assert.match(adminMapSource, /buildPopulationDensityMapRuntimeScript\('payload\.barangayBoundaryGeoJsonUrl', 'mapBehavior\.jurisdictionBarangayName'\)/);
+test('Population Density remains available in Admin, Barangay, Resident, and Rescuer maps', () => {
+  for (const source of [adminMapSource, residentMapSource]) {
+    assert.doesNotMatch(source, /key:\s*'boundary',\s*label:\s*'Calamba Boundary'/);
+    assert.match(source, /definitions\.unshift\(\{ key: 'populationDensity', label: 'Population Density'/);
+    assert.match(source, /populationDensityAvailable/);
+  }
   for (const source of [barangayDashboardSource, barangayMonitoringSource]) {
     assert.match(source, /jurisdictionBarangayName:\s*barangayName/);
   }
-  assert.doesNotMatch(populationRuntimeSource, /addPopulationControl|button\.textContent = 'Population Density'/);
+  assert.match(rescuerMapSource, /buildPopulationDensityMapRuntimeScript\('payload\.barangayBoundaryGeoJsonUrl', 'null', true\)/);
+  assert.match(populationRuntimeSource, /populationToggleButton\.textContent = 'Population Density'/);
+  assert.match(populationRuntimeSource, /PSA 2024 POPCEN/);
 });
 
-test('Admin keeps six thematic layers single-select while operational layers stay independent', () => {
+test('the six thematic layers are single-select while operational layers stay outside that set', () => {
   assert.match(adminMapSource, /THEMATIC_LAYER_KEYS = \['populationDensity', 'floodHazard', 'weatherOverlay', 'temperatureOverlay', 'humidityOverlay', 'windOverlay'\]/);
+  assert.match(residentMapSource, /thematicLayerKeys = \['populationDensity', 'floodHazard', 'rainOverlay', 'temperatureOverlay', 'humidityOverlay', 'windOverlay'\]/);
   for (const operationalKey of ['evacuationAreas', 'incidentMarkers', 'responderRoute']) {
     assert.doesNotMatch(
       adminMapSource.match(/THEMATIC_LAYER_KEYS = \[[^\]]+\]/)?.[0] || '',
       new RegExp(operationalKey),
     );
   }
+  assert.match(rescuerMapSource, /visibility\.floodHazard = false;[\s\S]+visibility\.weatherOverlay = false;/);
 });
 
-test('Resident and Rescuer maps contain no Population Density UI, fetch, overlay, legend, or popup runtime', () => {
-  for (const source of [residentMapSource, rescuerMapSource]) {
-    assert.doesNotMatch(source, /populationDensity|Population Density|population-density|cdrrmdPopulationDensityLayer/);
-    assert.doesNotMatch(source, /buildPopulationDensityMapRuntimeScript/);
+test('Rescuer and Resident expose only the current read-only dataset without yearly management UI', () => {
+  for (const source of [residentMapSource, rescuerMapSource, populationRuntimeSource]) {
+    assert.doesNotMatch(source, /year-selector|historical population|population trend|edit population|add population/i);
   }
-  assert.match(residentMapSource, /if \(key === 'floodHazard'\)[\s\S]+visibility\.rainOverlay = false/);
-  assert.match(residentMapSource, /key === 'rainOverlay' \|\| key === 'temperatureOverlay' \|\| key === 'humidityOverlay' \|\| key === 'windOverlay'/);
+  assert.match(populationRuntimeSource, /Census year/);
+  assert.match(populationRuntimeSource, /Density is derived, not PSA-published/);
 });
 
-test('visible black city boundary overlay is removed but polygon overflow guards remain for every portal', () => {
+test('visible black city boundary overlay and legend entry are removed but geometry validation remains', () => {
   for (const source of [adminMapSource, residentMapSource, rescuerMapSource]) {
     assert.match(source, /setLayerVisible\(boundaryLayer, false\)/);
   }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildPopulationDensityMapRuntimeScript } from '../../admin-web/src/utils/populationDensityMapRuntime.ts';
+import { buildPopulationDensityMapRuntimeScript } from '../src/utils/populationDensityMapRuntime.ts';
 
 test('population density runtime derives a server-gated endpoint and starts hidden', () => {
   const script = buildPopulationDensityMapRuntimeScript('payload.barangayBoundaryGeoJsonUrl');
@@ -38,4 +38,15 @@ test('population density runtime rejects executable expressions and supports jur
   );
   assert.match(script, /var jurisdictionName = mapBehavior\.jurisdictionBarangayName/);
   assert.match(script, /normalizePopulationBarangay\(jurisdictionName\)/);
+});
+
+test('rescuer standalone control is current-dataset-only and identifies PSA 2024', () => {
+  const script = buildPopulationDensityMapRuntimeScript(
+    'payload.barangayBoundaryGeoJsonUrl',
+    'null',
+    true,
+  );
+  assert.match(script, /standaloneControlEnabled = true/);
+  assert.match(script, /Population Density — PSA 2024 POPCEN/);
+  assert.doesNotMatch(script, /<select|year-selector|historical population|population trend|edit population/i);
 });

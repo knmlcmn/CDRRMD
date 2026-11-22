@@ -1,4 +1,8 @@
-export function buildPopulationDensityMapRuntimeScript(boundaryUrlExpression: string, jurisdictionExpression = 'null') {
+export function buildPopulationDensityMapRuntimeScript(
+  boundaryUrlExpression: string,
+  jurisdictionExpression = 'null',
+  standaloneControl = false,
+) {
   if (!/^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+$/.test(boundaryUrlExpression)) {
     throw new Error('Population-density boundary URL must be a trusted property expression.');
   }
@@ -18,6 +22,9 @@ export function buildPopulationDensityMapRuntimeScript(boundaryUrlExpression: st
         var populationVisible = false;
         var populationPayload = null;
         var boundaryPayload = null;
+        var standaloneControlEnabled = ${standaloneControl ? 'true' : 'false'};
+        var populationToggleControl = null;
+        var populationToggleButton = null;
 
         function normalizePopulationBarangay(value) {
           return String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -127,6 +134,33 @@ export function buildPopulationDensityMapRuntimeScript(boundaryUrlExpression: st
           window.dispatchEvent(new CustomEvent('cdrrmd:population-density-visibility', {
             detail: { visible: populationVisible },
           }));
+          if (populationToggleButton) {
+            populationToggleButton.setAttribute('aria-pressed', populationVisible ? 'true' : 'false');
+            populationToggleButton.style.background = populationVisible ? '#4c1d95' : '#ffffff';
+            populationToggleButton.style.color = populationVisible ? '#ffffff' : '#312e81';
+          }
+        }
+
+        function installStandalonePopulationControl() {
+          if (!standaloneControlEnabled || populationToggleControl) return;
+          populationToggleControl = L.control({ position: 'topright' });
+          populationToggleControl.onAdd = function() {
+            var wrap = L.DomUtil.create('div');
+            populationToggleButton = L.DomUtil.create('button', '', wrap);
+            populationToggleButton.type = 'button';
+            populationToggleButton.textContent = 'Population Density';
+            populationToggleButton.title = 'Population Density — PSA 2024 POPCEN';
+            populationToggleButton.setAttribute('aria-label', 'Toggle Population Density — PSA 2024 POPCEN');
+            populationToggleButton.setAttribute('aria-pressed', 'false');
+            populationToggleButton.style.cssText = 'background:#fff;border:1px solid #7c3aed;border-radius:8px;box-shadow:0 2px 8px rgba(15,23,42,.22);color:#312e81;cursor:pointer;font:700 11px/1.2 Arial,sans-serif;padding:8px 10px';
+            L.DomEvent.on(populationToggleButton, 'click', function(event) {
+              L.DomEvent.stop(event);
+              setPopulationVisible(!populationVisible);
+            });
+            L.DomEvent.disableClickPropagation(wrap);
+            return wrap;
+          };
+          populationToggleControl.addTo(map);
         }
 
         var pane = map.getPane('populationDensityPane') || map.createPane('populationDensityPane');
@@ -146,6 +180,7 @@ export function buildPopulationDensityMapRuntimeScript(boundaryUrlExpression: st
             if (!responseBoundary || !populationPayload) return;
             boundaryPayload = responseBoundary;
             setPopulationVisible(false);
+            installStandalonePopulationControl();
             window.dispatchEvent(new CustomEvent('cdrrmd:population-density-ready', {
               detail: { enabled: true },
             }));
