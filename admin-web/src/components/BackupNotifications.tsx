@@ -7,6 +7,7 @@ import AssignedRescuerField from './AssignedRescuerField';
 import { useRescuerAssignmentPreview } from '../services/rescuerAssignmentPreview';
 import { liveAlertKey } from '../utils/liveAlertKey';
 import '../barangay/components/BackupModal.css';
+import './BackupNotifications.css';
 
 type Request = {
   id: number;

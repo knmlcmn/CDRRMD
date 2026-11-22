@@ -103,15 +103,14 @@ test('HTTP 422 outside-area rejection remains authoritative and does not start O
   assert.ok(selection.indexOf('if (!reportBarangay)') < selection.indexOf("beginPerformanceStage('evacuation-road-routing')"));
 });
 
-test('Test Mode uses server routing and requires explicit real-dispatch acknowledgement outside the service area', async () => {
+test('Test Mode uses server routing and the standard resident submission flow outside the service area', async () => {
   const screen = await readFile(screenPath, 'utf8');
   const submit = screen.slice(screen.indexOf('async function handleSubmitRescue'), screen.indexOf('function statusLabel'));
   assert.doesNotMatch(submit, /testModeBypassServiceArea/);
   assert.match(screen, /previewRescueRouting/);
   assert.match(submit, /testModeEnabled/);
-  assert.match(submit, /outsideAreaRealDispatchAcknowledged: outsideDispatchConfirmed/);
-  assert.match(screen, /creates a real rescue request and real rescuer dispatch/);
-  assert.match(screen, /Response availability is not guaranteed/);
+  assert.doesNotMatch(submit, /outsideAreaRealDispatchAcknowledged|outsideDispatchConfirmed/);
+  assert.doesNotMatch(screen, /Real out-of-area emergency request|Create Real Request|outsideConfirmationVisible/);
 });
 
 test('rescue submission requires real coordinates while treating accuracy and capture time as advisory', async () => {

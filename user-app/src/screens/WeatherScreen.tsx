@@ -195,8 +195,8 @@ export default function WeatherScreen() {
       <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
         <ImageBackground
           source={visual.backgroundSource}
-          resizeMode="cover"
-          style={[st.hero, { maxWidth: pageMaxWidth, minHeight: 126 * scale, paddingHorizontal: 13 * scale, paddingTop: 13 * scale }]}
+          resizeMode="contain"
+          style={[st.hero, { maxWidth: pageMaxWidth, height: 126 * scale, paddingHorizontal: 13 * scale, paddingTop: 13 * scale }]}
           imageStyle={st.heroBackgroundImage}
         >
           <View pointerEvents="none" style={st.heroScrim} />
@@ -308,7 +308,7 @@ const st = StyleSheet.create({
   staleBanner: { backgroundColor: '#eef6fb', borderBottomWidth: 1, borderBottomColor: '#c8dce8', paddingHorizontal: 14, paddingVertical: 6 },
   staleText: { color: '#36576d', fontSize: 11, textAlign: 'center', fontWeight: '600' },
   scrollContent: { flexGrow: 1, width: '100%', boxSizing: 'border-box', backgroundColor: editorial.background },
-  hero: { width: '100%', maxWidth: 720, alignSelf: 'center', backgroundColor: editorial.surface, flexDirection: 'row', marginTop: 10, borderRadius: 14, overflow: 'hidden' },
+  hero: { width: '100%', maxWidth: 720, alignSelf: 'center', backgroundColor: '#dbeafe', flexDirection: 'row', marginTop: 10, borderRadius: 14, overflow: 'hidden' },
   heroBackgroundImage: { opacity: 0.48 },
   heroScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.42)' },
   heroCopy: { zIndex: 1, maxWidth: '68%' },

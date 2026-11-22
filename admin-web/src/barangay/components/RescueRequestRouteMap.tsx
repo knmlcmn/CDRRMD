@@ -83,6 +83,10 @@ const RescueRequestRouteMap = forwardRef<RescueRequestRouteMapHandle, Props>(fun
       keyboard: false,
     });
     mapRef.current = map;
+    const resizeObserver = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(() => map.invalidateSize({ pan: false }));
+    resizeObserver?.observe(hostRef.current);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
@@ -152,6 +156,7 @@ const RescueRequestRouteMap = forwardRef<RescueRequestRouteMapHandle, Props>(fun
     window.setTimeout(() => map.invalidateSize(), 80);
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
       map.remove();
       mapRef.current = null;
       residentMarkerRef.current = null;

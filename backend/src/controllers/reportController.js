@@ -19,6 +19,7 @@ const {
 } = require('../services/evacuationRoutingService');
 const { syncFloodSensorAlerts } = require('../services/floodSensorAlertService');
 const { isExpoPushToken } = require('../services/expoPushService');
+const { buildReportPresentation } = require('../services/testModeReportPresentation');
 
 function buildReportCode(id, createdAt) {
   const year = new Date(createdAt || Date.now()).getFullYear();
@@ -132,7 +133,7 @@ async function previewRescueRouting(req, res) {
   const jurisdiction = resolveRescueJurisdiction(latitude, longitude, testModeEnabled);
   if (!jurisdiction) {
     return res.status(422).json({
-      message: 'This location is outside the six supported barangays. Enable Test Mode to continue with a real rescue request.',
+      message: 'This location is outside the six supported barangays.',
       code: 'OUTSIDE_BARANGAY_JURISDICTION',
     });
   }
@@ -191,7 +192,6 @@ async function createReport(req, res) {
     contactNumber,
     testModeEnabled,
     testModeBypassServiceArea,
-    outsideAreaRealDispatchAcknowledged,
     floodAlertNotificationId,
   } = req.body || {};
 
@@ -300,18 +300,16 @@ async function createReport(req, res) {
   const jurisdiction = resolveRescueJurisdiction(lat, lon, geographicalBypassEnabled);
   if (!jurisdiction) {
     return res.status(422).json({
-      message: 'Your reported GPS location is outside the six supported barangays. Enable Test Mode to request a real out-of-area response.',
+      message: 'Your reported GPS location is outside the six supported barangays.',
       code: 'OUTSIDE_BARANGAY_JURISDICTION',
     });
   }
-  if (jurisdiction.outsideNormalServiceArea && outsideAreaRealDispatchAcknowledged !== true) {
-    return res.status(428).json({
-      message: 'Confirm that this is a real emergency request outside the normal service area and that response availability is not guaranteed.',
-      code: 'OUTSIDE_AREA_REAL_DISPATCH_CONFIRMATION_REQUIRED',
-      handlingBarangay: jurisdiction.handlingBarangay,
-    });
-  }
   const serviceAreaBarangay = jurisdiction.handlingBarangay;
+  const reportPresentation = buildReportPresentation({
+    incidentType: normalizedIncidentType,
+    details,
+    testModeEnabled: geographicalBypassEnabled,
+  });
 
   const submittedName = String(fullName || '').trim();
   const profileName = `${String(user.first_name || '').trim()} ${String(user.last_name || '').trim()}`.trim();
@@ -426,11 +424,11 @@ async function createReport(req, res) {
         lat,
         lon,
         assignedBarangay,
-        normalizedIncidentType,
+        reportPresentation.incidentType,
         waterLevelText,
         toBool(arePeopleTrapped),
         Number.isFinite(estimatedPeopleInt) ? estimatedPeopleInt : null,
-        details,
+        reportPresentation.details,
         safeImageBase64,
         userId,
         normalizedStatus,
