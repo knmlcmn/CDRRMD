@@ -1,5 +1,6 @@
 import type { EvacuationAreaItem } from '../types';
 import { buildHardwareFloodRuntimeScript } from './waterLevelHazard';
+import { buildPopulationDensityMapRuntimeScript } from './populationDensityMapRuntime';
 
 export type Coordinate = { latitude: number; longitude: number };
 export type MonitoringLayerVisibility = {
@@ -826,8 +827,7 @@ export function buildCalambaMapHtml(
           '<div class="row"><span class="legend-map-icon" style="background:#2563eb"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-shield.svg" /></span>Barangay Responder</div>' +
           '<div class="row"><span class="legend-map-icon" style="background:#ea580c"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" /></span>CDRRMD Responder</div>' +
           '<div class="row"><span class="legend-map-icon" style="background:#e11d48"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" /></span>Evacuation Area</div>' +
-          '<div class="row"><span class="legend-map-line"></span>Responder Route</div>' +
-          '<div class="row"><span class="legend-map-boundary"></span>Calamba Boundary</div>';
+          '<div class="row"><span class="legend-map-line"></span>Responder Route</div>';
 
         var noLayers = !floodOn && !weatherOn;
 
@@ -960,6 +960,8 @@ export function buildCalambaMapHtml(
 
       function resolveBarangayBoundaryStyle(feature) {
         var props = feature && feature.properties ? feature.properties : {};
+        var geometryType = feature && feature.geometry ? feature.geometry.type : '';
+        var polygonGeometry = geometryType === 'Polygon' || geometryType === 'MultiPolygon';
         var key = normalizeBarangayName(props.barangay_name || props.barangayName || props.name);
         var weatherImpact = weatherImpactByBarangay[key] || null;
         var floodHazardVisible = Boolean(visibility.floodHazard);
@@ -967,7 +969,12 @@ export function buildCalambaMapHtml(
         var focusColor = resolveBarangayRiskColor(focusedBarangayRiskLevel || props.flood_risk_level);
 
         if (floodHazardVisible) {
-          return hardwareFloodBoundaryStyle(key, selected);
+          var floodStyle = hardwareFloodBoundaryStyle(key, selected);
+          if (!polygonGeometry) {
+            floodStyle.fill = false;
+            floodStyle.fillOpacity = 0;
+          }
+          return floodStyle;
         }
 
         if (focusModeActive) {
@@ -1316,16 +1323,15 @@ export function buildCalambaMapHtml(
       }
 
       function applyLayerVisibility() {
-        var showBoundary = focusModeActive ? false : Boolean(visibility.boundary);
         var showFloodHazard = focusModeActive ? false : Boolean(visibility.floodHazard) && !Boolean(visibility.weatherOverlay);
         var showWeather = focusModeActive ? false : Boolean(visibility.weatherOverlay);
-        var showBarangayBoundary = focusModeActive ? true : Boolean(visibility.boundary);
+        var showBarangayBoundary = focusModeActive ? true : Boolean(visibility.floodHazard) || Boolean(visibility.weatherOverlay);
         var showTemperature = focusModeActive ? false : Boolean(visibility.weatherOverlay);
         var showAreas = focusModeActive ? false : Boolean(visibility.evacuationAreas);
         var showIncidents = focusModeActive ? false : Boolean(visibility.incidentMarkers);
         var showResponderRoute = focusModeActive ? false : Boolean(visibility.responderRoute);
 
-        setLayerVisible(boundaryLayer, showBoundary);
+        setLayerVisible(boundaryLayer, false);
         setLayerVisible(floodHazardLayer, showFloodHazard);
         setLayerVisible(weatherFillLayer, showWeather);
         setLayerVisible(barangayBoundaryLayer, showBarangayBoundary);
@@ -1484,6 +1490,7 @@ export function buildCalambaMapHtml(
       renderBoundary();
       renderFloodHazardLayer();
       renderBarangayBoundaries();
+      ${buildPopulationDensityMapRuntimeScript('payload.barangayBoundaryGeoJsonUrl')}
       setRainIntensityFromMmPerHour(0);
       refreshRainImpactData();
       setInterval(function() {

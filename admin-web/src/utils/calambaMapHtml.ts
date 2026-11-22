@@ -1,5 +1,6 @@
 import type { EvacuationAreaItem } from '../types';
 import { HARDWARE_FLOOD_COLORS, HIGH_WATER_LEVEL_THRESHOLD, MODERATE_WATER_LEVEL_THRESHOLD } from '../services/waterLevelHazard';
+import { buildPopulationDensityMapRuntimeScript } from './populationDensityMapRuntime';
 
 export type Coordinate = { latitude: number; longitude: number };
 export type MonitoringLayerVisibility = {
@@ -399,7 +400,8 @@ export function buildCalambaMapHtml(
         weatherOverlay: false,
         temperatureOverlay: false,
         humidityOverlay: false,
-        windOverlay: false
+        windOverlay: false,
+        populationDensity: false
       }, payload.layerVisibility || {});
       normalizeDataLayerVisibility();
       var calambaCenter = [14.206021, 121.1556496];
@@ -613,20 +615,14 @@ export function buildCalambaMapHtml(
       }
 
       function normalizeDataLayerVisibility() {
-        var activeKey = Boolean(visibility.weatherOverlay)
-          ? 'weatherOverlay'
-          : Boolean(visibility.temperatureOverlay)
-            ? 'temperatureOverlay'
-            : Boolean(visibility.humidityOverlay)
-              ? 'humidityOverlay'
-              : Boolean(visibility.windOverlay)
-                ? 'windOverlay'
-                : null;
+        var thematicKeys = ['populationDensity', 'floodHazard', 'weatherOverlay', 'temperatureOverlay', 'humidityOverlay', 'windOverlay'];
+        var activeKey = thematicKeys.find(function(key) { return Boolean(visibility[key]); }) || null;
+        visibility.populationDensity = activeKey === 'populationDensity';
+        visibility.floodHazard = activeKey === 'floodHazard';
         visibility.weatherOverlay = activeKey === 'weatherOverlay';
         visibility.temperatureOverlay = activeKey === 'temperatureOverlay';
         visibility.humidityOverlay = activeKey === 'humidityOverlay';
         visibility.windOverlay = activeKey === 'windOverlay';
-        if (activeKey !== null) visibility.floodHazard = false;
       }
 
       function activeScalarMetric() {
@@ -1843,12 +1839,7 @@ export function buildCalambaMapHtml(
           '<div class="row"><span class="legend-map-icon" style="background:#2563eb"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-shield.svg" /></span>Barangay Responder</div>' +
           '<div class="row"><span class="legend-map-icon" style="background:#ea580c"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" /></span>CDRRMD Responder</div>' +
           '<div class="row"><span class="legend-map-icon" style="background:#e11d48"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" /></span>Evacuation Area</div>' +
-          '<div class="row"><span class="legend-map-line"></span>Responder Route</div>' +
-          '<div class="row"><span class="legend-map-boundary"></span>' +
-            escapeHtml(mapBehavior.jurisdictionBarangayName
-              ? 'Barangay ' + mapBehavior.jurisdictionBarangayName + ' Boundary'
-              : 'Calamba Boundary') +
-          '</div>';
+          '<div class="row"><span class="legend-map-line"></span>Responder Route</div>';
 
         var noLayers = !floodOn && !weatherOn && !windOn;
 
@@ -1958,6 +1949,8 @@ export function buildCalambaMapHtml(
 
       function resolveBarangayBoundaryStyle(feature) {
         var props = feature && feature.properties ? feature.properties : {};
+        var geometryType = feature && feature.geometry ? feature.geometry.type : '';
+        var polygonGeometry = geometryType === 'Polygon' || geometryType === 'MultiPolygon';
         var key = normalizeBarangayName(props.barangay_name || props.barangayName || props.name);
         var floodHazardVisible = Boolean(visibility.floodHazard);
         var selected = Boolean(selectedBarangayKey) && selectedBarangayKey === key;
@@ -1968,9 +1961,9 @@ export function buildCalambaMapHtml(
             color: hardwareState.color,
             weight: selected || jurisdictionBarangayKey ? 5 : 3,
             opacity: 1,
-            fill: !climateVisible,
+            fill: polygonGeometry && !climateVisible,
             fillColor: hardwareState.color,
-            fillOpacity: climateVisible ? 0 : (hardwareState.level === 'UNAVAILABLE' ? 0.16 : 0.32),
+            fillOpacity: !polygonGeometry || climateVisible ? 0 : (hardwareState.level === 'UNAVAILABLE' ? 0.16 : 0.32),
           };
         }
 
@@ -2404,20 +2397,19 @@ export function buildCalambaMapHtml(
       function applyLayerVisibility() {
         applyBasemap();
 
-        var showBoundary = jurisdictionBarangayKey || focusModeActive ? false : Boolean(visibility.boundary);
         var showFloodHazard = focusModeActive ? false : Boolean(visibility.floodHazard) && !isWeatherLayerVisible();
-        // Flood and scalar-weather rendering use the barangay geometry too.
-        // Keep that geometry mounted when one of those layers is active even
-        // if the standalone boundary toggle is off.
+        // Barangay geometry remains available for operational thematic layers,
+        // jurisdiction scoping, clipping, and validation. The standalone black
+        // city-boundary overlay is intentionally no longer mounted.
         var showBarangayBoundary = jurisdictionBarangayKey || focusModeActive
           ? true
-          : Boolean(visibility.boundary) || Boolean(visibility.floodHazard) || isScalarWeatherVisible();
+          : Boolean(visibility.floodHazard) || isScalarWeatherVisible();
         var showAreas = focusModeActive ? false : Boolean(visibility.evacuationAreas);
         var showIncidents = focusModeActive ? false : Boolean(visibility.incidentMarkers);
         var showResponderRoute = focusModeActive ? false : Boolean(visibility.responderRoute);
         var showHardwareClimate = !focusModeActive && (Boolean(visibility.temperatureOverlay) || Boolean(visibility.humidityOverlay));
 
-        setLayerVisible(boundaryLayer, showBoundary);
+        setLayerVisible(boundaryLayer, false);
         setLayerVisible(floodHazardLayer, showFloodHazard);
         setLayerVisible(barangayBoundaryLayer, showBarangayBoundary);
         setLayerVisible(hardwareClimateLayer, showHardwareClimate);
@@ -2645,10 +2637,12 @@ export function buildCalambaMapHtml(
       // In-map layer control (top-right)
       var layerPanelControl = null;
       var layerPanelOpen = false;
+      var populationDensityAvailable = false;
+      var THEMATIC_LAYER_KEYS = ['populationDensity', 'floodHazard', 'weatherOverlay', 'temperatureOverlay', 'humidityOverlay', 'windOverlay'];
 
       // SVG icons per layer — inline SVG strings
       var LAYER_ICONS = {
-        boundary:        '<svg viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="layer-icon-svg"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18" stroke-dasharray="2 2"/></svg>',
+        populationDensity: '<svg viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="layer-icon-svg"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18" stroke-dasharray="2 2"/></svg>',
         floodHazard:     '<svg viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="layer-icon-svg"><path d="M2 17c1.5-2 3-3 5-3s3.5 2 5 2 3.5-2 5-2 3.5 1 5 3"/><path d="M2 12c1.5-2 3-3 5-3s3.5 2 5 2 3.5-2 5-2 3.5 1 5 3"/><path d="M12 3 C10 6 7 8 7 11" stroke="#93c5fd"/></svg>',
         evacuationAreas: '<svg viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="layer-icon-svg"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>',
         incidentMarkers: '<svg viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="layer-icon-svg"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
@@ -2659,8 +2653,8 @@ export function buildCalambaMapHtml(
         windOverlay:     '<svg viewBox="0 0 24 24" fill="none" stroke="#facc15" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="layer-icon-svg"><path d="M3 8h11a3 3 0 1 0-3-3"/><path d="M3 12h16a3 3 0 1 1-3 3"/><path d="M3 16h8"/></svg>',
       };
 
-      var LAYER_DEFS = [
-        { key: 'boundary',        label: 'Calamba Boundary' },
+      function availableLayerDefinitions() {
+        var definitions = [
         { key: 'floodHazard',     label: 'Flood Hazard' },
         { key: 'evacuationAreas', label: 'Evacuation Areas' },
         { key: 'incidentMarkers', label: 'Incident Reports' },
@@ -2669,14 +2663,19 @@ export function buildCalambaMapHtml(
         { key: 'temperatureOverlay', label: 'Temperature' },
         { key: 'humidityOverlay', label: 'Relative Humidity' },
         { key: 'windOverlay',     label: 'Wind Forecast' },
-      ];
-      if (mapBehavior.showForecastLayers === false) {
-        LAYER_DEFS = LAYER_DEFS.filter(function(def) {
+        ];
+        if (populationDensityAvailable) {
+          definitions.unshift({ key: 'populationDensity', label: 'Population Density' });
+        }
+        if (mapBehavior.showForecastLayers === false) {
+          definitions = definitions.filter(function(def) {
           return def.key !== 'weatherOverlay'
             && def.key !== 'temperatureOverlay'
             && def.key !== 'humidityOverlay'
             && def.key !== 'windOverlay';
-        });
+          });
+        }
+        return definitions;
       }
 
       function renderRecenterControl() {
@@ -2730,7 +2729,7 @@ export function buildCalambaMapHtml(
           // Icon grid container
           var grid = L.DomUtil.create('div', 'layer-icon-grid', panel);
 
-          LAYER_DEFS.forEach(function(def) {
+          availableLayerDefinitions().forEach(function(def) {
             var isOn = Boolean(visibility[def.key]);
             var item = L.DomUtil.create('div', 'layer-icon-item' + (isOn ? ' layer-icon-on' : ''), grid);
             item.dataset.key = def.key;
@@ -2740,29 +2739,19 @@ export function buildCalambaMapHtml(
 
             L.DomEvent.on(item, 'click', function() {
               var key = def.key;
-              if (key === 'floodHazard') {
-                visibility.floodHazard = !visibility.floodHazard;
-                if (visibility.floodHazard) {
-                  visibility.weatherOverlay = false;
-                  visibility.temperatureOverlay = false;
-                  visibility.humidityOverlay = false;
-                  visibility.windOverlay = false;
+              var thematic = THEMATIC_LAYER_KEYS.indexOf(key) !== -1;
+              var nowOn;
+              if (thematic) {
+                nowOn = !Boolean(visibility[key]);
+                THEMATIC_LAYER_KEYS.forEach(function(thematicKey) {
+                  visibility[thematicKey] = thematicKey === key ? nowOn : false;
+                });
+                if (window.cdrrmdPopulationDensityLayer) {
+                  window.cdrrmdPopulationDensityLayer.setVisible(key === 'populationDensity' && nowOn);
                 }
               } else {
                 visibility[key] = !visibility[key];
-              }
-              var nowOn = Boolean(visibility[key]);
-
-              // Weather modes are mutually exclusive with each other and flood hazard.
-              if ((key === 'weatherOverlay' || key === 'temperatureOverlay' || key === 'humidityOverlay') && nowOn) {
-                visibility.windOverlay = false;
-                visibility.weatherOverlay = key === 'weatherOverlay';
-                visibility.temperatureOverlay = key === 'temperatureOverlay';
-                visibility.humidityOverlay = key === 'humidityOverlay';
-              } else if (key === 'windOverlay' && nowOn) {
-                visibility.weatherOverlay = false;
-                visibility.temperatureOverlay = false;
-                visibility.humidityOverlay = false;
+                nowOn = Boolean(visibility[key]);
               }
               normalizeDataLayerVisibility();
 
@@ -2808,10 +2797,21 @@ export function buildCalambaMapHtml(
         layerPanelControl.addTo(map);
       }
 
+      window.addEventListener('cdrrmd:population-density-ready', function(event) {
+        populationDensityAvailable = Boolean(event && event.detail && event.detail.enabled);
+        if (!populationDensityAvailable) visibility.populationDensity = false;
+        renderLayerPanelControl();
+      });
+
+      window.addEventListener('cdrrmd:population-density-visibility', function(event) {
+        visibility.populationDensity = Boolean(event && event.detail && event.detail.visible);
+      });
+
       loadOsmWaterways();
       renderBoundary();
       renderFloodHazardLayer();
       renderBarangayBoundaries();
+      ${buildPopulationDensityMapRuntimeScript('payload.barangayBoundaryGeoJsonUrl', 'mapBehavior.jurisdictionBarangayName')}
       setRainIntensityFromMmPerHour(0);
       refreshRainImpactData();
       setInterval(function() {
