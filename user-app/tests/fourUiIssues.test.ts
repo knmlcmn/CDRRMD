@@ -39,10 +39,17 @@ test('Mark Safe has an enabled Resident Portal treatment and accessible state', 
 });
 
 test('Resident web and Android weather hero use a full-card cover background', () => {
+  const heroOpeningTag = weatherSource.slice(
+    weatherSource.indexOf('<ImageBackground'),
+    weatherSource.indexOf('>', weatherSource.indexOf('<ImageBackground')) + 1,
+  );
   assert.match(weatherSource, /resizeMode="cover"/);
   assert.match(weatherSource, /height:\s*126 \* scale/);
   assert.match(weatherSource, /hero:\s*\{[^\n]+width:\s*'100%'/);
   assert.match(weatherSource, /hero:\s*\{[^\n]+overflow:\s*'hidden'/);
+  assert.doesNotMatch(heroOpeningTag, /paddingHorizontal|paddingTop/);
+  assert.match(weatherSource, /heroForeground:\s*\{ \.\.\.StyleSheet\.absoluteFillObject \}/);
+  assert.match(weatherSource, /style=\{\[st\.heroForeground, \{ paddingHorizontal:[\s\S]+paddingTop:/);
   assert.match(weatherSource, /<View style=\{st\.heroCopy\}>[\s\S]+<View style=\{\[st\.heroArtwork/);
   assert.doesNotMatch(weatherSource, /resizeMethod="resize"/);
 });

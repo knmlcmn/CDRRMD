@@ -196,23 +196,28 @@ export default function WeatherScreen() {
         <ImageBackground
           source={visual.backgroundSource}
           resizeMode="cover"
-          style={[st.hero, { maxWidth: pageMaxWidth, height: 126 * scale, paddingHorizontal: 13 * scale, paddingTop: 13 * scale }]}
+          style={[st.hero, { maxWidth: pageMaxWidth, height: 126 * scale }]}
           imageStyle={st.heroBackgroundImage}
         >
           <View pointerEvents="none" style={st.heroScrim} />
-          <View style={st.heroCopy}>
-            <Text style={[st.heroTitle, { fontSize: 12 * scale, lineHeight: 14 * scale }]}>Weather</Text>
-            <Text style={[st.heroLocation, { fontSize: 7 * scale, marginTop: 2 * scale }]}>Calamba City, Laguna</Text>
-            <Text style={[st.heroTemp, { fontSize: 27 * scale, lineHeight: 32 * scale, marginTop: 7 * scale }]}>
-              {currentTemperature ?? '--'}°C
-            </Text>
-            <View style={[st.metricRow, { marginTop: 3 * scale }]}>
-              <View style={st.metric}>
-                <View style={st.metricValue}>
-                  <WeatherConditionArtwork name={weatherIconFromCode(activeWeatherCode)} scale={scale} />
-                  <Text style={[st.metricText, { fontSize: 6 * scale }]}>{visual.condition}</Text>
+          <View
+            pointerEvents="box-none"
+            style={[st.heroForeground, { paddingHorizontal: 13 * scale, paddingTop: 13 * scale }]}
+          >
+            <View style={st.heroCopy}>
+              <Text style={[st.heroTitle, { fontSize: 12 * scale, lineHeight: 14 * scale }]}>Weather</Text>
+              <Text style={[st.heroLocation, { fontSize: 7 * scale, marginTop: 2 * scale }]}>Calamba City, Laguna</Text>
+              <Text style={[st.heroTemp, { fontSize: 27 * scale, lineHeight: 32 * scale, marginTop: 7 * scale }]}>
+                {currentTemperature ?? '--'}°C
+              </Text>
+              <View style={[st.metricRow, { marginTop: 3 * scale }]}>
+                <View style={st.metric}>
+                  <View style={st.metricValue}>
+                    <WeatherConditionArtwork name={weatherIconFromCode(activeWeatherCode)} scale={scale} />
+                    <Text style={[st.metricText, { fontSize: 6 * scale }]}>{visual.condition}</Text>
+                  </View>
+                  <MetricAccent type="weather" scale={scale} />
                 </View>
-                <MetricAccent type="weather" scale={scale} />
               </View>
             </View>
           </View>
@@ -311,6 +316,7 @@ const st = StyleSheet.create({
   hero: { width: '100%', maxWidth: 720, alignSelf: 'center', backgroundColor: '#dbeafe', flexDirection: 'row', marginTop: 10, borderRadius: 14, overflow: 'hidden' },
   heroBackgroundImage: { opacity: 0.48 },
   heroScrim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.42)' },
+  heroForeground: { ...StyleSheet.absoluteFillObject },
   heroCopy: { zIndex: 1, maxWidth: '68%' },
   heroTitle: { color: editorial.ink, fontWeight: '800', includeFontPadding: false },
   heroLocation: { color: editorial.muted, fontWeight: '700', includeFontPadding: false },
