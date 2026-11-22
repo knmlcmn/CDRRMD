@@ -1,0 +1,77 @@
+.backup-modal.backup-modal-rescue-request {
+  width: min(960px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.backup-modal-rescue-request .rescue-request-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 42%);
+  align-items: start;
+  gap: 20px;
+  min-width: 0;
+}
+
+.backup-modal-rescue-request .rescue-request-content,
+.backup-modal-rescue-request .rescue-request-details,
+.backup-modal-rescue-request .rescue-request-details > div,
+.backup-modal-rescue-request .rescue-request-details dd,
+.backup-modal-rescue-request .rescue-request-detail-button,
+.backup-modal-rescue-request .rescue-request-route-map,
+.backup-modal-rescue-request .rescue-request-route-unavailable {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.backup-modal-rescue-request .rescue-request-details > div {
+  grid-template-columns: minmax(96px, 112px) minmax(0, 1fr);
+}
+
+.backup-modal-rescue-request .rescue-request-details dd,
+.backup-modal-rescue-request .rescue-request-detail-button,
+.backup-modal-rescue-request .rescue-request-description,
+.backup-modal-rescue-request .rescue-request-meta,
+.backup-modal-rescue-request .rescue-request-meta-row {
+  overflow-wrap: break-word;
+  word-break: normal;
+  white-space: normal;
+}
+
+.backup-modal-rescue-request .rescue-request-route-map,
+.backup-modal-rescue-request .rescue-request-route-unavailable {
+  width: 100%;
+  height: clamp(220px, 36vh, 340px);
+  contain: layout paint;
+}
+
+@media (max-width: 860px) {
+  .backup-modal.backup-modal-rescue-request {
+    padding: 22px 20px 18px;
+  }
+
+  .backup-modal-rescue-request .rescue-request-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .backup-modal-rescue-request .rescue-request-route-map,
+  .backup-modal-rescue-request .rescue-request-route-unavailable {
+    height: clamp(210px, 34vh, 300px);
+  }
+}
+
+@media (max-width: 560px) {
+  .backup-modal.backup-modal-rescue-request {
+    width: calc(100vw - 20px);
+    max-width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+    padding: 18px 14px 14px;
+  }
+
+  .backup-modal-rescue-request .rescue-request-details > div,
+  .backup-modal-rescue-request .rescue-request-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -1481,8 +1481,6 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
   const [mapVisualReady, setMapVisualReady] = useState(false);
   const [evacuationAreas, setEvacuationAreas] = useState<EvacuationArea[]>([]);
   const [rescueBarangay, setRescueBarangay] = useState('');
-  const [outsideNormalServiceArea, setOutsideNormalServiceArea] = useState(false);
-  const [outsideConfirmationVisible, setOutsideConfirmationVisible] = useState(false);
   const [mapEvacuationAreas, setMapEvacuationAreas] = useState<EvacuationArea[]>([]);
   const [recentRescueRecords, setRecentRescueRecords] = useState<RescueRecord[]>([]);
   const layerVisibilityRef = useRef<UserMapLayerVisibility>({
@@ -1649,7 +1647,6 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     )
       .then((response) => {
         const value = String(response.data?.handlingBarangay || '').trim();
-        setOutsideNormalServiceArea(Boolean(response.data?.outsideNormalServiceArea));
         endPerformanceStage(barangayMarker, { success: Boolean(value) });
         return value;
       })
@@ -1692,7 +1689,7 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       showNotice(
         'Barangay unavailable',
         barangayValidationStatus === 422
-          ? 'Your current GPS is outside the six supported barangays. Enable Test Mode only if you intend to create a real out-of-area emergency request.'
+          ? 'Your current GPS is outside the six supported barangays.'
           : barangayValidationStatus === 426
             ? barangayValidationMessage || 'The server must be updated before this rescue routing mode can be used.'
           : 'Your barangay could not be determined. Please refresh your location and try again.',
@@ -1990,14 +1987,9 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
     }
   }, []);
 
-  async function handleSubmitRescue(outsideDispatchConfirmed = false) {
+  async function handleSubmitRescue() {
     const hasVerifiedAlertProof = Number.isInteger(floodAlertNotificationId);
     if (!userLocation || !selectedArea || !rescueBarangay || (!hasVerifiedAlertProof && (!proofImageUri || !proofImageBase64)) || submitting) {
-      return;
-    }
-
-    if (outsideNormalServiceArea && !outsideDispatchConfirmed) {
-      setOutsideConfirmationVisible(true);
       return;
     }
 
@@ -2078,7 +2070,6 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
         locationCapturedAt: submissionLocation.capturedAt,
         locationAccuracyMeters: submissionLocation.accuracyMeters,
         testModeEnabled,
-        outsideAreaRealDispatchAcknowledged: outsideDispatchConfirmed,
         evacuationAreaId: selectedArea.id,
         evacuationAreaName: refreshedSelected.name,
         arePeopleTrapped: true,
@@ -2099,7 +2090,6 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       setRescueNotes('');
       setPeopleCount(1);
       setRescueBarangay('');
-      setOutsideNormalServiceArea(false);
       setFloodAlertNotificationId(null);
       setRouteCoordinates([]);
       setRouteDistanceKm(null);
@@ -2107,16 +2097,12 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
       setRouteSource(null);
       await loadRecentRescueRecords();
 
-      const handlingBarangay = String(createdReport?.assigned_barangay || rescueBarangay);
-      const outsideLabel = createdReport?.outside_normal_service_area
-        ? ` This is a real out-of-area request handled by Barangay ${handlingBarangay}; response availability is not guaranteed.`
-        : '';
       const destinationAdvisory = createdReport?.evacuation_selection_advisory
         ? ` ${String(createdReport.evacuation_selection_advisory)}`
         : '';
       showNotice('Request submitted', `${hasVerifiedAlertProof
         ? 'Your rescue request has been submitted using the official water-level alert as verification.'
-        : 'Your rescue request has been submitted with image proof.'}${outsideLabel}${destinationAdvisory}`);
+        : 'Your rescue request has been submitted with image proof.'}${destinationAdvisory}`);
     } catch (err: any) {
       const status = Number(err?.response?.status || 0);
       const errorCode = String(err?.response?.data?.code || '');
@@ -2169,30 +2155,6 @@ export default function RescueMapScreen({ testModeEnabled = false, floodAlertRes
   return (
     <View style={st.root}>
       {noticeModal}
-      <Modal transparent visible={outsideConfirmationVisible} animationType="fade" onRequestClose={() => setOutsideConfirmationVisible(false)}>
-        <View style={st.confirmationBackdrop}>
-          <View style={st.confirmationCard}>
-            <Text style={st.confirmationTitle}>Real out-of-area emergency request</Text>
-            <Text style={st.confirmationBody}>
-              Your GPS is outside the six normal service areas. Continuing creates a real rescue request and real rescuer dispatch through Barangay {rescueBarangay}. Response availability is not guaranteed.
-            </Text>
-            <View style={st.confirmationActions}>
-              <TouchableOpacity style={st.confirmationCancel} onPress={() => setOutsideConfirmationVisible(false)}>
-                <Text style={st.confirmationCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={st.confirmationSubmit}
-                onPress={() => {
-                  setOutsideConfirmationVisible(false);
-                  void handleSubmitRescue(true);
-                }}
-              >
-                <Text style={st.confirmationSubmitText}>Create Real Request</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
       <DashboardHeader />
 
       <ScrollView contentContainerStyle={[st.scrollContent, {
@@ -2601,13 +2563,4 @@ const st = StyleSheet.create({
   },
   submitBtnDisabled: { backgroundColor: '#94a3b8' },
   submitBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
-  confirmationBackdrop: { flex: 1, backgroundColor: 'rgba(15,23,42,0.68)', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  confirmationCard: { width: '100%', maxWidth: 480, borderRadius: 14, backgroundColor: '#fff', padding: 20 },
-  confirmationTitle: { color: '#991b1b', fontSize: 19, fontWeight: '900' },
-  confirmationBody: { color: editorial.ink, fontSize: 14, lineHeight: 21, marginTop: 10 },
-  confirmationActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 20 },
-  confirmationCancel: { borderWidth: 1, borderColor: editorial.border, borderRadius: 9, paddingHorizontal: 14, paddingVertical: 10 },
-  confirmationCancelText: { color: editorial.ink, fontWeight: '800' },
-  confirmationSubmit: { backgroundColor: '#b91c1c', borderRadius: 9, paddingHorizontal: 14, paddingVertical: 10 },
-  confirmationSubmitText: { color: '#fff', fontWeight: '900' },
 });

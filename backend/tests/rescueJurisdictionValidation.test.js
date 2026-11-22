@@ -43,6 +43,9 @@ test('report creation persists server jurisdiction, immutable submitted GPS, and
   assert.match(source, /locationText,\s*lat,\s*lon,\s*assignedBarangay/);
   assert.doesNotMatch(source, /SET\s+latitude\s*=/);
   assert.doesNotMatch(source, /SET\s+longitude\s*=/);
+  assert.match(source, /testModeEnabled:\s*geographicalBypassEnabled/);
+  assert.match(source, /buildReportPresentation/);
+  assert.doesNotMatch(source, /OUTSIDE_AREA_REAL_DISPATCH_CONFIRMATION_REQUIRED/);
   const migration = fs.readFileSync(path.join(__dirname, '../src/config/schemaMigrations.js'), 'utf8');
   assert.match(migration, /incident_reports_immutable_rescue_location/);
   assert.match(migration, /Reported rescue coordinates are immutable/);

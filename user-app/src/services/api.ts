@@ -550,12 +550,12 @@ export async function previewRescueRouting(
     const status = Number(error?.response?.status || 0);
     if (signal?.aborted || (status !== 404 && status !== 405)) throw error;
     if (testModeEnabled) {
-      throw Object.assign(new Error('The server must be updated before real out-of-area rescue requests can be created.'), {
+      throw Object.assign(new Error('The server must be updated before Test Mode rescue routing can be used.'), {
         response: {
           status: 426,
           data: {
             code: 'ROUTING_PREVIEW_UPGRADE_REQUIRED',
-            message: 'The server must be updated before Test Mode can create a real out-of-area rescue request.',
+            message: 'The server must be updated before Test Mode rescue routing can be used.',
           },
         },
       });

@@ -155,10 +155,14 @@ export default function FamilyScreen() {
           </View>
           <Text style={st.yourStatusNote}>Only you can mark yourself as safe.</Text>
           <TouchableOpacity
-            style={[st.markBtn, { backgroundColor: myStatus === 'Safe' ? '#16a34a' : '#cbd5e1' }]}
+            accessibilityRole="button"
+            accessibilityLabel={myStatus === 'Safe' ? 'Marked safe. Tap to change status' : 'Mark yourself as safe'}
+            accessibilityState={{ selected: myStatus === 'Safe' }}
+            activeOpacity={0.85}
+            style={[st.markBtn, myStatus === 'Safe' ? st.markBtnSafe : st.markBtnReady]}
             onPress={() => setMyStatus(myStatus === 'Safe' ? 'No response' : 'Safe')}
           >
-            <Text style={[st.markBtnText, { color: myStatus === 'Safe' ? '#fff' : '#334155' }]}>
+            <Text style={st.markBtnText}>
               {myStatus === 'Safe' ? 'You are Marked Safe' : 'Mark Safe'}
             </Text>
           </TouchableOpacity>
@@ -259,7 +263,9 @@ const st = StyleSheet.create({
   badgeText: { fontSize: 12, fontWeight: '700', marginLeft: 4 },
 
   markBtn: { borderRadius: 12, paddingVertical: 10, alignItems: 'center', marginTop: 10 },
-  markBtnText: { fontSize: 14, fontWeight: '700' },
+  markBtnReady: { backgroundColor: editorial.accent },
+  markBtnSafe: { backgroundColor: '#16a34a' },
+  markBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 
   inviteRow: {
     borderWidth: 1,
