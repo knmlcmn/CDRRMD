@@ -38,9 +38,11 @@ test('Mark Safe has an enabled Resident Portal treatment and accessible state', 
   assert.doesNotMatch(familySource, /myStatus === 'Safe' \? '#16a34a' : '#cbd5e1'/);
 });
 
-test('Android weather hero uses a bounded contain layout without a white letterbox', () => {
-  assert.match(weatherSource, /resizeMode="contain"/);
+test('Resident web and Android weather hero use a full-card cover background', () => {
+  assert.match(weatherSource, /resizeMode="cover"/);
   assert.match(weatherSource, /height:\s*126 \* scale/);
-  assert.match(weatherSource, /hero:\s*\{[^\n]+backgroundColor:\s*'#dbeafe'/);
+  assert.match(weatherSource, /hero:\s*\{[^\n]+width:\s*'100%'/);
+  assert.match(weatherSource, /hero:\s*\{[^\n]+overflow:\s*'hidden'/);
+  assert.match(weatherSource, /<View style=\{st\.heroCopy\}>[\s\S]+<View style=\{\[st\.heroArtwork/);
   assert.doesNotMatch(weatherSource, /resizeMethod="resize"/);
 });

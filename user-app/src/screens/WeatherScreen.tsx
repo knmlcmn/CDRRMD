@@ -195,7 +195,7 @@ export default function WeatherScreen() {
       <ScrollView contentContainerStyle={[st.scrollContent, { paddingHorizontal: horizontalPadding }]}>
         <ImageBackground
           source={visual.backgroundSource}
-          resizeMode="contain"
+          resizeMode="cover"
           style={[st.hero, { maxWidth: pageMaxWidth, height: 126 * scale, paddingHorizontal: 13 * scale, paddingTop: 13 * scale }]}
           imageStyle={st.heroBackgroundImage}
         >
