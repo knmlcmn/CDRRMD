@@ -18,7 +18,6 @@ export function buildPopulationDensityMapRuntimeScript(
         if (!apiUrl || apiUrl === boundaryUrl) return;
 
         var populationLayer = L.layerGroup();
-        var populationLegend = null;
         var populationVisible = false;
         var populationPayload = null;
         var boundaryPayload = null;
@@ -45,28 +44,13 @@ export function buildPopulationDensityMapRuntimeScript(
           return '#86efac';
         }
 
-        function sourceLink(url, label) {
-          return '<a href="' + escapePopulationHtml(url) + '" target="_blank" rel="noopener noreferrer">' + escapePopulationHtml(label) + '</a>';
-        }
-
         function populationPopup(record) {
-          var sources = populationPayload.sources || {};
-          var populationSource = sources.population || {};
-          var limitation = Array.isArray(populationPayload.provenanceLimitations)
-            ? populationPayload.provenanceLimitations[0]
-            : '';
-          return '<div style="font:12px/1.35 Arial,sans-serif;max-width:290px">' +
-            '<strong style="font-size:14px">' + escapePopulationHtml(record.barangay) + '</strong>' +
-            '<table style="border-collapse:collapse;margin:7px 0;width:100%">' +
-              '<tr><td style="border:1px solid #cbd5e1;padding:4px;font-weight:700">Population</td><td style="border:1px solid #cbd5e1;padding:4px">' + Number(record.population).toLocaleString() + '</td></tr>' +
-              '<tr><td style="border:1px solid #cbd5e1;padding:4px;font-weight:700">Census year</td><td style="border:1px solid #cbd5e1;padding:4px">' + escapePopulationHtml(record.populationYear) + '</td></tr>' +
-              '<tr><td style="border:1px solid #cbd5e1;padding:4px;font-weight:700">Published area</td><td style="border:1px solid #cbd5e1;padding:4px">' + escapePopulationHtml(record.landAreaPublishedValue) + ' ha</td></tr>' +
-              '<tr><td style="border:1px solid #cbd5e1;padding:4px;font-weight:700">Derived density</td><td style="border:1px solid #cbd5e1;padding:4px">' + Number(record.densityPersonsPerSquareKilometer).toLocaleString(undefined, { maximumFractionDigits: 2 }) + ' persons/km²</td></tr>' +
-            '</table>' +
-            '<div><b>Formula:</b> population / (hectares / 100). Density is derived, not PSA-published.</div>' +
-            '<div style="margin-top:5px"><b>Sources:</b> ' + sourceLink(populationSource.url, 'PSA 2024 POPCEN') + ' · ' + sourceLink(record.landAreaSourceUrl, 'Calamba barangay profile') + ' · ' + sourceLink(sources.clupUrl, 'CLUP caveat') + '</div>' +
-            '<div style="color:#7c2d12;font-size:10px;margin-top:6px"><b>Area note:</b> ' + escapePopulationHtml(limitation) + '</div>' +
-            '<div style="color:#64748b;font-size:10px;margin-top:5px">Existing boundary geometry is for visualization only and was not used to calculate area.</div>' +
+          return '<div style="box-sizing:border-box;color:#0f172a;font:12px/1.4 Arial,sans-serif;max-width:min(76vw,250px);overflow-wrap:anywhere;width:230px">' +
+            '<strong style="display:block;font-size:15px;line-height:1.25;margin-bottom:8px">' + escapePopulationHtml(record.barangay) + '</strong>' +
+            '<div style="margin-bottom:4px"><span style="color:#475569">Derived population density</span><br><b style="font-size:14px">' + Math.round(Number(record.densityPersonsPerSquareKilometer) || 0).toLocaleString() + ' people/km&sup2;</b></div>' +
+            '<div><span style="color:#475569">Population count:</span> <b>' + Number(record.population).toLocaleString() + '</b></div>' +
+            '<div><span style="color:#475569">Data year:</span> <b>' + escapePopulationHtml(record.populationYear) + '</b></div>' +
+            '<div style="border-top:1px solid #e2e8f0;color:#64748b;font-size:10px;line-height:1.35;margin-top:8px;padding-top:6px">Population: PSA 2024 POPCEN<br>Land area: Calamba City Government</div>' +
           '</div>';
         }
 
@@ -94,31 +78,9 @@ export function buildPopulationDensityMapRuntimeScript(
             onEachFeature: function(feature, layer) {
               var props = feature && feature.properties ? feature.properties : {};
               var record = recordsByKey[normalizePopulationBarangay(props.barangay_name || props.barangayName || props.name)];
-              layer.bindTooltip(record.barangay + ': ' + Math.round(record.densityPersonsPerSquareKilometer).toLocaleString() + ' persons/km²', { sticky: true });
-              layer.bindPopup(populationPopup(record), { maxWidth: 320 });
+              layer.bindPopup(populationPopup(record), { maxWidth: 280, minWidth: 210 });
             },
           }).addTo(populationLayer);
-        }
-
-        function removePopulationLegend() {
-          if (populationLegend) map.removeControl(populationLegend);
-          populationLegend = null;
-        }
-
-        function showPopulationLegend() {
-          removePopulationLegend();
-          populationLegend = L.control({ position: 'bottomright' });
-          populationLegend.onAdd = function() {
-            var box = L.DomUtil.create('div');
-            box.style.cssText = 'background:rgba(255,255,255,.96);border:1px solid #cbd5e1;border-radius:9px;box-shadow:0 4px 14px rgba(15,23,42,.22);color:#0f172a;font:10px/1.3 Arial,sans-serif;padding:8px;width:170px';
-            box.innerHTML = '<b>Derived population density</b><br>' +
-              '<span style="color:#7f1d1d">■</span> 30,000+ &nbsp; <span style="color:#dc2626">■</span> 20,000–29,999<br>' +
-              '<span style="color:#f97316">■</span> 15,000–19,999 &nbsp; <span style="color:#facc15">■</span> 10,000–14,999<br>' +
-              '<span style="color:#86efac">■</span> Below 10,000 persons/km²<br>' +
-              '<span style="color:#64748b">PSA 2024 POPCEN / official Calamba profile areas. Area allocation remains subject to CLUP reconciliation.</span>';
-            return box;
-          };
-          populationLegend.addTo(map);
         }
 
         function setPopulationVisible(nextVisible) {
@@ -126,10 +88,8 @@ export function buildPopulationDensityMapRuntimeScript(
           if (populationVisible) {
             renderPopulationLayer();
             if (!map.hasLayer(populationLayer)) map.addLayer(populationLayer);
-            showPopulationLegend();
           } else {
             if (map.hasLayer(populationLayer)) map.removeLayer(populationLayer);
-            removePopulationLegend();
           }
           window.dispatchEvent(new CustomEvent('cdrrmd:population-density-visibility', {
             detail: { visible: populationVisible },

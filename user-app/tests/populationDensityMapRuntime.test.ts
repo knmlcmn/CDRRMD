@@ -11,13 +11,23 @@ test('population density runtime derives a server-gated endpoint and starts hidd
   assert.match(script, /setPopulationVisible\(false\)/);
 });
 
-test('population density runtime preserves source attribution and derived-data labels', () => {
+test('population density runtime renders only compact derived-density popup details', () => {
   const script = buildPopulationDensityMapRuntimeScript('data.floodHazardUrl');
-  assert.match(script, /Density is derived, not PSA-published/);
+  assert.match(script, /Derived population density/);
+  assert.match(script, /Math\.round/);
+  assert.match(script, /people\/km&sup2;/);
+  assert.match(script, /Population count:/);
+  assert.match(script, /Data year:/);
   assert.match(script, /PSA 2024 POPCEN/);
-  assert.match(script, /Calamba barangay profile/);
-  assert.match(script, /visualization only and was not used to calculate area/);
-  assert.match(script, /Area allocation remains subject to CLUP reconciliation/);
+  assert.match(script, /Calamba City Government/);
+  assert.doesNotMatch(script, /<table|Formula:|Published area|CLUP caveat|Area note:|visualization only/);
+  assert.doesNotMatch(script, /bindTooltip/);
+});
+
+test('population density runtime does not create a separate floating legend', () => {
+  const script = buildPopulationDensityMapRuntimeScript('data.floodHazardUrl');
+  assert.doesNotMatch(script, /populationLegend|showPopulationLegend|removePopulationLegend/);
+  assert.doesNotMatch(script, /L\.control\(\{ position: 'bottomright' \}\)/);
 });
 
 test('population density runtime is independent from hardware and rescue visibility state', () => {

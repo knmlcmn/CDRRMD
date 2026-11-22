@@ -43,8 +43,8 @@ test('Rescuer and Resident expose only the current read-only dataset without yea
   for (const source of [residentMapSource, rescuerMapSource, populationRuntimeSource]) {
     assert.doesNotMatch(source, /year-selector|historical population|population trend|edit population|add population/i);
   }
-  assert.match(populationRuntimeSource, /Census year/);
-  assert.match(populationRuntimeSource, /Density is derived, not PSA-published/);
+  assert.match(populationRuntimeSource, /Data year:/);
+  assert.match(populationRuntimeSource, /Derived population density/);
 });
 
 test('visible black city boundary overlay and legend entry are removed but geometry validation remains', () => {
@@ -62,4 +62,13 @@ test('fillable Population Density and Flood Hazard overlays reject segmented lin
   assert.match(adminMapSource, /fill: polygonGeometry && !climateVisible/);
   assert.match(residentMapSource, /geometryType !== 'Polygon' && geometryType !== 'MultiPolygon'/);
   assert.match(rescuerMapSource, /if \(!polygonGeometry\)/);
+});
+
+test('existing Map Legend panels own density categories in highest-to-lowest order', () => {
+  for (const source of [adminMapSource, residentMapSource, rescuerMapSource]) {
+    assert.match(source, /Derived Population Density/);
+    assert.match(source, /30,000\+ people\/km&sup2;[\s\S]+20,000&ndash;29,999[\s\S]+15,000&ndash;19,999[\s\S]+10,000&ndash;14,999[\s\S]+Below 10,000/);
+    assert.match(source, /visibility\.populationDensity/);
+  }
+  assert.doesNotMatch(populationRuntimeSource, /populationLegend|showPopulationLegend|removePopulationLegend/);
 });

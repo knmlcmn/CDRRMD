@@ -432,6 +432,17 @@ function buildLeafletHtml(
         var rainOn = isScalarWeatherVisible();
         var floodOn = Boolean(visibility.floodHazard);
 
+        var densitySection = '';
+        if (Boolean(visibility.populationDensity)) {
+          densitySection =
+            '<div class="legend-section-label"><span class="legend-section-dot" style="background:#7f1d1d;"></span>Derived Population Density</div>' +
+            '<div class="row"><span class="swatch" style="background:#7f1d1d;"></span>30,000+ people/km&sup2;</div>' +
+            '<div class="row"><span class="swatch" style="background:#dc2626;"></span>20,000&ndash;29,999</div>' +
+            '<div class="row"><span class="swatch" style="background:#f97316;"></span>15,000&ndash;19,999</div>' +
+            '<div class="row"><span class="swatch" style="background:#facc15;"></span>10,000&ndash;14,999</div>' +
+            '<div class="row"><span class="swatch" style="background:#86efac;"></span>Below 10,000</div>';
+        }
+
         var floodSection = '';
         if (floodOn) {
           floodSection = hardwareFloodLegendHtml();
@@ -473,12 +484,12 @@ function buildLeafletHtml(
           '<div class="row"><span class="legend-map-icon" style="background:#14b8a6"><img alt="" src="https://unpkg.com/boxicons@2.1.4/svg/solid/bxs-ambulance.svg" /></span>Selected Center</div>' +
           '<div class="row"><span class="legend-map-line"></span>Rescue Route</div>';
 
-        var noLayers = !floodOn && !weatherOn && !rainOn;
+        var noLayers = !Boolean(visibility.populationDensity) && !floodOn && !weatherOn && !rainOn;
         return (
           '<div class="map-legend">' +
             '<div class="title">Map Legend</div>' +
             mapSymbolSection +
-            (noLayers ? '' : (floodSection + windSection + rainSection)) +
+            (noLayers ? '' : (densitySection + floodSection + windSection + rainSection)) +
           '</div>'
         );
       }
@@ -1310,6 +1321,7 @@ function buildLeafletHtml(
 
       window.addEventListener('cdrrmd:population-density-visibility', function(event) {
         visibility.populationDensity = Boolean(event && event.detail && event.detail.visible);
+        renderLegendControl();
       });
 
       var userPinIcon = L.divIcon({
