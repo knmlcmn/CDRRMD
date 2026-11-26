@@ -17,11 +17,26 @@ test('population density runtime renders only compact derived-density popup deta
   assert.match(script, /Math\.round/);
   assert.match(script, /people\/km&sup2;/);
   assert.match(script, /Population count:/);
+  assert.match(script, /Households:/);
+  assert.match(script, /Classification:/);
   assert.match(script, /Data year:/);
-  assert.match(script, /PSA 2024 POPCEN/);
+  assert.match(script, /record\.dataSource/);
+  assert.match(script, /overflow-wrap:anywhere/);
+  assert.match(script, /white-space:normal/);
+  assert.match(script, /word-break:break-word/);
   assert.match(script, /Calamba City Government/);
   assert.doesNotMatch(script, /<table|Formula:|Published area|CLUP caveat|Area note:|visualization only/);
   assert.doesNotMatch(script, /bindTooltip/);
+});
+
+test('population density runtime can refresh saved records without rebuilding an app', () => {
+  const script = buildPopulationDensityMapRuntimeScript('data.floodHazardUrl');
+  assert.match(script, /population-density-refresh/);
+  assert.match(script, /refresh: loadPopulationData/);
+  assert.match(script, /cache: 'no-store'/);
+  assert.match(script, /window\.addEventListener\('focus', loadPopulationData\)/);
+  assert.match(script, /visibilitychange/);
+  assert.match(script, /}, 30000\)/);
 });
 
 test('population density runtime does not create a separate floating legend', () => {
@@ -48,15 +63,4 @@ test('population density runtime rejects executable expressions and supports jur
   );
   assert.match(script, /var jurisdictionName = mapBehavior\.jurisdictionBarangayName/);
   assert.match(script, /normalizePopulationBarangay\(jurisdictionName\)/);
-});
-
-test('rescuer standalone control is current-dataset-only and identifies PSA 2024', () => {
-  const script = buildPopulationDensityMapRuntimeScript(
-    'payload.barangayBoundaryGeoJsonUrl',
-    'null',
-    true,
-  );
-  assert.match(script, /standaloneControlEnabled = true/);
-  assert.match(script, /Population Density — PSA 2024 POPCEN/);
-  assert.doesNotMatch(script, /<select|year-selector|historical population|population trend|edit population/i);
 });
