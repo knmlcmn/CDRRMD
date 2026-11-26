@@ -49,8 +49,10 @@ export function buildPopulationDensityMapRuntimeScript(
             '<strong style="display:block;font-size:15px;line-height:1.25;margin-bottom:8px">' + escapePopulationHtml(record.barangay) + '</strong>' +
             '<div style="margin-bottom:4px"><span style="color:#475569">Derived population density</span><br><b style="font-size:14px">' + Math.round(Number(record.densityPersonsPerSquareKilometer) || 0).toLocaleString() + ' people/km&sup2;</b></div>' +
             '<div><span style="color:#475569">Population count:</span> <b>' + Number(record.population).toLocaleString() + '</b></div>' +
+            '<div><span style="color:#475569">Households:</span> <b>' + Number(record.households).toLocaleString() + '</b></div>' +
+            '<div><span style="color:#475569">Classification:</span> <b>' + escapePopulationHtml(record.densityClassification) + '</b></div>' +
             '<div><span style="color:#475569">Data year:</span> <b>' + escapePopulationHtml(record.populationYear) + '</b></div>' +
-            '<div style="border-top:1px solid #e2e8f0;color:#64748b;font-size:10px;line-height:1.35;margin-top:8px;padding-top:6px">Population: PSA 2024 POPCEN<br>Land area: Calamba City Government</div>' +
+            '<div style="border-top:1px solid #e2e8f0;color:#64748b;font-size:10px;line-height:1.35;margin-top:8px;overflow-wrap:anywhere;padding-top:6px;white-space:normal;word-break:break-word">Source: ' + escapePopulationHtml(record.dataSource) + '<br>Land area: Calamba City Government</div>' +
           '</div>';
         }
 
@@ -109,8 +111,8 @@ export function buildPopulationDensityMapRuntimeScript(
             populationToggleButton = L.DomUtil.create('button', '', wrap);
             populationToggleButton.type = 'button';
             populationToggleButton.textContent = 'Population Density';
-            populationToggleButton.title = 'Population Density — PSA 2024 POPCEN';
-            populationToggleButton.setAttribute('aria-label', 'Toggle Population Density — PSA 2024 POPCEN');
+            populationToggleButton.title = 'Population Density — current database data';
+            populationToggleButton.setAttribute('aria-label', 'Toggle Population Density');
             populationToggleButton.setAttribute('aria-pressed', 'false');
             populationToggleButton.style.cssText = 'background:#fff;border:1px solid #7c3aed;border-radius:8px;box-shadow:0 2px 8px rgba(15,23,42,.22);color:#312e81;cursor:pointer;font:700 11px/1.2 Arial,sans-serif;padding:8px 10px';
             L.DomEvent.on(populationToggleButton, 'click', function(event) {
@@ -129,17 +131,19 @@ export function buildPopulationDensityMapRuntimeScript(
         pane.style.zIndex = '425';
         pane.style.pointerEvents = 'auto';
 
-        fetch(apiUrl)
+        function loadPopulationData() {
+          return fetch(apiUrl, { cache: 'no-store' })
           .then(function(response) { return response.ok ? response.json() : null; })
           .then(function(responsePayload) {
             if (!responsePayload || !responsePayload.enabled || responsePayload.defaultVisibility !== false || !Array.isArray(responsePayload.records)) return null;
             populationPayload = responsePayload;
+            if (boundaryPayload) return boundaryPayload;
             return fetch(boundaryUrl).then(function(response) { return response.ok ? response.json() : null; });
           })
           .then(function(responseBoundary) {
             if (!responseBoundary || !populationPayload) return;
             boundaryPayload = responseBoundary;
-            setPopulationVisible(false);
+            if (populationVisible) renderPopulationLayer();
             installStandalonePopulationControl();
             window.dispatchEvent(new CustomEvent('cdrrmd:population-density-ready', {
               detail: { enabled: true },
@@ -148,11 +152,31 @@ export function buildPopulationDensityMapRuntimeScript(
           .catch(function() {
             // Fail closed: the optional layer stays absent and existing map behavior is untouched.
           });
+        }
+
+        function handlePopulationRefreshMessage(event) {
+          var data = event && event.data;
+          if (typeof data === 'string') {
+            try { data = JSON.parse(data); } catch (_error) { return; }
+          }
+          if (data && data.type === 'population-density-refresh') loadPopulationData();
+        }
+        window.addEventListener('message', handlePopulationRefreshMessage);
+        document.addEventListener('message', handlePopulationRefreshMessage);
+        window.addEventListener('focus', loadPopulationData);
+        document.addEventListener('visibilitychange', function() {
+          if (document.visibilityState === 'visible') loadPopulationData();
+        });
+        setInterval(function() {
+          if (document.visibilityState === 'visible' && navigator.onLine !== false) loadPopulationData();
+        }, 30000);
+        loadPopulationData().then(function() { setPopulationVisible(false); });
 
         window.cdrrmdPopulationDensityLayer = {
           isEnabled: function() { return Boolean(populationPayload && populationPayload.enabled); },
           isVisible: function() { return populationVisible; },
           setVisible: setPopulationVisible,
+          refresh: loadPopulationData,
         };
       })();
   `;

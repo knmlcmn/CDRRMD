@@ -393,6 +393,52 @@ const MIGRATIONS = [
         FOR EACH ROW EXECUTE FUNCTION prevent_rescue_report_location_change();
     `,
   },
+  {
+    version: 11,
+    name: 'add_current_barangay_population_records',
+    sql: `
+      CREATE TABLE IF NOT EXISTS barangay_population_records (
+        barangay_id SMALLINT PRIMARY KEY REFERENCES barangays(id) ON DELETE RESTRICT,
+        population INTEGER NOT NULL CHECK (population >= 0),
+        households INTEGER NOT NULL CHECK (households >= 0 AND households <= population),
+        land_area_hectares NUMERIC(10, 2) NOT NULL CHECK (land_area_hectares > 0),
+        data_year SMALLINT NOT NULL CHECK (data_year BETWEEN 1900 AND 2100),
+        data_source TEXT NOT NULL CHECK (BTRIM(data_source) <> ''),
+        density_persons_per_square_kilometer NUMERIC(14, 2)
+          GENERATED ALWAYS AS (ROUND(population::numeric / (land_area_hectares / 100), 2)) STORED,
+        density_classification TEXT
+          GENERATED ALWAYS AS (
+            CASE
+              WHEN population::numeric / (land_area_hectares / 100) >= 30000 THEN 'Very High'
+              WHEN population::numeric / (land_area_hectares / 100) >= 20000 THEN 'High'
+              WHEN population::numeric / (land_area_hectares / 100) >= 15000 THEN 'Elevated'
+              WHEN population::numeric / (land_area_hectares / 100) >= 10000 THEN 'Moderate'
+              ELSE 'Low'
+            END
+          ) STORED,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+      );
+
+      INSERT INTO barangay_population_records
+        (barangay_id, population, households, land_area_hectares, data_year, data_source)
+      SELECT b.id, seed.population, seed.households, seed.land_area_hectares, 2026,
+             'City Social Services Department'
+      FROM (VALUES
+        ('Parian', 31735, 9254, 112.0::numeric),
+        ('Looc', 33300, 9691, 179.1::numeric),
+        ('Uwisan', 3689, 1027, 78.0::numeric),
+        ('Palingon', 6518, 1814, 15.3::numeric),
+        ('Lingga', 7690, 2140, 45.0::numeric),
+        ('Sampiruhan', 11754, 3271, 81.0::numeric)
+      ) AS seed(barangay_name, population, households, land_area_hectares)
+      JOIN barangays b ON LOWER(b.name) = LOWER(seed.barangay_name)
+      ON CONFLICT (barangay_id) DO NOTHING;
+
+      CREATE INDEX IF NOT EXISTS barangay_population_updated_at_idx
+        ON barangay_population_records (updated_at DESC);
+    `,
+  },
 ];
 
 const DEFAULT_ADVISORY_LOCK_TIMEOUT_MS = 5_000;

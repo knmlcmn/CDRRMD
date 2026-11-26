@@ -9,6 +9,7 @@ import { buildCalambaMapHtml } from '../utils/calambaMapHtml';
 import { formatIncidentStatus, INCIDENT_STATUS_FILTERS, type IncidentStatusFilter } from '../utils/incidentStatus';
 import type { RescuerAssignmentPreview as AssignmentPreview } from '../services/rescuerAssignmentPreview';
 import { isLiveResponder, liveResponderCoordinate } from '../services/liveResponderPresence';
+import PopulationDataManager from '../components/PopulationDataManager';
 
 type Props = {
   onLogout: () => void;
@@ -121,6 +122,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [proofLoadingId, setProofLoadingId] = useState<number | null>(null);
   const [showIncidentHistory, setShowIncidentHistory] = useState(false);
+  const [showPopulationData, setShowPopulationData] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionMode, setActionMode] = useState<ActionMode>(null);
   const [assignmentPreview, setAssignmentPreview] = useState<AssignmentPreview | null>(null);
@@ -742,7 +744,7 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
       onOpenEvacuationAreas={onOpenEvacuationAreas}
       onOpenPostUpdates={onOpenPostUpdates}
       onOpenHistory={onOpenHistory}
-      actions={<><button type="button" onClick={() => setShowIncidentHistory(true)} className={d.btn.secondary}>Incident History</button><button onClick={onOpenEvacuationAreas} className={d.monitoring.actionEvac}>Evacuation Readiness</button></>}
+      actions={<><button type="button" onClick={() => setShowPopulationData(true)} className={d.btn.secondary}>Population Data</button><button type="button" onClick={() => setShowIncidentHistory(true)} className={d.btn.secondary}>Incident History</button><button onClick={onOpenEvacuationAreas} className={d.monitoring.actionEvac}>Evacuation Readiness</button></>}
     >
       <div className={`${d.monitoring.root} admin-incident-monitoring-root monitoring-steady-ui`}>
         {error ? <div className={d.page.error}>{error}</div> : null}
@@ -945,6 +947,12 @@ export default function MonitoringPage({ onLogout, onOpenDashboard, onOpenAdmin,
           </div>
         ) : null}
         <IncidentHistoryModal open={showIncidentHistory} scopeLabel="the CDRRMD administrator" onClose={() => setShowIncidentHistory(false)} onAuthError={onAuthError} />
+        <PopulationDataManager
+          open={showPopulationData}
+          onClose={() => setShowPopulationData(false)}
+          onAuthError={onAuthError}
+          onUpdated={() => mapFrameRef.current?.contentWindow?.postMessage({ type: 'population-density-refresh' }, '*')}
+        />
       </div>
     </AdminShell>
   );

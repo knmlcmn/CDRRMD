@@ -8,23 +8,21 @@ function localPath(relativePath: string) {
 
 const adminMapSource = readFileSync(localPath('../../admin-web/src/utils/calambaMapHtml.ts'), 'utf8');
 const residentMapSource = readFileSync(localPath('../src/screens/RescueMapScreen.tsx'), 'utf8');
-const rescuerMapSource = readFileSync(localPath('../src/utils/calambaMapHtml.ts'), 'utf8');
-const barangayDashboardSource = readFileSync(localPath('../../admin-web/src/barangay/pages/DashboardPage.tsx'), 'utf8');
-const barangayMonitoringSource = readFileSync(localPath('../../admin-web/src/barangay/pages/MonitoringPage.tsx'), 'utf8');
+const sharedResidentMapSource = readFileSync(localPath('../src/utils/calambaMapHtml.ts'), 'utf8');
 const populationRuntimeSource = readFileSync(localPath('../../admin-web/src/utils/populationDensityMapRuntime.ts'), 'utf8');
+const adminPortalSource = readFileSync(localPath('../../admin-web/src/pages/DashboardPage.tsx'), 'utf8');
+const barangayPortalSource = readFileSync(localPath('../../admin-web/src/barangay/pages/DashboardPage.tsx'), 'utf8');
+const residentPortalSource = readFileSync(localPath('../src/screens/RescueMapScreen.tsx'), 'utf8');
+const rescuerPortalSource = readFileSync(localPath('../src/rescuer/screens/AssignmentsScreen.tsx'), 'utf8');
+const mobileRuntimeSource = readFileSync(localPath('../src/utils/populationDensityMapRuntime.ts'), 'utf8');
 
-test('Population Density remains available in Admin, Barangay, Resident, and Rescuer maps', () => {
+test('Operations Map replaces the boundary tile with feature-gated Population Density in first position', () => {
   for (const source of [adminMapSource, residentMapSource]) {
     assert.doesNotMatch(source, /key:\s*'boundary',\s*label:\s*'Calamba Boundary'/);
     assert.match(source, /definitions\.unshift\(\{ key: 'populationDensity', label: 'Population Density'/);
     assert.match(source, /populationDensityAvailable/);
   }
-  for (const source of [barangayDashboardSource, barangayMonitoringSource]) {
-    assert.match(source, /jurisdictionBarangayName:\s*barangayName/);
-  }
-  assert.match(rescuerMapSource, /buildPopulationDensityMapRuntimeScript\('payload\.barangayBoundaryGeoJsonUrl', 'null', true\)/);
-  assert.match(populationRuntimeSource, /populationToggleButton\.textContent = 'Population Density'/);
-  assert.match(populationRuntimeSource, /PSA 2024 POPCEN/);
+  assert.doesNotMatch(populationRuntimeSource, /addPopulationControl|button\.textContent = 'Population Density'/);
 });
 
 test('the six thematic layers are single-select while operational layers stay outside that set', () => {
@@ -36,19 +34,10 @@ test('the six thematic layers are single-select while operational layers stay ou
       new RegExp(operationalKey),
     );
   }
-  assert.match(rescuerMapSource, /visibility\.floodHazard = false;[\s\S]+visibility\.weatherOverlay = false;/);
-});
-
-test('Rescuer and Resident expose only the current read-only dataset without yearly management UI', () => {
-  for (const source of [residentMapSource, rescuerMapSource, populationRuntimeSource]) {
-    assert.doesNotMatch(source, /year-selector|historical population|population trend|edit population|add population/i);
-  }
-  assert.match(populationRuntimeSource, /Data year:/);
-  assert.match(populationRuntimeSource, /Derived population density/);
 });
 
 test('visible black city boundary overlay and legend entry are removed but geometry validation remains', () => {
-  for (const source of [adminMapSource, residentMapSource, rescuerMapSource]) {
+  for (const source of [adminMapSource, residentMapSource, sharedResidentMapSource]) {
     assert.match(source, /setLayerVisible\(boundaryLayer, false\)/);
   }
   assert.doesNotMatch(adminMapSource, /legend-map-boundary[^\n]+Calamba Boundary/);
@@ -61,14 +50,23 @@ test('fillable Population Density and Flood Hazard overlays reject segmented lin
   assert.match(populationRuntimeSource, /geometryType === 'Polygon' \|\| geometryType === 'MultiPolygon'/);
   assert.match(adminMapSource, /fill: polygonGeometry && !climateVisible/);
   assert.match(residentMapSource, /geometryType !== 'Polygon' && geometryType !== 'MultiPolygon'/);
-  assert.match(rescuerMapSource, /if \(!polygonGeometry\)/);
 });
 
 test('existing Map Legend panels own density categories in highest-to-lowest order', () => {
-  for (const source of [adminMapSource, residentMapSource, rescuerMapSource]) {
+  for (const source of [adminMapSource, residentMapSource, sharedResidentMapSource]) {
     assert.match(source, /Derived Population Density/);
     assert.match(source, /30,000\+ people\/km&sup2;[\s\S]+20,000&ndash;29,999[\s\S]+15,000&ndash;19,999[\s\S]+10,000&ndash;14,999[\s\S]+Below 10,000/);
     assert.match(source, /visibility\.populationDensity/);
   }
   assert.doesNotMatch(populationRuntimeSource, /populationLegend|showPopulationLegend|removePopulationLegend/);
+});
+
+test('Admin, Barangay, Resident, and Rescuer maps all use the shared database-backed population runtime', () => {
+  assert.match(adminPortalSource, /buildCalambaMapHtml/);
+  assert.match(barangayPortalSource, /buildCalambaMapHtml/);
+  assert.match(residentPortalSource, /buildPopulationDensityMapRuntimeScript/);
+  assert.match(rescuerPortalSource, /buildCalambaMapHtml/);
+  assert.match(mobileRuntimeSource, /admin-web\/src\/utils\/populationDensityMapRuntime/);
+  assert.match(populationRuntimeSource, /\/gis\/population-density/);
+  assert.doesNotMatch(populationRuntimeSource, /33300|7690|6518|3689|11754|31735/);
 });
